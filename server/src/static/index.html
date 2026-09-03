@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VibeMonitor - 服务器监控面板</title>
+  <style>
+    :root[data-theme="dark"] {
+      --bg-color: #0b0f19;
+      --card-bg: #141c2e;
+      --card-hover: #19243a;
+      --border-color: #23304a;
+      --border-hover: #3b4d70;
+      --inner-bg: #0d1424;
+      --text-main: #f1f5f9;
+      --text-sub: #94a3b8;
+      --text-dim: #64748b;
+      --bar-bg: #23304a;
+      --shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      --modal-bg: #141c2e;
+    }
+
+    :root[data-theme="light"] {
+      --bg-color: #f1f5f9;
+      --card-bg: #ffffff;
+      --card-hover: #fafafa;
+      --border-color: #cbd5e1;
+      --border-hover: #94a3b8;
+      --inner-bg: #f8fafc;
+      --text-main: #0f172a;
+      --text-sub: #475569;
+      --text-dim: #94a3b8;
+      --bar-bg: #e2e8f0;
+      --shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+      --modal-bg: #ffffff;
+    }
+
+    :root {
+      --online: #10b981;
+      --offline: #ef4444;
+      --bar-cpu: #0284c7;
+      --bar-mem: #9333ea;
+      --bar-disk: #ea580c;
+      --ping-good: #10b981;
+      --ping-medium: #f59e0b;
+      --ping-bad: #ef4444;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      min-height: 100vh;
+      padding: 24px 20px;
+    }
+
+    .container {
+      max-width: 1360px;
+      margin: 0 auto;
+    }
+
+    header {
+      background-color: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 16px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      box-shadow: var(--shadow);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-badge {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      background: #0284c7;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      font-weight: bold;
+    }
+
+    .brand-title {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+    }
+
+    .tag {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 6px;
+      border: 1px solid var(--border-color);
+      background-color: var(--inner-bg);
+      color: var(--text-sub);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .btn {
+      background-color: var(--inner-bg);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 6px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn:hover {
+      border-color: var(--border-hover);
+    }
+    .btn-primary {
+      background-color: #0284c7;
+      color: #fff;
+      border-color: #0284c7;
+    }
+    .btn-primary:hover {
+      background-color: #0369a1;
+    }
+    .btn-danger {
+      background-color: rgba(239, 68, 68, 0.15);
+      color: #ef4444;
+      border-color: rgba(239, 68, 68, 0.4);
+    }
+    .btn-danger:hover {
+      background-color: rgba(239, 68, 68, 0.3);
+    }
+
+    /* Overview Stats Row */
+    .overview-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .stat-card {
+      background-color: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      box-shadow: var(--shadow);
+    }
+
+    .stat-icon {
+      font-size: 24px;
+      width: 44px;
+      height: 44px;
+      background-color: var(--inner-bg);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .stat-content {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .stat-label {
+      font-size: 12px;
+      color: var(--text-sub);
+    }
+
+    .stat-val {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    /* Server Grid */
+    .server-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+      gap: 20px;
+    }
+
+    .card {
+      background-color: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+      transition: transform 0.15s ease, border-color 0.15s ease;
+    }
+
+    .card:hover {
+      border-color: var(--border-hover);
+      transform: translateY(-2px);
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 14px;
+    }
+
+    .server-name {
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .server-meta {
+      font-size: 12px;
+      color: var(--text-sub);
+      margin-top: 3px;
+    }
+
+    .status-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 6px;
+      text-transform: uppercase;
+    }
+
+    .status-online {
+      background-color: rgba(16, 185, 129, 0.15);
+      color: var(--online);
+      border: 1px solid rgba(16, 185, 129, 0.35);
+    }
+
+    .status-offline {
+      background-color: rgba(239, 68, 68, 0.15);
+      color: var(--offline);
+      border: 1px solid rgba(239, 68, 68, 0.35);
+    }
+
+    .metric-group {
+      margin-bottom: 12px;
+    }
+
+    .metric-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-sub);
+      margin-bottom: 5px;
+    }
+
+    .metric-value {
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .bar-track {
+      height: 7px;
+      background-color: var(--bar-bg);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.3s ease;
+    }
+
+    .net-box {
+      background-color: var(--inner-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 10px 12px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .net-col {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .net-title {
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    .net-speed {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .net-total {
+      font-size: 10px;
+      color: var(--text-sub);
+    }
+
+    .ping-section {
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .ping-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-sub);
+      margin-bottom: 8px;
+    }
+
+    .ping-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    .ping-badge {
+      background-color: var(--inner-bg);
+      border: 1px solid var(--border-color);
+      padding: 5px 8px;
+      border-radius: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+    }
+
+    .ping-name {
+      color: var(--text-sub);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 90px;
+    }
+
+    .ping-ms {
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+    .ping-ms-good { color: var(--ping-good); }
+    .ping-ms-medium { color: var(--ping-medium); }
+    .ping-ms-bad { color: var(--ping-bad); }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.6);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .modal-overlay.active {
+      display: flex;
+    }
+    .modal {
+      background: var(--modal-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      width: 90%;
+      max-width: 520px;
+      padding: 24px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .modal-title {
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .close-btn {
+      background: none;
+      border: none;
+      color: var(--text-sub);
+      font-size: 20px;
+      cursor: pointer;
+    }
+    .form-group {
+      margin-bottom: 14px;
+    }
+    .form-label {
+      display: block;
+      font-size: 13px;
+      color: var(--text-sub);
+      margin-bottom: 6px;
+    }
+    .form-input {
+      width: 100%;
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      background: var(--inner-bg);
+      color: var(--text-main);
+      font-size: 14px;
+    }
+    .target-list {
+      max-height: 200px;
+      overflow-y: auto;
+      margin-bottom: 16px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+    }
+    .target-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border-color);
+      font-size: 13px;
+    }
+    .target-item:last-child {
+      border-bottom: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="brand">
+        <div class="logo-badge">⚡</div>
+        <div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <h1 class="brand-title">VibeMonitor</h1>
+            <span class="tag">SQLite WAL</span>
+            <span class="tag" id="admin-indicator" style="display: none; background: rgba(16,185,129,0.15); color: #10b981; border-color: rgba(16,185,129,0.4);">
+              管理员: <strong id="admin-username-label">admin</strong>
+            </span>
+          </div>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button class="btn" id="admin-btn" onclick="openAdminModal()">
+          🔐 <span id="admin-btn-text">管理员登录</span>
+        </button>
+        <button class="btn" onclick="toggleTheme()">
+          🌓 <span>切换模式</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Overview Bar -->
+    <div class="overview-row">
+      <div class="stat-card">
+        <div class="stat-icon">🖥️</div>
+        <div class="stat-content">
+          <span class="stat-label">探针节点状态</span>
+          <span class="stat-val" id="stat-nodes">0 / 0 在线</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">⬇️</div>
+        <div class="stat-content">
+          <span class="stat-label">全网下行总速率</span>
+          <span class="stat-val" id="stat-rx">0 B/s</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">⬆️</div>
+        <div class="stat-content">
+          <span class="stat-label">全网上行总速率</span>
+          <span class="stat-val" id="stat-tx">0 B/s</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">🌐</div>
+        <div class="stat-content">
+          <span class="stat-label">全网累计总流量</span>
+          <span class="stat-val" id="stat-total">0 B</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Server Grid -->
+    <main class="server-grid" id="grid">
+      <div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--text-sub);">
+        正在加载监控节点...
+      </div>
+    </main>
+  </div>
+
+  <!-- Admin Login Modal (Single Admin Account) -->
+  <div class="modal-overlay" id="login-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 class="modal-title">🔐 管理员登录 (唯一账号)</h3>
+        <button class="close-btn" onclick="closeModal('login-modal')">&times;</button>
+      </div>
+      <div class="form-group">
+        <label class="form-label">管理员用户名</label>
+        <input type="text" class="form-input" id="admin-user-input" placeholder="默认: admin (VIBEMONITOR_ADMIN_USER)">
+      </div>
+      <div class="form-group">
+        <label class="form-label">管理员密码</label>
+        <input type="password" class="form-input" id="admin-pwd-input" placeholder="默认: admin123 (VIBEMONITOR_ADMIN_PASSWORD)">
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button class="btn" onclick="closeModal('login-modal')">取消</button>
+        <button class="btn btn-primary" onclick="submitLogin()">确认登录</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Admin Panel Modal -->
+  <div class="modal-overlay" id="panel-modal">
+    <div class="modal" style="max-width: 620px;">
+      <div class="modal-header">
+        <h3 class="modal-title">⚙️ 控制台 (管理员: <span id="panel-user-label" style="color: #0284c7;">admin</span>)</h3>
+        <button class="close-btn" onclick="closeModal('panel-modal')">&times;</button>
+      </div>
+
+      <div style="margin-bottom: 18px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <h4 style="font-size: 14px; color: var(--text-main);">📶 TCP Ping 测速目标配置</h4>
+          <span style="font-size: 11px; color: var(--text-dim);">所有探针将自动测速并在首页展示</span>
+        </div>
+        <div class="target-list" id="modal-target-list"></div>
+        <div style="display: flex; gap: 8px;">
+          <input type="text" class="form-input" id="new-target-name" placeholder="目标名称 (如: 香港CN2)" style="flex: 1;">
+          <input type="text" class="form-input" id="new-target-addr" placeholder="IP:端口 (如: 1.2.3.4:80)" style="flex: 1.2;">
+          <button class="btn btn-primary" onclick="addPingTarget()">添加</button>
+        </div>
+      </div>
+
+      <div style="border-top: 1px solid var(--border-color); padding-top: 14px; display: flex; justify-content: space-between; align-items: center;">
+        <button class="btn btn-danger" onclick="logoutAdmin()">退出管理员</button>
+        <button class="btn" onclick="closeModal('panel-modal')">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let adminUser = localStorage.getItem('vibemonitor_admin_user') || '';
+    let adminPassword = localStorage.getItem('vibemonitor_admin_pwd') || '';
+
+    function checkAdminState() {
+      const indicator = document.getElementById('admin-indicator');
+      const btnText = document.getElementById('admin-btn-text');
+      const userLabel = document.getElementById('admin-username-label');
+      const panelUserLabel = document.getElementById('panel-user-label');
+
+      if (adminUser && adminPassword) {
+        indicator.style.display = 'inline-block';
+        userLabel.textContent = adminUser;
+        panelUserLabel.textContent = adminUser;
+        btnText.textContent = '管理控制台';
+      } else {
+        indicator.style.display = 'none';
+        btnText.textContent = '管理员登录';
+      }
+    }
+
+    function openAdminModal() {
+      if (adminUser && adminPassword) {
+        loadPingTargets();
+        document.getElementById('panel-modal').classList.add('active');
+      } else {
+        document.getElementById('login-modal').classList.add('active');
+      }
+    }
+
+    function closeModal(id) {
+      document.getElementById(id).classList.remove('active');
+    }
+
+    async function submitLogin() {
+      const username = document.getElementById('admin-user-input').value.trim() || 'admin';
+      const password = document.getElementById('admin-pwd-input').value;
+      if (!password) {
+        alert('请输入管理员密码');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/admin/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        if (res.ok) {
+          adminUser = username;
+          adminPassword = password;
+          localStorage.setItem('vibemonitor_admin_user', username);
+          localStorage.setItem('vibemonitor_admin_pwd', password);
+          closeModal('login-modal');
+          checkAdminState();
+          openAdminModal();
+        } else {
+          alert('登录失败：账号或密码错误，请核对服务端环境变量');
+        }
+      } catch (e) {
+        alert('登录请求失败: ' + e);
+      }
+    }
+
+    function logoutAdmin() {
+      adminUser = '';
+      adminPassword = '';
+      localStorage.removeItem('vibemonitor_admin_user');
+      localStorage.removeItem('vibemonitor_admin_pwd');
+      checkAdminState();
+      closeModal('panel-modal');
+      pollStatus();
+    }
+
+    async function loadPingTargets() {
+      try {
+        const res = await fetch('/api/ping-targets');
+        const list = await res.json();
+        const container = document.getElementById('modal-target-list');
+        if (!list || list.length === 0) {
+          container.innerHTML = '<div style="padding: 12px; text-align: center; color: var(--text-sub);">暂无测速目标，请添加</div>';
+          return;
+        }
+        container.innerHTML = list.map(t => `
+          <div class="target-item">
+            <div><strong>${t.name}</strong> <span style="color: var(--text-dim); margin-left: 6px;">(${t.address})</span></div>
+            <button class="btn btn-danger" style="padding: 2px 8px; font-size: 11px;" onclick="deletePingTarget(${t.id})">删除</button>
+          </div>
+        `).join('');
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function addPingTarget() {
+      const name = document.getElementById('new-target-name').value.trim();
+      const address = document.getElementById('new-target-addr').value.trim();
+      if (!name || !address) {
+        alert('请填写目标名称与 IP:端口 (例如 1.2.3.4:80)');
+        return;
+      }
+      try {
+        const res = await fetch('/api/admin/ping-targets', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Admin-User': adminUser,
+            'X-Admin-Password': adminPassword
+          },
+          body: JSON.stringify({ name, address })
+        });
+        if (res.ok) {
+          document.getElementById('new-target-name').value = '';
+          document.getElementById('new-target-addr').value = '';
+          loadPingTargets();
+        } else {
+          alert('添加失败，权限不足');
+        }
+      } catch (e) {
+        alert('请求失败: ' + e);
+      }
+    }
+
+    async function deletePingTarget(id) {
+      if (!confirm('确认删除该测速目标？所有探针将停止对其测速。')) return;
+      try {
+        const res = await fetch(`/api/admin/ping-targets/${id}`, {
+          method: 'DELETE',
+          headers: {
+            'X-Admin-User': adminUser,
+            'X-Admin-Password': adminPassword
+          }
+        });
+        if (res.ok) loadPingTargets();
+      } catch (e) {}
+    }
+
+    async function deleteNode(id) {
+      if (!confirm(`确定要从数据库中删除节点 ${id} 吗？`)) return;
+      try {
+        const res = await fetch(`/api/admin/nodes/${encodeURIComponent(id)}`, {
+          method: 'DELETE',
+          headers: {
+            'X-Admin-User': adminUser,
+            'X-Admin-Password': adminPassword
+          }
+        });
+        if (res.ok) pollStatus();
+      } catch (e) {}
+    }
+
+    function toggleTheme() {
+      const html = document.documentElement;
+      const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      html.setAttribute('data-theme', next);
+      localStorage.setItem('vibemonitor_theme', next);
+    }
+    const savedTheme = localStorage.getItem('vibemonitor_theme');
+    if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
+
+    function fmtBytes(b) {
+      if (!b) return '0 B';
+      const k = 1024, s = ['B','KB','MB','GB','TB','PB'];
+      const i = Math.floor(Math.log(b) / Math.log(k));
+      return (b / Math.pow(k, i)).toFixed(1) + ' ' + s[i];
+    }
+    function fmtSpeed(b) { return fmtBytes(b) + '/s'; }
+    function fmtUptime(s) {
+      const d = Math.floor(s/86400), h = Math.floor((s%86400)/3600), m = Math.floor((s%3600)/60);
+      return d > 0 ? `${d}天 ${h}小时` : `${h}小时 ${m}分`;
+    }
+
+    async function pollStatus() {
+      try {
+        const res = await fetch('/api/nodes');
+        if (!res.ok) return;
+        const nodes = await res.json();
+        renderDashboard(nodes);
+      } catch (e) {}
+    }
+
+    function renderDashboard(nodes) {
+      const grid = document.getElementById('grid');
+      const statNodes = document.getElementById('stat-nodes');
+      const statRx = document.getElementById('stat-rx');
+      const statTx = document.getElementById('stat-tx');
+      const statTotal = document.getElementById('stat-total');
+
+      if (!nodes || nodes.length === 0) {
+        grid.innerHTML = `
+          <div style="grid-column: 1 / -1; background-color: var(--card-bg); border: 1px dashed var(--border-color); border-radius: 12px; padding: 50px 20px; text-align: center; color: var(--text-sub);">
+            <h3 style="margin-bottom: 8px; font-size: 16px; color: var(--text-main);">暂无探针连接</h3>
+            <p>启动 VibeMonitor Agent 后，节点数据将自动上报并展示在此处。</p>
+          </div>
+        `;
+        statNodes.textContent = '0 / 0 在线';
+        statRx.textContent = '0 B/s';
+        statTx.textContent = '0 B/s';
+        statTotal.textContent = '0 B';
+        return;
+      }
+
+      const onlineCount = nodes.filter(n => n.is_online).length;
+      statNodes.textContent = `${onlineCount} / ${nodes.length} 在线`;
+
+      let totalRxBps = 0, totalTxBps = 0, totalTraffic = 0;
+      for (const n of nodes) {
+        totalRxBps += (n.net_rx_bps || 0);
+        totalTxBps += (n.net_tx_bps || 0);
+        totalTraffic += ((n.net_rx_total || 0) + (n.net_tx_total || 0));
+      }
+      statRx.textContent = fmtSpeed(totalRxBps);
+      statTx.textContent = fmtSpeed(totalTxBps);
+      statTotal.textContent = fmtBytes(totalTraffic);
+
+      grid.innerHTML = nodes.map(n => {
+        const cpu = Math.min(100, Math.max(0, n.cpu_usage)).toFixed(1);
+        const mem = n.memory_total > 0 ? ((n.memory_used / n.memory_total) * 100).toFixed(1) : 0;
+        const disk = n.disk_total > 0 ? ((n.disk_used / n.disk_total) * 100).toFixed(1) : 0;
+        const isOnline = n.is_online;
+
+        const pingItems = (n.pings || []).map(p => {
+          let badgeClass = 'ping-ms-bad';
+          let text = '超时';
+          if (p.latency_ms !== null && p.latency_ms !== undefined) {
+            text = `${p.latency_ms}ms`;
+            if (p.latency_ms < 70) badgeClass = 'ping-ms-good';
+            else if (p.latency_ms < 160) badgeClass = 'ping-ms-medium';
+          }
+          return `
+            <div class="ping-badge" title="${p.target}">
+              <span class="ping-name">${p.name}</span>
+              <span class="ping-ms ${badgeClass}">${text}</span>
+            </div>
+          `;
+        }).join('');
+
+        return `
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="server-name">🖥️ ${n.hostname || n.id}</div>
+                <div class="server-meta">${n.os_name || 'Linux'} (${n.arch}) | 运行 ${fmtUptime(n.uptime_secs)}</div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span class="status-badge ${isOnline ? 'status-online' : 'status-offline'}">
+                  ${isOnline ? '在线' : '离线'}
+                </span>
+                ${adminUser && adminPassword && !isOnline ? `<button class="btn btn-danger" style="padding: 2px 6px; font-size: 10px;" onclick="deleteNode('${n.id}')">删除</button>` : ''}
+              </div>
+            </div>
+
+            <!-- CPU -->
+            <div class="metric-group">
+              <div class="metric-header">
+                <span>CPU (${n.cpu_cores}核)</span>
+                <span class="metric-value">${cpu}%</span>
+              </div>
+              <div class="bar-track">
+                <div class="bar-fill" style="width: ${cpu}%; background-color: var(--bar-cpu);"></div>
+              </div>
+            </div>
+
+            <!-- Memory -->
+            <div class="metric-group">
+              <div class="metric-header">
+                <span>内存 (${fmtBytes(n.memory_used)} / ${fmtBytes(n.memory_total)})</span>
+                <span class="metric-value">${mem}%</span>
+              </div>
+              <div class="bar-track">
+                <div class="bar-fill" style="width: ${mem}%; background-color: var(--bar-mem);"></div>
+              </div>
+            </div>
+
+            <!-- Disk -->
+            <div class="metric-group">
+              <div class="metric-header">
+                <span>磁盘 (${fmtBytes(n.disk_used)} / ${fmtBytes(n.disk_total)})</span>
+                <span class="metric-value">${disk}%</span>
+              </div>
+              <div class="bar-track">
+                <div class="bar-fill" style="width: ${disk}%; background-color: var(--bar-disk);"></div>
+              </div>
+            </div>
+
+            <!-- Network Traffic -->
+            <div class="net-box">
+              <div class="net-col">
+                <span class="net-title">↓ 下行速率</span>
+                <span class="net-speed">${fmtSpeed(n.net_rx_bps)}</span>
+                <span class="net-total">累计 ${fmtBytes(n.net_rx_total)}</span>
+              </div>
+              <div class="net-col">
+                <span class="net-title">↑ 上行速率</span>
+                <span class="net-speed">${fmtSpeed(n.net_tx_bps)}</span>
+                <span class="net-total">累计 ${fmtBytes(n.net_tx_total)}</span>
+              </div>
+            </div>
+
+            <!-- TCP Ping Monitor -->
+            ${pingItems ? `
+              <div class="ping-section">
+                <div class="ping-title">📶 TCP 延迟监控</div>
+                <div class="ping-grid">
+                  ${pingItems}
+                </div>
+              </div>
+            ` : ''}
+          </div>
+        `;
+      }).join('');
+    }
+
+    checkAdminState();
+    pollStatus();
+    setInterval(pollStatus, 2000);
+  </script>
+</body>
+</html>
