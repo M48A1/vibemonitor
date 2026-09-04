@@ -31,7 +31,7 @@ type Options struct {
 
 func New(opts Options) (*Server, error) {
 	if opts.ListenAddr == "" {
-		opts.ListenAddr = "0.0.0.0:25774"
+		opts.ListenAddr = "0.0.0.0:1314"
 	}
 	if opts.DataFile == "" {
 		opts.DataFile = "vibemonitor-data.json"
@@ -105,9 +105,28 @@ func (s *Server) Handler() http.Handler {
 		})
 	})
 
-	// 2. Public Nodes Info
+	// 2. Public Nodes Info & Ping History
 	mux.HandleFunc("GET /api/nodes", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, s.store.GetNodes())
+	})
+
+	mux.HandleFunc("GET /api/nodes/ping-history", func(w http.ResponseWriter, r *http.Request) {
+		uuid := r.URL.Query().Get("uuid")
+		target := r.URL.Query().Get("target")
+		timeRange := r.URL.Query().Get("range")
+		if timeRange == "" {
+			timeRange = "1h"
+		}
+		if uuid == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "missing uuid parameter"})
+			return
+		}
+		resp, err := s.store.GetPingHistory(uuid, target, timeRange)
+		if err != nil {
+			writeJSON(w, http.StatusNotFound, map[string]any{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, resp)
 	})
 
 	// 3. WebSocket Clients endpoint

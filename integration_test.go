@@ -8,9 +8,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"vibemonitor/internal/server"
+	"vibemonitor/internal/store"
 	"vibemonitor/pkg/protocol"
 )
 
@@ -32,7 +34,7 @@ func TestFullWorkflow(t *testing.T) {
 	adminPass := "adminSecret123"
 
 	srv, err := server.New(server.Options{
-		ListenAddr:    "127.0.0.1:25774",
+		ListenAddr:    "127.0.0.1:1314",
 		DataFile:      dataFile,
 		AdminPassword: adminPass,
 	})
@@ -44,7 +46,7 @@ func TestFullWorkflow(t *testing.T) {
 		Transport: &memoryTransport{handler: srv.Handler()},
 	}
 
-	baseURL := "http://127.0.0.1:25774"
+	baseURL := "http://127.0.0.1:1314"
 
 	// 1. Test /ping
 	resp, err := client.Get(baseURL + "/ping")
@@ -229,6 +231,36 @@ func TestFullWorkflow(t *testing.T) {
 		t.Fatalf("Expected 1 ping_result in last_report, got %v", lastRep["ping_results"])
 	}
 	t.Log("[PASS] Node verified online with correct metrics & ping_results in /api/nodes")
+
+	// 7b. Verify /api/nodes/ping-history and JSON file persistence
+	resp, err = client.Get(baseURL + "/api/nodes/ping-history?uuid=" + nodeUUID + "&target=%E4%B8%8A%E6%B5%B7%E7%94%B5%E4%BF%A1&range=1h")
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("Failed to fetch ping history: %v, status: %d", err, resp.StatusCode)
+	}
+	var pingHist store.PingHistoryResponse
+	_ = json.NewDecoder(resp.Body).Decode(&pingHist)
+	resp.Body.Close()
+
+	if len(pingHist.Samples) != 1 {
+		t.Fatalf("Expected 1 ping sample in history, got %d", len(pingHist.Samples))
+	}
+	if pingHist.Samples[0].Latency != 38 {
+		t.Fatalf("Expected latency 38, got %d", pingHist.Samples[0].Latency)
+	}
+	if pingHist.Stats.Current != 38 || pingHist.Stats.Min != 38 || pingHist.Stats.Max != 38 {
+		t.Fatalf("Incorrect ping stats: %+v", pingHist.Stats)
+	}
+	t.Log("[PASS] /api/nodes/ping-history verified successfully")
+
+	// Verify persistence in JSON file on disk
+	diskData, err := os.ReadFile(dataFile)
+	if err != nil {
+		t.Fatalf("Failed to read JSON data file from disk: %v", err)
+	}
+	if !strings.Contains(string(diskData), "ping_history") || !strings.Contains(string(diskData), "上海电信") {
+		t.Fatalf("JSON data file on disk missing persistent ping_history: %s", string(diskData))
+	}
+	t.Log("[PASS] Ping history verified successfully persisted in JSON file on disk")
 
 	// 8. Test /install.sh
 	resp, err = client.Get(baseURL + "/install.sh?token=" + nodeToken)

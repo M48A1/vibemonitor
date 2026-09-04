@@ -639,6 +639,129 @@ body {
   user-select: all;
 }
 
+/* Ping Latency Fluctuation Modal */
+.modal-lg {
+  max-width: 760px;
+}
+
+.ping-pill {
+  cursor: pointer;
+  transition: transform 0.12s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.ping-pill:hover {
+  transform: translateY(-1px);
+  border-color: var(--primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.time-range-group {
+  display: inline-flex;
+  background: var(--control-bg);
+  padding: 3px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.range-btn {
+  background: transparent;
+  border: none;
+  color: var(--muted-foreground);
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.range-btn:hover {
+  color: var(--foreground);
+}
+.range-btn.active {
+  background: var(--primary);
+  color: #ffffff;
+}
+
+.target-pill-btn {
+  background: var(--control-bg);
+  border: 1px solid var(--border);
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.target-pill-btn:hover {
+  border-color: var(--primary);
+}
+.target-pill-btn.active {
+  background: var(--primary);
+  color: #ffffff;
+  border-color: var(--primary);
+}
+
+.ping-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+}
+@media (max-width: 600px) {
+  .ping-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.ping-stat-card {
+  background: var(--control-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  text-align: center;
+}
+.ping-stat-label {
+  font-size: 11px;
+  color: var(--muted-foreground);
+  margin-bottom: 4px;
+}
+.ping-stat-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--foreground);
+}
+
+.ping-chart-container {
+  position: relative;
+  width: 100%;
+  height: 240px;
+  background: var(--control-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+#pingChartSvg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.chart-tooltip {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: rgba(15, 23, 42, 0.9);
+  color: #f8fafc;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  pointer-events: none;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  z-index: 10;
+}
+
 @media (max-width: 768px) {
   .container {
     padding: 16px 16px 40px;

@@ -336,7 +336,7 @@ function renderNodes() {
         <div class="node-ping-section">
           <div class="ping-header">
             <span>📶 延迟监测</span>
-            <span>${report.ping_results.length} 个目标</span>
+            <span style="cursor: pointer; color: var(--primary); font-size: 11px;" onclick="openPingChart('${node.uuid}', '${escapeHtml(node.name)}', '${escapeHtml(report.ping_results[0].name)}')">📈 波动图 ›</span>
           </div>
           <div class="ping-badges">
             ${report.ping_results.map(p => {
@@ -351,7 +351,7 @@ function renderNodes() {
                 pillClass = 'warn';
               }
               return `
-                <div class="ping-pill ${pillClass}" title="${escapeHtml(p.host)}">
+                <div class="ping-pill ${pillClass}" title="${escapeHtml(p.host)} (点击查看 1h/24h 波动曲线)" onclick="openPingChart('${node.uuid}', '${escapeHtml(node.name)}', '${escapeHtml(p.name)}')">
                   <span class="ping-dot"></span>
                   <span>${escapeHtml(p.name)}:</span>
                   <span>${text}</span>
@@ -682,6 +682,270 @@ document.getElementById('searchInput').addEventListener('input', (e) => {
   searchQuery = e.target.value;
   renderNodes();
 });
+
+// --- Ping Fluctuation Chart State & Logic ---
+let currentPingNodeUUID = null;
+let currentPingNodeName = '';
+let currentPingTarget = '';
+let currentPingRange = '1h';
+let cachedPingSamples = [];
+
+window.openPingChart = function(uuid, nodeName, targetName) {
+  currentPingNodeUUID = uuid;
+  currentPingNodeName = nodeName;
+  currentPingTarget = targetName || '';
+  currentPingRange = '1h';
+
+  document.getElementById('btnRange1h').classList.add('active');
+  document.getElementById('btnRange24h').classList.remove('active');
+
+  // Render Target selector buttons
+  const node = nodes.find(n => n.uuid === uuid);
+  const selector = document.getElementById('pingTargetSelector');
+  selector.innerHTML = '';
+  if (node && node.last_report && node.last_report.ping_results && node.last_report.ping_results.length > 0) {
+    if (!currentPingTarget) {
+      currentPingTarget = node.last_report.ping_results[0].name;
+    }
+    node.last_report.ping_results.forEach(pr => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `target-pill-btn ${pr.name === currentPingTarget ? 'active' : ''}`;
+      btn.textContent = pr.name;
+      btn.onclick = () => switchPingTarget(pr.name);
+      selector.appendChild(btn);
+    });
+  }
+
+  updatePingModalHeader();
+  openModal('pingChartModal');
+  loadPingHistory();
+};
+
+function updatePingModalHeader() {
+  document.getElementById('pingModalTitle').textContent = `${currentPingNodeName} 延迟波动曲线`;
+  document.getElementById('pingModalSubtitle').textContent = `目标: ${currentPingTarget || '全部'}`;
+}
+
+window.switchPingTarget = function(targetName) {
+  currentPingTarget = targetName;
+  const buttons = document.querySelectorAll('#pingTargetSelector .target-pill-btn');
+  buttons.forEach(b => {
+    if (b.textContent === targetName) b.classList.add('active');
+    else b.classList.remove('active');
+  });
+  updatePingModalHeader();
+  loadPingHistory();
+};
+
+window.switchPingRange = function(range) {
+  currentPingRange = range;
+  if (range === '1h') {
+    document.getElementById('btnRange1h').classList.add('active');
+    document.getElementById('btnRange24h').classList.remove('active');
+  } else {
+    document.getElementById('btnRange1h').classList.remove('active');
+    document.getElementById('btnRange24h').classList.add('active');
+  }
+  loadPingHistory();
+};
+
+async function loadPingHistory() {
+  if (!currentPingNodeUUID) return;
+  const statCur = document.getElementById('statCurrent');
+  const statAvg = document.getElementById('statAvg');
+  const statMin = document.getElementById('statMin');
+  const statMax = document.getElementById('statMax');
+  const statLoss = document.getElementById('statLoss');
+
+  statCur.textContent = '...';
+  statAvg.textContent = '...';
+  statMin.textContent = '...';
+  statMax.textContent = '...';
+  statLoss.textContent = '...';
+
+  try {
+    const res = await fetch(`/api/nodes/ping-history?uuid=${currentPingNodeUUID}&target=${encodeURIComponent(currentPingTarget)}&range=${currentPingRange}`);
+    if (!res.ok) throw new Error('加载失败');
+    const data = await res.json();
+
+    if (data.host) {
+      document.getElementById('pingModalSubtitle').textContent = `目标: ${data.target} (${data.host})`;
+    }
+
+    // Stats
+    const s = data.stats || {};
+    statCur.textContent = s.current >= 0 ? `${s.current}ms` : (s.total_count > 0 ? '超时' : '--');
+    statCur.style.color = s.current < 0 ? 'var(--destructive)' : s.current > 150 ? 'var(--warning)' : 'var(--success)';
+    statAvg.textContent = s.avg > 0 ? `${s.avg}ms` : '--';
+    statMin.textContent = s.min >= 0 ? `${s.min}ms` : '--';
+    statMax.textContent = s.max >= 0 ? `${s.max}ms` : '--';
+    statLoss.textContent = `${s.packet_loss || 0}%`;
+    statLoss.style.color = (s.packet_loss > 0) ? 'var(--destructive)' : 'var(--success)';
+
+    cachedPingSamples = data.samples || [];
+
+    // Time indicators
+    if (cachedPingSamples.length > 0) {
+      const firstT = new Date(cachedPingSamples[0].t * 1000);
+      document.getElementById('chartTimeStart').textContent = firstT.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const lastT = new Date(cachedPingSamples[cachedPingSamples.length - 1].t * 1000);
+      document.getElementById('chartTimeEnd').textContent = lastT.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } else {
+      document.getElementById('chartTimeStart').textContent = currentPingRange === '1h' ? '1小时前' : '24小时前';
+      document.getElementById('chartTimeEnd').textContent = '现在';
+    }
+
+    renderPingSvgChart(cachedPingSamples, currentPingRange);
+  } catch (e) {
+    renderPingSvgChart([], currentPingRange, e.message);
+  }
+}
+
+function renderPingSvgChart(samples, range, errorMsg) {
+  const svg = document.getElementById('pingChartSvg');
+  const tooltip = document.getElementById('chartTooltip');
+  if (tooltip) tooltip.style.display = 'none';
+
+  const W = 700;
+  const H = 240;
+  const padL = 48;
+  const padR = 20;
+  const padT = 24;
+  const padB = 32;
+  const plotW = W - padL - padR;
+  const plotH = H - padT - padB;
+
+  if (errorMsg || !samples || samples.length === 0) {
+    svg.innerHTML = `
+      <text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="#94a3b8" font-size="13" font-family="system-ui">
+        ${errorMsg ? '获取数据失败: ' + errorMsg : '暂无历史时序数据，探针正在每 60 秒记录持久化中...'}
+      </text>
+    `;
+    return;
+  }
+
+  // Find max latency for Y scale
+  let maxLat = 50;
+  samples.forEach(s => {
+    if (s.l > maxLat) maxLat = s.l;
+  });
+  maxLat = Math.ceil(maxLat * 1.25 / 10) * 10;
+  if (maxLat < 50) maxLat = 50;
+
+  // Grid steps (4 horizontal lines)
+  const gridSteps = 4;
+  let gridSvg = '';
+  for (let i = 0; i <= gridSteps; i++) {
+    const val = Math.round((maxLat / gridSteps) * i);
+    const y = padT + plotH - (val / maxLat) * plotH;
+    gridSvg += `
+      <line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="#334155" stroke-width="1" stroke-dasharray="3,3" opacity="0.4" />
+      <text x="${padL - 8}" y="${y + 4}" text-anchor="end" fill="#64748b" font-size="11" font-family="system-ui">${val}ms</text>
+    `;
+  }
+
+  // Calculate coordinates for points
+  const points = samples.map((s, idx) => {
+    const x = samples.length === 1 ? (padL + plotW / 2) : (padL + (idx / (samples.length - 1)) * plotW);
+    const isLoss = s.l < 0;
+    const y = isLoss ? (padT + plotH) : (padT + plotH - (s.l / maxLat) * plotH);
+    return { x, y, l: s.l, t: s.t, isLoss };
+  });
+
+  // Build SVG path
+  let pathD = '';
+  let areaD = '';
+  let lossDots = '';
+  let hasValid = false;
+
+  points.forEach((pt, i) => {
+    if (i === 0) {
+      pathD += `M ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`;
+      areaD += `M ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`;
+    } else {
+      pathD += ` L ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`;
+      areaD += ` L ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`;
+    }
+    if (pt.isLoss) {
+      lossDots += `<circle cx="${pt.x.toFixed(1)}" cy="${pt.y.toFixed(1)}" r="4" fill="#f43f5e" />`;
+    } else {
+      hasValid = true;
+    }
+  });
+
+  const lastPt = points[points.length - 1];
+  const firstPt = points[0];
+  areaD += ` L ${lastPt.x.toFixed(1)} ${padT + plotH} L ${firstPt.x.toFixed(1)} ${padT + plotH} Z`;
+
+  const lineColor = hasValid ? '#06b6d4' : '#f43f5e';
+  const gradId = 'pingGrad_' + Math.random().toString(36).substr(2, 6);
+
+  svg.innerHTML = `
+    <defs>
+      <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="${lineColor}" stop-opacity="0.35" />
+        <stop offset="100%" stop-color="${lineColor}" stop-opacity="0.0" />
+      </linearGradient>
+    </defs>
+    ${gridSvg}
+    <path d="${areaD}" fill="url(#${gradId})" />
+    <path d="${pathD}" fill="none" stroke="${lineColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+    ${lossDots}
+    <line id="hoverLine" x1="0" y1="${padT}" x2="0" y2="${padT + plotH}" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="2,2" style="display: none;" />
+    <circle id="hoverPoint" cx="0" cy="0" r="4.5" fill="#38bdf8" stroke="#ffffff" stroke-width="2" style="display: none;" />
+    <rect x="${padL}" y="${padT}" width="${plotW}" height="${plotH}" fill="transparent" id="chartHitBox" style="cursor: crosshair;" />
+  `;
+
+  // Interactive mouse tracking
+  const hitBox = svg.querySelector('#chartHitBox');
+  const hoverLine = svg.querySelector('#hoverLine');
+  const hoverPoint = svg.querySelector('#hoverPoint');
+
+  hitBox.addEventListener('mousemove', (e) => {
+    const rect = svg.getBoundingClientRect();
+    const mouseX = (e.clientX - rect.left) / rect.width * W;
+    if (mouseX < padL || mouseX > W - padR) {
+      hoverLine.style.display = 'none';
+      hoverPoint.style.display = 'none';
+      if (tooltip) tooltip.style.display = 'none';
+      return;
+    }
+
+    let closest = points[0];
+    let minDiff = Infinity;
+    points.forEach(pt => {
+      const diff = Math.abs(pt.x - mouseX);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closest = pt;
+      }
+    });
+
+    hoverLine.setAttribute('x1', closest.x);
+    hoverLine.setAttribute('x2', closest.x);
+    hoverLine.style.display = 'block';
+
+    hoverPoint.setAttribute('cx', closest.x);
+    hoverPoint.setAttribute('cy', closest.y);
+    hoverPoint.setAttribute('fill', closest.isLoss ? '#f43f5e' : '#38bdf8');
+    hoverPoint.style.display = 'block';
+
+    if (tooltip) {
+      const tDate = new Date(closest.t * 1000);
+      const timeStr = tDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const valStr = closest.isLoss ? `<strong style="color: #f43f5e;">丢包 (超时)</strong>` : `延迟: <strong>${closest.l} ms</strong>`;
+      tooltip.innerHTML = `<div>${timeStr}</div><div>${valStr}</div>`;
+      tooltip.style.display = 'block';
+    }
+  });
+
+  hitBox.addEventListener('mouseleave', () => {
+    hoverLine.style.display = 'none';
+    hoverPoint.style.display = 'none';
+    if (tooltip) tooltip.style.display = 'none';
+  });
+}
 
 // Initialize
 checkAdminAuth();

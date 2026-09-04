@@ -35,27 +35,27 @@ Commands:
   help      Show this help message
 
 Server Options:
-  --listen, -l            Address to listen on (default: 0.0.0.0:25774, env: VIBEMONITOR_LISTEN)
+  --listen, -l            Address to listen on (default: 0.0.0.0:1314, env: VIBEMONITOR_LISTEN)
   --data, -d              Path to data storage file (default: vibemonitor-data.json, env: VIBEMONITOR_DATA)
   --admin-password, -p    Admin password (single admin mode, env: VIBEMONITOR_ADMIN_PASSWORD)
 
 Agent Options:
-  --server, -s            VibeMonitor server URL (required, e.g. http://127.0.0.1:25774, env: VIBEMONITOR_SERVER)
+  --server, -s            VibeMonitor server URL (required, e.g. http://127.0.0.1:1314, env: VIBEMONITOR_SERVER)
   --token, -t             Client communication token (required, env: VIBEMONITOR_TOKEN)
   --interval, -i          Metrics reporting interval (default: 3s, env: VIBEMONITOR_INTERVAL)
 
 Examples:
   # Start server
-  vibemonitor server --listen 0.0.0.0:25774
+  vibemonitor server --listen 0.0.0.0:1314
 
   # Start agent probe
-  vibemonitor agent --server http://1.2.3.4:25774 --token YOUR_TOKEN
+  vibemonitor agent --server http://1.2.3.4:1314 --token YOUR_TOKEN
 `, Version)
 }
 
 func runServer(args []string) {
 	fs := flag.NewFlagSet("server", flag.ExitOnError)
-	listen := fs.String("listen", getEnv("VIBEMONITOR_LISTEN", "0.0.0.0:25774"), "Address to listen on")
+	listen := fs.String("listen", getEnv("VIBEMONITOR_LISTEN", "0.0.0.0:1314"), "Address to listen on")
 	fs.StringVar(listen, "l", *listen, "Address to listen on (shorthand)")
 	data := fs.String("data", getEnv("VIBEMONITOR_DATA", "vibemonitor-data.json"), "Path to data file")
 	fs.StringVar(data, "d", *data, "Path to data file (shorthand)")
