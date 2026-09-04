@@ -1,0 +1,8 @@
+vibemonitor
+vibemonitor-*
+*.exe
+*.tmp
+*.json
+!data/
+*.log
+/dist/
