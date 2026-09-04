@@ -55,7 +55,7 @@
 直接下载或编译二进制，一条命令即可启动：
 
 ```bash
-# 启动服务端（默认监听 0.0.0.0:25774）
+# 启动服务端（默认监听 0.0.0.0:1314）
 ./vibemonitor server
 ```
 
@@ -66,11 +66,11 @@
 >  Please save this password to login to the dashboard!
 > =====================================================
 > ```
-> 可以在浏览器打开 `http://你的IP:25774`，点击右上角 **⚙️ 管理** 输入该密码进入管理面板。
+> 可以在浏览器打开 `http://你的IP:1314`，点击右上角 **⚙️ 管理** 输入该密码进入管理面板。
 
 你也可以在启动时自定义密码与监听端口：
 ```bash
-./vibemonitor server --listen 0.0.0.0:25774 --admin-password "YourPassword123"
+./vibemonitor server --listen 0.0.0.0:1314 --admin-password "YourPassword123"
 ```
 
 ---
@@ -84,44 +84,53 @@
 #### 方式 A：Linux VPS 一键命令 (推荐)
 在被监控的远程 Linux VPS 上，以 root 权限执行：
 ```bash
-curl -fsSL http://<你的主控IP>:25774/install.sh?token=<节点TOKEN> | bash
+curl -fsSL http://<你的主控IP>:1314/install.sh?token=<节点TOKEN> | bash
 ```
 > 该脚本会自动配置 Systemd 服务并开机自启后台常驻。
 
 #### 方式 B：单二进制直接运行
 ```bash
-./vibemonitor agent --server http://<你的主控IP>:25774 --token <节点TOKEN>
+./vibemonitor agent --server http://<你的主控IP>:1314 --token <节点TOKEN>
 ```
 
 ---
 
-## 🐳 Docker / Docker Compose 部署
+## 🛠️ Linux Systemd 后台常驻部署 (服务端)
 
-项目包含极简的多阶段 Dockerfile 与 Compose 配置：
+在 Linux 服务器上，推荐使用 Systemd 管理服务端守护进程：
 
 ```bash
-# 一键启动服务端
-docker compose up -d
-```
+# 1. 下载或移动二进制到系统目录
+sudo mv vibemonitor /usr/local/bin/vibemonitor
+sudo chmod +x /usr/local/bin/vibemonitor
 
-`docker-compose.yml` 示例：
-```yaml
-version: '3.8'
+# 2. 创建数据存储目录
+sudo mkdir -p /etc/vibemonitor
 
-services:
-  vibemonitor:
-    build: .
-    container_name: vibemonitor
-    restart: always
-    ports:
-      - "25774:25774"
-    volumes:
-      - ./data:/app/data
-    environment:
-      - VIBEMONITOR_LISTEN=0.0.0.0:25774
-      - VIBEMONITOR_DATA=/app/data/vibemonitor-data.json
-      # 可选：自定义固定管理员密码
-      # - VIBEMONITOR_ADMIN_PASSWORD=your_secure_password
+# 3. 创建 Systemd 服务文件
+sudo tee /etc/systemd/system/vibemonitor.service > /dev/null <<EOF
+[Unit]
+Description=VibeMonitor Master Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/etc/vibemonitor
+ExecStart=/usr/local/bin/vibemonitor server --listen 0.0.0.0:1314 --data /etc/vibemonitor/vibemonitor-data.json
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# 4. 启动并设置开机自启
+sudo systemctl daemon-reload
+sudo systemctl enable --now vibemonitor
+
+# 查看运行状态
+sudo systemctl status vibemonitor
 ```
 
 ---
@@ -130,7 +139,7 @@ services:
 
 | 参数 | 环境变量 | 默认值 | 作用说明 |
 | :--- | :--- | :--- | :--- |
-| `--listen`, `-l` | `VIBEMONITOR_LISTEN` | `0.0.0.0:25774` | 服务端监听地址与端口 |
+| `--listen`, `-l` | `VIBEMONITOR_LISTEN` | `0.0.0.0:1314` | 服务端监听地址与端口 |
 | `--data`, `-d` | `VIBEMONITOR_DATA` | `vibemonitor-data.json` | 本地数据持久化文件路径 |
 | `--admin-password`, `-p` | `VIBEMONITOR_ADMIN_PASSWORD` | *(自动生成)* | 管理员认证密码（单管理员） |
 | `--server`, `-s` | `VIBEMONITOR_SERVER` | 无 | (Agent 模式) 主控服务端地址 |

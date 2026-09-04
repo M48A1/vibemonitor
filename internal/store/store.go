@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -16,9 +17,34 @@ import (
 )
 
 const (
-	MaxHistoryPoints = 60
-	OfflineThreshold = 10 * time.Second
+	MaxHistoryPoints        = 60
+	OfflineThreshold        = 10 * time.Second
+	MaxPingSamplesPerTarget = 1440 // 24 hours at 60-second intervals
+	PingSampleIntervalSec   = 60   // Sample every 60 seconds
 )
+
+type PingSample struct {
+	Timestamp int64 `json:"t"` // Unix timestamp in seconds
+	Latency   int   `json:"l"` // ms, -1 for timeout
+}
+
+type PingStats struct {
+	Current    int     `json:"current"`
+	Avg        float64 `json:"avg"`
+	Min        int     `json:"min"`
+	Max        int     `json:"max"`
+	PacketLoss float64 `json:"packet_loss"` // Percentage, e.g. 0.0 - 100.0%
+	TotalCount int     `json:"total_count"`
+}
+
+type PingHistoryResponse struct {
+	UUID    string       `json:"uuid"`
+	Target  string       `json:"target"`
+	Host    string       `json:"host,omitempty"`
+	Range   string       `json:"range"` // "1h" or "24h"
+	Stats   PingStats    `json:"stats"`
+	Samples []PingSample `json:"samples"`
+}
 
 type HistoryPoint struct {
 	Timestamp int64   `json:"timestamp"`
@@ -42,6 +68,9 @@ type Node struct {
 	BasicInfo   *protocol.BasicInfo  `json:"basic_info,omitempty"`
 	LastReport  *protocol.Report     `json:"last_report,omitempty"`
 	History     []HistoryPoint       `json:"history,omitempty"`
+
+	// 60-second Ping Latency History (TargetName -> []PingSample, persisted in JSON)
+	PingHistory map[string][]PingSample `json:"ping_history,omitempty"`
 
 	// Traffic Billing Quota (sum mode: up + down)
 	TrafficLimit     int64     `json:"traffic_limit"`      // Bytes, 0 = no limit
@@ -329,6 +358,7 @@ func (s *Store) GetNodes() []*Node {
 	list := make([]*Node, 0, len(s.nodes))
 	for _, n := range s.nodes {
 		nodeCopy := *n
+		nodeCopy.PingHistory = nil // Kept compact for dashboard list
 		nodeCopy.calculateDynamicFields(now)
 		list = append(list, &nodeCopy)
 	}
@@ -585,6 +615,124 @@ func (s *Store) IngestReport(tokenOrUUID string, report protocol.Report, clientI
 		node.History = append(node.History, hp)
 	}
 
+	// Record 60-second interval Ping samples into PingHistory (persisted in JSON)
+	if len(report.PingResults) > 0 {
+		if node.PingHistory == nil {
+			node.PingHistory = make(map[string][]PingSample)
+		}
+		nowUnix := time.Now().Unix()
+		addedSample := false
+		for _, p := range report.PingResults {
+			samples := node.PingHistory[p.Name]
+			if len(samples) == 0 || (nowUnix-samples[len(samples)-1].Timestamp) >= PingSampleIntervalSec {
+				samples = append(samples, PingSample{
+					Timestamp: nowUnix,
+					Latency:   p.Latency,
+				})
+				if len(samples) > MaxPingSamplesPerTarget {
+					samples = samples[len(samples)-MaxPingSamplesPerTarget:]
+				}
+				node.PingHistory[p.Name] = samples
+				addedSample = true
+			}
+		}
+		if addedSample {
+			_ = s.saveLocked()
+		}
+	}
+
 	s.notifyUpdate()
 	return node, nil
 }
+
+func (s *Store) GetPingHistory(uuid, targetName, timeRange string) (*PingHistoryResponse, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	node, ok := s.nodes[uuid]
+	if !ok {
+		return nil, errors.New("node not found")
+	}
+
+	if targetName == "" {
+		for name := range node.PingHistory {
+			targetName = name
+			break
+		}
+		if targetName == "" && len(s.config.PingTargets) > 0 {
+			targetName = s.config.PingTargets[0].Name
+		}
+	}
+
+	allSamples := node.PingHistory[targetName]
+	nowUnix := time.Now().Unix()
+	var duration int64 = 86400 // default 24h
+	if timeRange == "1h" {
+		duration = 3600
+	}
+
+	cutoff := nowUnix - duration
+	filtered := make([]PingSample, 0, len(allSamples))
+	for _, smp := range allSamples {
+		if smp.Timestamp >= cutoff {
+			filtered = append(filtered, smp)
+		}
+	}
+
+	stats := PingStats{
+		Current:    -1,
+		TotalCount: len(filtered),
+	}
+
+	if len(filtered) > 0 {
+		stats.Current = filtered[len(filtered)-1].Latency
+		validCount := 0
+		lostCount := 0
+		var sum int64 = 0
+		minVal := 999999
+		maxVal := -1
+
+		for _, smp := range filtered {
+			if smp.Latency < 0 {
+				lostCount++
+			} else {
+				validCount++
+				sum += int64(smp.Latency)
+				if smp.Latency < minVal {
+					minVal = smp.Latency
+				}
+				if smp.Latency > maxVal {
+					maxVal = smp.Latency
+				}
+			}
+		}
+
+		if validCount > 0 {
+			stats.Avg = math.Round(float64(sum)/float64(validCount)*10.0) / 10.0
+			stats.Min = minVal
+			stats.Max = maxVal
+		} else {
+			stats.Min = -1
+			stats.Max = -1
+		}
+		stats.PacketLoss = math.Round(float64(lostCount)/float64(len(filtered))*1000.0) / 10.0
+	}
+
+	var targetHost string
+	for _, pt := range s.config.PingTargets {
+		if pt.Name == targetName {
+			targetHost = pt.Host
+			break
+		}
+	}
+
+	return &PingHistoryResponse{
+		UUID:    uuid,
+		Target:  targetName,
+		Host:    targetHost,
+		Range:   timeRange,
+		Stats:   stats,
+		Samples: filtered,
+	}, nil
+}
+
