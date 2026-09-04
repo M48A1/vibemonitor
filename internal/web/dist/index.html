@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VibeMonitor</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='%234285F4' d='M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z'/><path fill='%2334A853' d='M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z'/><path fill='%23FBBC05' d='M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 10.04 0 12s.45 3.82 1.25 5.42l4.03-3.15z'/><path fill='%23EA4335' d='M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z'/></svg>">
+</head>
+<body>
+  <div class="container">
+    <!-- Navbar -->
+    <header class="navbar">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22">
+            <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/>
+            <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"/>
+            <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 10.04 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
+            <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+          </svg>
+        </div>
+        <div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="brand-title" id="siteTitle">VibeMonitor</span>
+            <span class="brand-badge">Probe</span>
+          </div>
+          <p style="font-size: 12px; color: var(--muted-foreground);" id="siteAnnouncement">实时服务器探针与性能监控 · 极简纯净版</p>
+        </div>
+      </div>
+      <div class="nav-actions">
+        <button class="btn" id="themeToggle" title="切换深色/浅色模式">🌓 模式</button>
+        <button class="btn btn-primary" id="adminBtn">⚙️ 管理</button>
+      </div>
+    </header>
+
+    <!-- Stats Bar -->
+    <section class="stats-banner" id="statsBanner">
+      <div class="stat-box">
+        <div class="stat-label">
+          <span>在线节点</span>
+          <span>🖥️</span>
+        </div>
+        <div class="stat-value">
+          <span style="color: var(--success);" id="statOnline">0</span>
+          <span class="stat-sub">/ <span id="statTotal">0</span> 台</span>
+        </div>
+        <div style="font-size: 11px; color: var(--muted-foreground);" id="statStatusText">全部运行正常</div>
+      </div>
+
+      <div class="stat-box">
+        <div class="stat-label">
+          <span>平均 CPU 使用率</span>
+          <span>⚡</span>
+        </div>
+        <div class="stat-value">
+          <span id="statAvgCPU">0%</span>
+        </div>
+        <div style="font-size: 11px; color: var(--muted-foreground);">集群计算负载</div>
+      </div>
+
+      <div class="stat-box">
+        <div class="stat-label">
+          <span>总内存使用量</span>
+          <span>💾</span>
+        </div>
+        <div class="stat-value">
+          <span id="statMemUsed">0 GB</span>
+          <span class="stat-sub">/ <span id="statMemTotal">0 GB</span></span>
+        </div>
+        <div style="font-size: 11px; color: var(--muted-foreground);">已分配物理内存</div>
+      </div>
+
+      <div class="stat-box">
+        <div class="stat-label">
+          <span>实时网络速率</span>
+          <span>🌐</span>
+        </div>
+        <div class="stat-value" style="font-size: 18px;">
+          <span>↑ <span id="statNetUp">0 B/s</span></span>
+          <span style="color: var(--border); font-weight: 300;">|</span>
+          <span>↓ <span id="statNetDown">0 B/s</span></span>
+        </div>
+        <div style="font-size: 11px; color: var(--muted-foreground);" id="statTrafficTotal">实时上下行总和: 0 B/s</div>
+      </div>
+    </section>
+
+    <!-- Controls & Filter Bar -->
+    <div class="controls-bar">
+      <div class="filter-group">
+        <input type="text" class="search-input" id="searchInput" placeholder="🔍 搜索节点名称、IP、地区...">
+        <div id="groupButtons" style="display: flex; gap: 6px; flex-wrap: wrap;">
+          <button class="btn active" data-group="all">全部</button>
+        </div>
+      </div>
+      <div id="adminQuickActions" style="display: none;">
+        <button class="btn btn-primary" id="addNodeBtn">➕ 添加节点</button>
+        <button class="btn" id="settingsBtn">⚙️ 站点设置</button>
+        <button class="btn btn-danger" id="logoutBtn">退出登录</button>
+      </div>
+    </div>
+
+    <!-- Nodes Grid -->
+    <main class="node-grid" id="nodeGrid">
+      <div style="grid-column: 1 / -1; text-align: center; padding: 60px 20px; color: var(--muted-foreground);">
+        正在加载监控节点...
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer style="margin-top: 48px; text-align: center; font-size: 12px; color: var(--muted-foreground);">
+      Powered by <strong style="color: var(--primary);">VibeMonitor</strong>
+    </footer>
+  </div>
+
+  <!-- Admin Login Modal -->
+  <div class="modal-overlay" id="loginModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 class="modal-title">管理员认证</h3>
+        <button class="modal-close" onclick="closeModal('loginModal')">&times;</button>
+      </div>
+      <form id="loginForm">
+        <div class="form-group">
+          <label class="form-label">管理员密码 (Single Admin Mode)</label>
+          <input type="password" class="form-input" id="loginPassword" placeholder="输入管理员密码" required autofocus>
+        </div>
+        <div id="loginError" style="color: var(--destructive); font-size: 13px; display: none;">密码错误</div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px;">
+          <button type="button" class="btn" onclick="closeModal('loginModal')">取消</button>
+          <button type="submit" class="btn btn-primary">登录</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Add Node Modal -->
+  <div class="modal-overlay" id="addNodeModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 class="modal-title">添加新监控节点</h3>
+        <button class="modal-close" onclick="closeModal('addNodeModal')">&times;</button>
+      </div>
+      <form id="addNodeForm">
+        <div class="form-group">
+          <label class="form-label">节点名称</label>
+          <input type="text" class="form-input" id="newNodeName" placeholder="例如: Tokyo-VPS-01" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">分组名称 (可选)</label>
+          <input type="text" class="form-input" id="newNodeGroup" placeholder="例如: 生产机、测试集群">
+        </div>
+        <div class="form-group">
+          <label class="form-label">地区代码 / 国旗代码</label>
+          <input type="text" class="form-input" id="newNodeRegion" placeholder="例如: JP, US, CN, HK, SG" value="JP">
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">月流量配额 (GB, 选填)</label>
+            <input type="number" class="form-input" id="newNodeTrafficLimit" placeholder="如 1000" min="0" step="any">
+          </div>
+          <div class="form-group">
+            <label class="form-label">每月重置日 (1-31, 选填)</label>
+            <input type="number" class="form-input" id="newNodeResetDay" placeholder="如 15" min="1" max="31">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">当前周期已用流量 (GB, 选填)</label>
+          <input type="number" class="form-input" id="newNodeInitialUsed" placeholder="如已用 250 (仅本周期叠加，下周期自动清零)" min="0" step="any">
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px;">
+          <button type="button" class="btn" onclick="closeModal('addNodeModal')">取消</button>
+          <button type="submit" class="btn btn-primary">创建节点</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Edit Node Modal -->
+  <div class="modal-overlay" id="editNodeModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 class="modal-title">编辑监控节点</h3>
+        <button class="modal-close" onclick="closeModal('editNodeModal')">&times;</button>
+      </div>
+      <form id="editNodeForm">
+        <input type="hidden" id="editNodeUUID">
+        <div class="form-group">
+          <label class="form-label">节点名称</label>
+          <input type="text" class="form-input" id="editNodeName" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">分组名称</label>
+          <input type="text" class="form-input" id="editNodeGroup">
+        </div>
+        <div class="form-group">
+          <label class="form-label">地区代码</label>
+          <input type="text" class="form-input" id="editNodeRegion">
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">月流量配额 (GB)</label>
+            <input type="number" class="form-input" id="editNodeTrafficLimit" min="0" step="any">
+          </div>
+          <div class="form-group">
+            <label class="form-label">每月重置日 (1-31)</label>
+            <input type="number" class="form-input" id="editNodeResetDay" min="1" max="31">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">本周期附加初始已用 (GB)</label>
+          <input type="number" class="form-input" id="editNodeInitialUsed" min="0" step="any">
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px;">
+          <button type="button" class="btn" onclick="closeModal('editNodeModal')">取消</button>
+          <button type="submit" class="btn btn-primary">保存修改</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Node Token & Install Guide Modal -->
+  <div class="modal-overlay" id="nodeGuideModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 class="modal-title">节点接入命令</h3>
+        <button class="modal-close" onclick="closeModal('nodeGuideModal')">&times;</button>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 16px;">
+        <div>
+          <span class="form-label">Linux 一键安装命令 (推荐，自动配置 Systemd)</span>
+          <div class="code-box" id="guideInstallCmd">curl -fsSL ... | bash</div>
+        </div>
+        <div>
+          <span class="form-label">单二进制运行命令</span>
+          <div class="code-box" id="guideRunCmd">./vibemonitor agent --server ... --token ...</div>
+        </div>
+        <div>
+          <span class="form-label">通信 Token</span>
+          <div class="code-box" id="guideToken">...</div>
+        </div>
+        <div style="display: flex; justify-content: flex-end;">
+          <button type="button" class="btn btn-primary" onclick="closeModal('nodeGuideModal')">完成</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Site Settings Modal -->
+  <div class="modal-overlay" id="settingsModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 class="modal-title">站点配置</h3>
+        <button class="modal-close" onclick="closeModal('settingsModal')">&times;</button>
+      </div>
+      <form id="settingsForm">
+        <div class="form-group">
+          <label class="form-label">网站标题</label>
+          <input type="text" class="form-input" id="settingSiteTitle" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">公告信息</label>
+          <input type="text" class="form-input" id="settingAnnouncement">
+        </div>
+        <div class="form-group">
+          <label class="form-label">延迟监测目标 (每行一个：名称,地址/IP)</label>
+          <textarea class="form-input" id="settingPingTargets" rows="4" style="resize: vertical; font-family: monospace; font-size: 13px;" placeholder="例如:
+上海电信,180.153.28.1:80
+上海联通,210.22.80.1:80
+广州移动,120.196.165.2:80
+谷歌DNS,8.8.8.8"></textarea>
+          <div style="font-size: 11px; color: var(--muted-foreground); margin-top: 4px;">留空则不启用测速。支持 IP 或 host:port，探针会自动测量往返延迟。</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">修改管理员密码 (留空则不修改)</label>
+          <input type="password" class="form-input" id="settingNewPassword" placeholder="输入新管理员密码">
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px;">
+          <button type="button" class="btn" onclick="closeModal('settingsModal')">取消</button>
+          <button type="submit" class="btn btn-primary">保存修改</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
