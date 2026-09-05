@@ -184,7 +184,9 @@ clear_server_data() {
 }
 
 install_server() {
-    local port="${1:-1314}" password="${2:-}" username="${3:-admin}"
+    local port="${1:-1314}" password="${2:-}" username="${3:-}"
+    [[ "$username" =~ [^[:space:]] ]] || error "管理员账号不能为空，请填写 --username。"
+    [[ "$password" =~ [^[:space:]] ]] || error "管理员密码不能为空，请填写 --password。"
     [[ "$port" =~ ^[0-9]+$ && ${#port} -le 5 ]] || error "Invalid port."
     (( 10#$port >= 1 && 10#$port <= 65535 )) || error "Port must be 1-65535."
     check_root; detect_arch; check_dependencies
@@ -393,9 +395,17 @@ menu() {
                if [ -f "$CONFIG_DIR/vibemonitor-data.json" ]; then
                    info "重装会删除旧账号和全部数据，使用下面的新账号密码。"
                fi
-               read_input "管理员账号 [admin，仅一个管理员]: " username
-               read_secret "管理员密码 [留空自动生成]: " password
-               ( install_server "${port:-1314}" "$password" "${username:-admin}" ) ;;
+               while true; do
+                   read_input "管理员账号 [必填，仅一个管理员]: " username
+                   [[ "$username" =~ [^[:space:]] ]] && break
+                   warn "管理员账号不能为空，请重新输入。"
+               done
+               while true; do
+                   read_secret "管理员密码 [必填，输入不显示]: " password
+                   [[ "$password" =~ [^[:space:]] ]] && break
+                   warn "管理员密码不能为空，请重新输入。"
+               done
+               ( install_server "${port:-1314}" "$password" "$username" ) ;;
             2) read_input "主控地址（http:// 或 https://）: " server
                read_secret "节点 Token（输入不显示）: " token
                read_input "上报间隔 [3s]: " interval
@@ -422,7 +432,7 @@ CMD="${1:-menu}"
 if [ $# -gt 0 ]; then shift; fi
 case "$CMD" in
     server)
-        port=1314; password=""; username=admin
+        port=1314; password=""; username=""
         while [ $# -gt 0 ]; do
             case "$1" in
                 -p|--port) port="${2:?missing port}"; shift 2 ;;

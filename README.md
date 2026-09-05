@@ -156,6 +156,8 @@ python3 -m unittest discover -s tests -v
 
 ### 管理员账号
 
-系统仅有一个管理员账号。首次安装菜单会提示填写账号和密码，账号默认为 `admin`；留空密码则自动生成。命令行安装可使用 `bash install.sh server -u 用户名 -w 密码`，手动启动可设置 `--admin-username`（环境变量 `VIBEMONITOR_ADMIN_USERNAME`）。已有数据升级后保留密码，旧版未设置账号时使用 `admin`。使用安装脚本重装会删除旧账号密码及全部数据，按本次输入重新初始化。网页登录必须同时填写账号和密码。
+系统仅有一个管理员账号。安装菜单强制填写账号和密码，空值或纯空格会提示重新输入，密码输入不回显。命令行安装也必须同时提供 `-u` 和 `-w`，缺少任一项会在删除数据前退出。命令行安装可使用 `bash install.sh server -u 用户名 -w 密码`，手动启动可设置 `--admin-username`（环境变量 `VIBEMONITOR_ADMIN_USERNAME`）。已有数据升级后保留密码，旧版未设置账号时使用 `admin`。使用安装脚本重装会删除旧账号密码及全部数据，按本次输入重新初始化。网页登录必须同时填写账号和密码。
 
 服务端菜单的安装操作为**清空重装**：先确认，再下载校验程序，停止旧服务后删除全部旧数据。本次输入的账号密码会用于新建唯一管理员。删除的数据不参与安装失败回退。
+
+账号和密码保存在 `/etc/vibemonitor/vibemonitor-data.json` 的 `config.admin_username` 和 `config.admin_password` 字段中，当前为明文保存，文件权限为 `0600`。手动指定 `--data` 时，以该参数指定的文件为准。安装器还会在 `/etc/systemd/system/vibemonitor-server.service` 中保存初始化账号密码（权限 `0600`）；网页改密后，当前有效密码以 JSON 配置为准。备份主文件同样包含账号密码，请勿公开分享。ping 测试数据文件不保存账号密码。

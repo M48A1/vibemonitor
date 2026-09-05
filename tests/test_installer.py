@@ -54,18 +54,25 @@ curl() {
         return subprocess.run(['bash', '-c', self.prelude + code], capture_output=True, text=True,
             env={**os.environ, 'SOURCE_INSTALLER':str(ROOT / 'install.sh'), 'TEST_ROOT':str(self.root), 'FAIL_NEW':'1' if fail else '0'}, timeout=10)
 
+    def test_credentials_required_before_changes(self):
+        for args in ['1314 "" owner', '1314 pass ""', '1314 "   " owner', '1314 pass "   "']:
+            result = self.run_installer('install_server ' + args + '\n')
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual((self.root / 'bin/vibemonitor').read_text(), 'old binary')
+            self.assertFalse((self.root / 'service-calls').exists())
+
     def test_cleanup_requires_confirmation(self):
         backups = self.root / 'config/backups'
         backups.mkdir()
         (backups / 'old.json').write_text('backup')
         data = self.root / 'config/vibemonitor-data.json'
         data.write_text('old credentials')
-        result = self.run_installer('read_input() { printf -v "$2" no; }\ninstall_server 1314 pass\n')
+        result = self.run_installer('read_input() { printf -v "$2" no; }\ninstall_server 1314 pass owner\n')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue((backups / 'old.json').exists())
         self.assertTrue(data.exists())
         self.assertEqual((self.root / 'bin/vibemonitor').read_text(), 'old binary')
-        result = self.run_installer('install_server 1314 pass\n')
+        result = self.run_installer('install_server 1314 pass owner\n')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(backups.exists())
         self.assertFalse(data.exists())
@@ -82,14 +89,14 @@ curl() {
         self.assertFalse(data.exists())
 
     def test_successful_atomic_update(self):
-        result = self.run_installer('install_server 1314 "password with spaces"\n')
+        result = self.run_installer('install_server 1314 "password with spaces" owner\n')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual((self.root / 'bin/vibemonitor').read_bytes(), (self.root / 'fixture').read_bytes())
         self.assertIn('"password with spaces"', (self.root / 'units/vibemonitor-server.service').read_text())
         self.assertEqual(list((self.root / 'bin').glob('*.update.*')), [])
 
     def test_restart_failure_restores_binary_and_unit(self):
-        result = self.run_installer('install_server 1314 "pass"\n', fail=True)
+        result = self.run_installer('install_server 1314 "pass" owner\n', fail=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual((self.root / 'bin/vibemonitor').read_text(), 'old binary')
         self.assertEqual((self.root / 'units/vibemonitor-server.service').read_text(), 'old unit')
@@ -107,7 +114,7 @@ curl() {
                 (self.root / 'bin/vibemonitor').write_text('old binary')
                 (self.root / 'units/vibemonitor-server.service').write_text('old unit')
                 before = set((self.root / 'bin').glob('*.update.*'))
-                result = self.run_installer(override + '\ninstall_server 1314 "pass"\n', fail=True)
+                result = self.run_installer(override + '\ninstall_server 1314 "pass" owner\n', fail=True)
                 self.assertNotEqual(result.returncode, 0)
                 retained = set((self.root / 'bin').glob('*.update.*')) - before
                 self.assertEqual(len(retained), 1, result.stderr)
@@ -118,13 +125,13 @@ curl() {
 
     def test_bad_checksum_never_replaces_or_stops_service(self):
         (self.root / 'sums').write_text('0' * 64 + '  vibemonitor-linux-amd64\n')
-        result = self.run_installer('install_server 1314 "pass"\n')
+        result = self.run_installer('install_server 1314 "pass" owner\n')
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual((self.root / 'bin/vibemonitor').read_text(), 'old binary')
         self.assertNotIn('stop vibemonitor-server', (self.root / 'service-calls').read_text())
 
     def test_html_is_rejected_even_with_matching_checksum(self):
-        result = self.run_installer('od() { echo "3c 68 74 6d 6c"; }; install_server 1314 "pass"\n')
+        result = self.run_installer('od() { echo "3c 68 74 6d 6c"; }; install_server 1314 "pass" owner\n')
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual((self.root / 'bin/vibemonitor').read_text(), 'old binary')
 
