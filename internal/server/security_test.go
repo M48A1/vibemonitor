@@ -58,6 +58,23 @@ func TestNodeCredentialIsolation(t *testing.T) {
 	w := request("POST", "/api/admin/login", `{"username":"admin","password":"test-password"}`, "")
 	var login struct{ Token string }
 	json.Unmarshal(w.Body.Bytes(), &login)
+	w = request("PUT", "/api/admin/nodes/"+uuid, `{"name":"test","profile":{"targets":[{"name":"site","host":"example.com:443"},{"name":"ip","host":"1.1.1.1:443"}]}}`, login.Token)
+	if w.Code != http.StatusOK {
+		t.Fatalf("update profile: %s", w.Body.String())
+	}
+	for _, credential := range []string{"", "invalid", token} {
+		if request("GET", "/api/admin/nodes/"+uuid+"/profile", "", credential).Code != http.StatusUnauthorized {
+			t.Fatal("profile must require administrator authentication")
+		}
+	}
+	w = request("GET", "/api/admin/nodes/"+uuid+"/profile", "", login.Token)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "example.com:443") || !strings.Contains(w.Body.String(), "1.1.1.1:443") || strings.Contains(w.Body.String(), token) {
+		t.Fatal("administrator profile should contain target addresses but no token")
+	}
+	public := request("GET", "/api/nodes", "", "").Body.String()
+	if strings.Contains(public, "example.com:443") || strings.Contains(public, "1.1.1.1:443") {
+		t.Fatal("public list must continue hiding target addresses")
+	}
 	w = request("GET", "/api/admin/nodes/"+uuid+"/token", "", login.Token)
 	if w.Code != 200 || !strings.Contains(w.Body.String(), token) {
 		t.Fatal("administrator cannot retrieve token")
