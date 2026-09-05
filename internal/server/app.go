@@ -217,12 +217,13 @@ func (s *Server) Handler() http.Handler {
 			return
 		}
 		var req struct {
-			Name           string  `json:"name"`
-			Group          string  `json:"group"`
-			Region         string  `json:"region"`
-			TrafficLimitGB float64 `json:"traffic_limit_gb"`
-			ResetDay       int     `json:"reset_day"`
-			InitialUsedGB  float64 `json:"initial_used_gb"`
+			Profile        *store.NodeProfile `json:"profile"`
+			Name           string             `json:"name"`
+			Group          string             `json:"group"`
+			Region         string             `json:"region"`
+			TrafficLimitGB float64            `json:"traffic_limit_gb"`
+			ResetDay       int                `json:"reset_day"`
+			InitialUsedGB  float64            `json:"initial_used_gb"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSON(w, jsonErrorStatus(err), map[string]any{"error": "invalid or oversized json"})
@@ -230,6 +231,7 @@ func (s *Server) Handler() http.Handler {
 		}
 
 		node, err := s.store.CreateNodeWithOptions(store.NodeOptions{
+			Profile:        req.Profile,
 			Name:           req.Name,
 			Group:          req.Group,
 			Region:         req.Region,
@@ -251,13 +253,14 @@ func (s *Server) Handler() http.Handler {
 		}
 		uuid := r.PathValue("uuid")
 		var req struct {
-			Name           string  `json:"name"`
-			Group          string  `json:"group"`
-			Region         string  `json:"region"`
-			Weight         int     `json:"weight"`
-			TrafficLimitGB float64 `json:"traffic_limit_gb"`
-			ResetDay       int     `json:"reset_day"`
-			InitialUsedGB  float64 `json:"initial_used_gb"`
+			Profile        *store.NodeProfile `json:"profile"`
+			Name           string             `json:"name"`
+			Group          string             `json:"group"`
+			Region         string             `json:"region"`
+			Weight         int                `json:"weight"`
+			TrafficLimitGB float64            `json:"traffic_limit_gb"`
+			ResetDay       int                `json:"reset_day"`
+			InitialUsedGB  float64            `json:"initial_used_gb"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSON(w, jsonErrorStatus(err), map[string]any{"error": "invalid or oversized json"})
@@ -265,6 +268,7 @@ func (s *Server) Handler() http.Handler {
 		}
 
 		if err := s.store.UpdateNodeWithOptions(uuid, store.NodeOptions{
+			Profile:        req.Profile,
 			Name:           req.Name,
 			Group:          req.Group,
 			Region:         req.Region,

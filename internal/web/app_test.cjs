@@ -40,7 +40,7 @@ test('node cards render empty and populated reports without executing node data'
   }];
   app.run('nodes = fixture; isAdmin = true; renderNodes();');
   const html = app.document.getElementById('nodeGrid').innerHTML;
-  assert.ok(html.includes('25ms'));
+  assert.ok(html.includes('25 ms'));
   assert.ok(html.includes('&lt;img'));
   assert.ok(!/<img|onclick=|onerror="/i.test(html));
   assert.ok(!html.includes('admin-session'));
@@ -107,4 +107,11 @@ test('modal styles are top-level rules with balanced blocks', () => {
     assert.ok(depth >= 0, 'unexpected closing brace');
   }
   assert.equal(depth, 0, 'unclosed CSS block');
+});
+
+
+test('billing cycles and missing ping samples are represented honestly', () => {
+  const { context } = dashboard();
+  assert.match(vm.runInContext("billingDisplay({price:45,currency:'EUR',payment_cycle:'year'}).price",context), /EUR 45.00 \/ 年/);
+  assert.match(vm.runInContext("renderPingPanels({uuid:'n',online:true,ping_preview:[{name:'电信',host:'example.com:443',samples:[],loss:null}]})",context), /待采样/);
 });

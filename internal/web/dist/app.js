@@ -1,7 +1,7 @@
 // VibeMonitor Modern Dashboard Script
 
 let nodes = [];
-let currentGroup = 'all';
+let currentGroup = null;
 let isAdmin = false;
 let ws = null;
 let pollTimer = null;
@@ -152,18 +152,19 @@ function updateGlobalStats() {
 }
 
 function updateGroupButtons() {
-  const groups = new Set(['all']);
+  const groups = new Set();
   nodes.forEach(n => {
     if (n.group) groups.add(n.group);
   });
+  if (currentGroup !== null && !groups.has(currentGroup)) currentGroup = null;
   const container = document.getElementById('groupButtons');
   container.innerHTML = '';
   groups.forEach(g => {
     const btn = document.createElement('button');
     btn.className = `btn ${currentGroup === g ? 'btn-primary' : ''}`;
-    btn.textContent = g === 'all' ? '全部' : g;
+    btn.textContent = g;
     btn.onclick = () => {
-      currentGroup = g;
+      currentGroup = currentGroup === g ? null : g;
       updateGroupButtons();
       renderNodes();
     };
@@ -171,10 +172,67 @@ function updateGroupButtons() {
   });
 }
 
+function readNodeProfile(prefix) {
+  const targets = document.getElementById(prefix + 'NodeTargets').value.split('\n').filter(l => l.trim()).map(line => {
+    const comma = line.indexOf(',');
+    const name = (comma < 0 ? line : line.slice(0, comma)).trim();
+    let host = (comma < 0 ? line : line.slice(comma + 1)).trim();
+    if (/^(tcp|https?):\/\//i.test(host)) {
+      const url = new URL(host);
+      if (url.username || url.password) throw new Error('测试链接不能包含账号密码');
+      const port = url.port || (url.protocol === 'https:' ? '443' : url.protocol === 'http:' ? '80' : '');
+      host = url.hostname + ':' + port;
+    }
+    if (!/^[a-zA-Z0-9.-]+:[0-9]+$/.test(host)) throw new Error('TCP 目标请填写地址:端口');
+    return {name, host};
+  });
+  return {targets, due_date: document.getElementById(prefix+'NodeDue').value,
+    payment_cycle: document.getElementById(prefix+'NodeCycle').value,
+    price: Number(document.getElementById(prefix+'NodePrice').value || 0),
+    currency: document.getElementById(prefix+'NodeCurrency').value};
+}
+function fillNodeProfile(prefix, profile) {
+  const p = profile || {};
+  document.getElementById(prefix+'NodeTargets').value = (p.targets || []).map(t => `${t.name},${t.host}`).join('\n');
+  document.getElementById(prefix+'NodeDue').value = p.due_date || '';
+  document.getElementById(prefix+'NodeCycle').value = p.payment_cycle || '';
+  document.getElementById(prefix+'NodePrice').value = p.price || '';
+  document.getElementById(prefix+'NodeCurrency').value = p.currency || 'CNY';
+}
+function billingDisplay(profile) {
+  const p = profile || {};
+  const cycle = {month:'月',quarter:'季',year:'年'}[p.payment_cycle];
+  const price = cycle ? `${escapeHtml(p.currency || 'CNY')} ${Number(p.price || 0).toFixed(2)} / ${cycle}` : '账单未设置';
+  let remaining = '未设置到期日';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(p.due_date || '')) {
+    const now = new Date();
+    const today = Date.UTC(now.getFullYear(),now.getMonth(),now.getDate());
+    const days = Math.round((Date.parse(p.due_date+'T00:00:00Z')-today)/86400000);
+    remaining = days < 0 ? `已到期 ${-days} 天` : days === 0 ? '今天到期' : `剩余 ${days} 天`;
+  }
+  return {price, remaining, date:escapeHtml(p.due_date || '—')};
+}
+function renderPingPanels(node) {
+  const reports = (node.last_report || {}).ping_results || [];
+  const previews = node.ping_preview || reports.map(p => ({name:p.name,host:p.host,samples:[],loss:null}));
+  if (!previews.length) return '<div class="ping-empty">尚未配置 TCP 测试目标</div>';
+  return '<div class="ping-panels">'+['延迟','丢包'].map((heading,column) => `<div class="ping-panel"><div class="panel-label">${heading}</div>${previews.map((p,i) => {
+    const report = reports.find(r => r.name===p.name && r.host===p.host);
+    const value = column ? (p.loss == null ? '待采样' : Number(p.loss).toFixed(1)+'%') : (!node.online || !report ? '待上报' : report.latency<0 ? '超时' : report.latency+' ms');
+    const samples = p.samples || [];
+    const bars = Array.from({length:24},(_,j) => {
+      const sample = samples[j-(24-samples.length)];
+      const cls = !sample ? 'empty' : sample.l<0 ? 'lost' : column ? 'received' : sample.l>250 ? 'slow' : 'fast';
+      return `<i class="sample-bar ${cls}" title="${!sample ? '暂无采样' : sample.l<0 ? '超时' : sample.l+' ms'}"></i>`;
+    }).join('');
+    return `<button class="ping-sample-row" data-action="ping" data-uuid="${escapeHtml(node.uuid)}" data-target="${escapeHtml(p.name)}" title="${escapeHtml(p.host)} · 24 小时采样统计"><span class="ping-row-heading"><span><b class="target-dot target-${i%3}"></b>${escapeHtml(p.name)}</span><strong>${value}</strong></span><span class="sample-bars">${bars}</span></button>`;
+  }).join('')}</div>`).join('')+'</div>';
+}
+
 // Render Nodes
 function renderNodes() {
   const grid = document.getElementById('nodeGrid');
-  const filtered = nodes.filter(n => currentGroup === 'all' || n.group === currentGroup);
+  const filtered = nodes.filter(n => currentGroup === null || n.group === currentGroup);
 
   if (filtered.length === 0) {
     grid.innerHTML = `
@@ -218,6 +276,7 @@ function renderNodes() {
     const trafficClass = cyclePercent >= 90 ? 'critical' : cyclePercent >= 60 ? 'high' : '';
     const trafficColor = cyclePercent >= 90 ? 'var(--destructive)' : cyclePercent >= 60 ? 'var(--warning)' : 'var(--success)';
 
+    const bill = billingDisplay(node.profile);
     const adminActions = isAdmin ? `
       <div style="display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap;">
         <button class="btn" style="padding: 4px 8px; font-size: 11px;" data-action="edit" data-uuid="${escapeHtml(node.uuid)}">编辑</button>
@@ -246,12 +305,14 @@ function renderNodes() {
           <span>🖥️ ${escapeHtml(info.os || 'Linux')} (${escapeHtml(info.arch || 'x64')})</span>
           <span>⚡ ${info.cpu_cores || cpu.cores || 1} 核</span>
           <span>⏱️ 在线: ${formatUptime(r.uptime)}</span>
+          <span class="price-badge">${bill.price}</span>
         </div>
 
+        <div class="node-metrics">
         <!-- CPU Metric -->
         <div class="metric-row">
           <div class="metric-meta">
-            <span class="metric-name">CPU (${escapeHtml(info.cpu_name || cpu.name || 'Processor')})</span>
+            <span class="metric-name">CPU</span>
             <span class="metric-value">${cpuUsage}%</span>
           </div>
           <div class="progress-track">
@@ -300,41 +361,10 @@ function renderNodes() {
         </div>
         ` : ''}
 
-        <!-- Mini Sparkline for CPU -->
-        <div class="sparkline-box">
-          ${generateSparkline(node.history, 'cpu_usage')}
         </div>
 
-        <!-- Ping Latency Badges -->
-        ${(r.ping_results && r.ping_results.length > 0) ? `
-        <div class="node-ping-section">
-          <div class="ping-header">
-            <span>📶 延迟监测</span>
-            <span style="cursor: pointer; color: var(--primary); font-size: 11px;" data-action="ping" data-uuid="${escapeHtml(node.uuid)}" data-target="${escapeHtml(r.ping_results[0].name)}">📈 波动图 ›</span>
-          </div>
-          <div class="ping-badges">
-            ${r.ping_results.map(p => {
-              let pillClass = 'good';
-              let text = `${p.latency}ms`;
-              if (p.latency < 0) {
-                pillClass = 'bad';
-                text = '超时';
-              } else if (p.latency > 250) {
-                pillClass = 'bad';
-              } else if (p.latency > 150) {
-                pillClass = 'warn';
-              }
-              return `
-                <div class="ping-pill ${pillClass}" title="${escapeHtml(p.host)} · ${escapeHtml(p.method || '自动探测')} (点击查看 1h/24h 波动曲线)" data-action="ping" data-uuid="${escapeHtml(node.uuid)}" data-target="${escapeHtml(p.name)}">
-                  <span class="ping-dot"></span>
-                  <span>${escapeHtml(p.name)}:</span>
-                  <span>${text}</span>
-                </div>
-              `;
-            }).join('')}
-          </div>
-        </div>
-        ` : ''}
+
+        ${renderPingPanels(node)}
 
         <!-- Footer: Network & Load -->
         <div class="node-footer">
@@ -350,6 +380,7 @@ function renderNodes() {
           </div>
         </div>
 
+        <div class="billing-summary"><strong>▦ ${bill.remaining}</strong><span>到期日 ${bill.date}</span><span>${bill.price}</span></div>
         ${adminActions}
       </div>
     `;
@@ -397,15 +428,9 @@ async function fetchPublicSettings() {
     if (data.site_title) {
       document.getElementById('siteTitle').textContent = data.site_title;
       document.title = data.site_title;
-      document.getElementById('settingSiteTitle').value = data.site_title;
     }
     if (data.announcement !== undefined) {
       document.getElementById('siteAnnouncement').textContent = data.announcement || '实时服务器探针与性能监控 · 极简纯净版';
-      document.getElementById('settingAnnouncement').value = data.announcement || '';
-    }
-    if (Array.isArray(data.ping_targets)) {
-      const lines = data.ping_targets.map(t => `${t.name},${t.host}`).join('\n');
-      document.getElementById('settingPingTargets').value = lines;
     }
   } catch (e) {
     console.error('Failed to fetch public settings:', e);
@@ -487,7 +512,7 @@ window.deleteNode = async function(uuid) {
 // Event Listeners
 document.getElementById('adminBtn').addEventListener('click', () => {
   if (isAdmin) {
-    openModal('settingsModal');
+    document.getElementById('addNodeBtn').click();
   } else {
     document.getElementById('loginError').style.display = 'none';
     document.getElementById('loginPassword').value = '';
@@ -538,6 +563,7 @@ document.getElementById('addNodeBtn').addEventListener('click', () => {
   document.getElementById('newNodeTrafficLimit').value = '';
   document.getElementById('newNodeResetDay').value = '';
   document.getElementById('newNodeInitialUsed').value = '';
+  fillNodeProfile('new', {});
   openModal('addNodeModal');
 });
 
@@ -564,7 +590,8 @@ document.getElementById('addNodeForm').addEventListener('submit', async (e) => {
         region,
         traffic_limit_gb: trafficLimitGB,
         reset_day: resetDay,
-        initial_used_gb: initialUsedGB
+        initial_used_gb: initialUsedGB,
+        profile: readNodeProfile('new')
       })
     });
     const data = await res.json();
@@ -590,6 +617,7 @@ window.openEditModal = function(uuid) {
   document.getElementById('editNodeTrafficLimit').value = node.traffic_limit > 0 ? (node.traffic_limit / (1024*1024*1024)).toFixed(1) : '';
   document.getElementById('editNodeResetDay').value = node.reset_day > 0 ? node.reset_day : '';
   document.getElementById('editNodeInitialUsed').value = node.initial_used > 0 ? (node.initial_used / (1024*1024*1024)).toFixed(1) : '';
+  fillNodeProfile('edit', node.profile || {targets: (node.ping_preview || []).map(p => ({name:p.name,host:p.host}))});
   openModal('editNodeModal');
 };
 
@@ -617,7 +645,8 @@ document.getElementById('editNodeForm').addEventListener('submit', async (e) => 
         region,
         traffic_limit_gb: trafficLimitGB,
         reset_day: resetDay,
-        initial_used_gb: initialUsedGB
+        initial_used_gb: initialUsedGB,
+        profile: readNodeProfile('edit')
       })
     });
     if (res.ok) {
@@ -625,63 +654,6 @@ document.getElementById('editNodeForm').addEventListener('submit', async (e) => 
       fetchNodes();
     } else {
       alert('修改失败');
-    }
-  } catch (e) {
-    alert('请求失败: ' + e.message);
-  }
-});
-
-document.getElementById('settingsBtn').addEventListener('click', () => {
-  openModal('settingsModal');
-});
-
-document.getElementById('settingsForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const siteTitle = document.getElementById('settingSiteTitle').value;
-  const announcement = document.getElementById('settingAnnouncement').value;
-  const newPassword = document.getElementById('settingNewPassword').value;
-  const rawPingText = document.getElementById('settingPingTargets').value;
-  const token = getAdminToken();
-
-  // Parse lines: Name,Host
-  const pingTargets = [];
-  const lines = rawPingText.split('\n');
-  for (let line of lines) {
-    line = line.trim();
-    if (!line) continue;
-    const parts = line.split(',');
-    if (parts.length >= 2) {
-      const name = parts[0].trim();
-      const host = parts.slice(1).join(',').trim();
-      if (name && host) {
-        pingTargets.push({ name, host });
-      }
-    } else {
-      pingTargets.push({ name: line, host: line });
-    }
-  }
-
-  try {
-    const res = await fetch('/api/admin/settings', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + token
-      },
-      body: JSON.stringify({
-        site_title: siteTitle,
-        announcement,
-        new_password: newPassword,
-        ping_targets: pingTargets
-      })
-    });
-    if (res.ok) {
-      if (newPassword) { localStorage.removeItem('admin_token'); setAdminState(false); }
-      alert(newPassword ? '密码已修改，请重新登录' : '设置已保存');
-      closeModal('settingsModal');
-      fetchPublicSettings();
-    } else {
-      alert('保存失败');
     }
   } catch (e) {
     alert('请求失败: ' + e.message);
@@ -708,11 +680,12 @@ window.openPingChart = function(uuid, nodeName, targetName) {
   const node = nodes.find(n => n.uuid === uuid);
   const selector = document.getElementById('pingTargetSelector');
   selector.innerHTML = '';
-  if (node && node.last_report && node.last_report.ping_results && node.last_report.ping_results.length > 0) {
+  const chartTargets = node ? (node.ping_preview || (node.last_report || {}).ping_results || []) : [];
+  if (chartTargets.length > 0) {
     if (!currentPingTarget) {
-      currentPingTarget = node.last_report.ping_results[0].name;
+      currentPingTarget = chartTargets[0].name;
     }
-    node.last_report.ping_results.forEach(pr => {
+    chartTargets.forEach(pr => {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = `target-pill-btn ${pr.name === currentPingTarget ? 'active' : ''}`;

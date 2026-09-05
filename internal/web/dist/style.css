@@ -764,3 +764,28 @@ body {
     align-items: stretch;
   }
 }
+
+/* Compact node overview with independent targets and billing. */
+.node-metrics, .billing-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 14px; }
+.node-metrics .metric-meta { flex-wrap: wrap; gap: 4px; }
+.node-metrics .metric-value { font-size: 12px; }
+.node-card { gap: 20px; }
+.price-badge { margin-left: auto; font-weight: 600; }
+.billing-form { margin: 16px 0; }
+.billing-form label { display: grid; gap: 6px; font-size: 13px; }
+.billing-summary { display:flex; flex-wrap:wrap; gap:8px 16px; background:var(--card-data-bg); border-radius:12px; padding:12px; font-size:12px; }
+.ping-panels { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.ping-panel { min-width:0; padding:12px; background:var(--card-data-bg); border-radius:14px; }
+.panel-label, .ping-empty { color:var(--muted-foreground); font-size:13px; }
+.ping-sample-row { display:block; width:100%; background:transparent; color:var(--foreground); border:0; padding:10px 0 0; cursor:pointer; text-align:left; }
+.ping-row-heading { display:flex; justify-content:space-between; gap:4px; font-size:12px; margin-bottom:7px; }
+.ping-row-heading > span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ping-row-heading strong { white-space:nowrap; }
+.target-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; }
+.target-0 { background:#fb7185; } .target-1 { background:#34d399; } .target-2 { background:#60a5fa; }
+.sample-bars { display:flex; gap:2px; }
+.sample-bar { flex:1; height:13px; border-radius:2px; background:var(--border); }
+.sample-bar.fast { background:#a3e635; } .sample-bar.received { background:#35a680; }
+.sample-bar.slow { background:#fbbf24; } .sample-bar.lost { background:#fb7185; }
+.sample-bar.empty { opacity:.35; }
+@media (max-width:400px) { .ping-panels { grid-template-columns:1fr; } }
