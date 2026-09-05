@@ -11,7 +11,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -81,7 +80,7 @@ func (c *Client) postRPC(method string, params any) (*protocol.Response, error) 
 		return nil, err
 	}
 
-	endpoint := fmt.Sprintf("%s/api/clients/v2/rpc?token=%s", c.serverURL, url.QueryEscape(c.token))
+	endpoint := c.serverURL + "/api/clients/v2/rpc"
 	httpReq, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -117,6 +116,7 @@ func (c *Client) Run(ctx context.Context) error {
 
 	// 1. Initial Basic Info report
 	basicInfo, err := c.collector.GetBasicInfo()
+	basicInfo.ReportIntervalSeconds = c.interval.Seconds()
 	if err != nil {
 		log.Printf("[Agent] Warning: failed to gather basic info: %v", err)
 	} else {
@@ -159,6 +159,8 @@ func (c *Client) Run(ctx context.Context) error {
 				log.Printf("[Agent] Error collecting metrics: %v", err)
 				continue
 			}
+
+			report.ReportIntervalSeconds = c.interval.Seconds()
 
 			// Attach latest ping results
 			c.mu.RLock()
@@ -257,11 +259,12 @@ func (c *Client) measurePings() {
 		wg.Add(1)
 		go func(idx int, target protocol.PingTarget) {
 			defer wg.Done()
-			latency := pingHost(target.Host, 2*time.Second)
+			latency, method := pingHost(target.Host, 2*time.Second)
 			results[idx] = protocol.PingResult{
 				Name:    target.Name,
 				Host:    target.Host,
 				Latency: latency,
+				Method:  method,
 			}
 		}(i, t)
 	}
@@ -272,46 +275,46 @@ func (c *Client) measurePings() {
 	c.mu.Unlock()
 }
 
-func pingHost(host string, timeout time.Duration) int {
+func pingHost(host string, timeout time.Duration) (int, string) {
 	host = strings.TrimSpace(host)
 	if host == "" {
-		return -1
+		return -1, "tcp"
 	}
 
 	// 1. If host has port (e.g. "1.2.3.4:80" or "example.com:443"), do TCP connect
 	if strings.Contains(host, ":") {
 		start := time.Now()
-		conn, err := net.DialTimeout("tcp", host, timeout)
+		conn, err := net.DialTimeout("tcp4", host, timeout)
 		if err == nil {
 			_ = conn.Close()
-			return int(time.Since(start).Milliseconds())
+			return int(time.Since(start).Milliseconds()), "tcp"
 		}
-		return -1
+		return -1, "tcp"
 	}
 
 	// 2. Pure IP or hostname without port: Try system ICMP ping first
 	if ms := execSystemPing(host, timeout); ms >= 0 {
-		return ms
+		return ms, "icmp"
 	}
 
 	// Fallback to TCP port 80, then 443
 	for _, port := range []string{"80", "443"} {
 		start := time.Now()
-		conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), timeout)
+		conn, err := net.DialTimeout("tcp4", net.JoinHostPort(host, port), timeout)
 		if err == nil {
 			_ = conn.Close()
-			return int(time.Since(start).Milliseconds())
+			return int(time.Since(start).Milliseconds()), "tcp"
 		}
 	}
 
-	return -1
+	return -1, "tcp"
 }
 
 func execSystemPing(host string, timeout time.Duration) int {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "ping", "-c", "1", "-W", "2", host)
+	cmd := exec.CommandContext(ctx, "ping", "-4", "-c", "1", "-W", "2", host)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return -1

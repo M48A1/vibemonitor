@@ -8,11 +8,11 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
 	"vibemonitor/internal/store"
+	"vibemonitor/internal/version"
 	"vibemonitor/internal/web"
 	"vibemonitor/pkg/protocol"
 )
@@ -23,6 +23,8 @@ type Server struct {
 	wsHub       *WSHub
 	rpc         *RPCHandler
 	adminTokens sync.Map // token -> time.Time
+	authMu      sync.RWMutex
+	loginLimit  loginLimiter
 }
 
 type Options struct {
@@ -60,13 +62,9 @@ func writeJSON(w http.ResponseWriter, status int, data any) {
 }
 
 func (s *Server) checkAdmin(r *http.Request) bool {
-	auth := r.Header.Get("Authorization")
-	token := strings.TrimPrefix(auth, "Bearer ")
-	if token == "" {
-		if cookie, err := r.Cookie("admin_token"); err == nil {
-			token = cookie.Value
-		}
-	}
+	s.authMu.RLock()
+	defer s.authMu.RUnlock()
+	token := adminToken(r)
 	if token == "" {
 		return false
 	}
@@ -93,8 +91,8 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("GET /api/version", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{
-			"version": "1.0.0-lite",
-			"hash":    "vibemonitor",
+			"version": version.Version,
+			"hash":    version.Commit,
 		})
 	})
 
@@ -140,11 +138,19 @@ func (s *Server) Handler() http.Handler {
 
 	// 5. Admin Authentication & Management
 	mux.HandleFunc("POST /api/admin/login", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		if !s.loginLimit.allow(r) {
+			w.Header().Set("Retry-After", "300")
+			writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "too many login attempts; retry in 5 minutes"})
+			return
+		}
+		s.authMu.RLock()
+		defer s.authMu.RUnlock()
 		var req struct {
 			Password string `json:"password"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid json"})
+			writeJSON(w, jsonErrorStatus(err), map[string]any{"error": "invalid or oversized json"})
 			return
 		}
 
@@ -164,6 +170,8 @@ func (s *Server) Handler() http.Handler {
 			Value:    token,
 			Path:     "/",
 			HttpOnly: true,
+			Secure:   requestHTTPS(r),
+			SameSite: http.SameSiteStrictMode,
 			MaxAge:   7 * 86400,
 		})
 
@@ -181,17 +189,8 @@ func (s *Server) Handler() http.Handler {
 	})
 
 	mux.HandleFunc("POST /api/admin/logout", func(w http.ResponseWriter, r *http.Request) {
-		auth := r.Header.Get("Authorization")
-		token := strings.TrimPrefix(auth, "Bearer ")
-		if token != "" {
-			s.adminTokens.Delete(token)
-		}
-		http.SetCookie(w, &http.Cookie{
-			Name:   "admin_token",
-			Value:  "",
-			Path:   "/",
-			MaxAge: -1,
-		})
+		s.adminTokens.Delete(adminToken(r))
+		clearAdminCookie(w, r)
 		writeJSON(w, http.StatusOK, map[string]any{"status": "success"})
 	})
 
@@ -224,7 +223,7 @@ func (s *Server) Handler() http.Handler {
 			InitialUsedGB  float64 `json:"initial_used_gb"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid json"})
+			writeJSON(w, jsonErrorStatus(err), map[string]any{"error": "invalid or oversized json"})
 			return
 		}
 
@@ -259,7 +258,7 @@ func (s *Server) Handler() http.Handler {
 			InitialUsedGB  float64 `json:"initial_used_gb"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid json"})
+			writeJSON(w, jsonErrorStatus(err), map[string]any{"error": "invalid or oversized json"})
 			return
 		}
 
@@ -304,7 +303,7 @@ func (s *Server) Handler() http.Handler {
 			PingTargets  *[]protocol.PingTarget `json:"ping_targets"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid json"})
+			writeJSON(w, jsonErrorStatus(err), map[string]any{"error": "invalid or oversized json"})
 			return
 		}
 
@@ -312,14 +311,20 @@ func (s *Server) Handler() http.Handler {
 		if req.PingTargets != nil {
 			pts = *req.PingTargets
 		}
-		if req.SiteTitle != "" || req.Announcement != "" || req.PingTargets != nil {
-			_ = s.store.UpdateConfig(req.SiteTitle, req.Announcement, "", pts)
+		s.authMu.Lock()
+		defer s.authMu.Unlock()
+		if _, ok := s.adminTokens.Load(adminToken(r)); !ok {
+			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "session expired"})
+			return
+		}
+		if err := s.store.UpdateSettings(req.SiteTitle, req.Announcement, pts, req.NewPassword); err != nil {
+			log.Printf("[Store] Settings save failed: %v", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "could not save settings"})
+			return
 		}
 		if req.NewPassword != "" {
-			if err := s.store.SetAdminPassword(req.NewPassword); err != nil {
-				writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
-				return
-			}
+			s.adminTokens.Clear()
+			clearAdminCookie(w, r)
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"status": "success"})
 	})
@@ -329,7 +334,10 @@ func (s *Server) Handler() http.Handler {
 
 	// 7. Embedded Web UI (Catch-all for SPA)
 	mux.Handle("/", web.Handler())
-	return mux
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBytes)
+		mux.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) Run(ctx context.Context) error {
@@ -339,8 +347,12 @@ func (s *Server) Run(ctx context.Context) error {
 
 	handler := s.Handler()
 	httpServer := &http.Server{
-		Addr:    s.addr,
-		Handler: handler,
+		Addr:              s.addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	errCh := make(chan error, 1)
@@ -358,11 +370,17 @@ func (s *Server) Run(ctx context.Context) error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = httpServer.Shutdown(shutdownCtx)
-		_ = s.store.Close()
+		if err := s.store.Close(); err != nil {
+			log.Printf("[Store] Final save failed: %v", err)
+			return err
+		}
 		log.Printf("[Server] Data flushed and server stopped.")
 		return nil
 	case err := <-errCh:
-		_ = s.store.Close()
+		if err := s.store.Close(); err != nil {
+			log.Printf("[Store] Final save failed: %v", err)
+			return err
+		}
 		return err
 	}
 }

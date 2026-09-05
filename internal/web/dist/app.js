@@ -351,7 +351,7 @@ function renderNodes() {
                 pillClass = 'warn';
               }
               return `
-                <div class="ping-pill ${pillClass}" title="${escapeHtml(p.host)} (点击查看 1h/24h 波动曲线)" data-action="ping" data-uuid="${escapeHtml(node.uuid)}" data-target="${escapeHtml(p.name)}">
+                <div class="ping-pill ${pillClass}" title="${escapeHtml(p.host)} · ${escapeHtml(p.method || '自动探测')} (点击查看 1h/24h 波动曲线)" data-action="ping" data-uuid="${escapeHtml(node.uuid)}" data-target="${escapeHtml(p.name)}">
                   <span class="ping-dot"></span>
                   <span>${escapeHtml(p.name)}:</span>
                   <span>${text}</span>
@@ -544,9 +544,18 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
   }
 });
 
-document.getElementById('logoutBtn').addEventListener('click', () => {
-  localStorage.removeItem('admin_token');
-  setAdminState(false);
+document.getElementById('logoutBtn').addEventListener('click', async () => {
+  try {
+    const res = await fetch('/api/admin/logout', {
+      method: 'POST', headers: { 'Authorization': 'Bearer ' + getAdminToken() }
+    });
+    if (!res.ok) throw new Error('退出失败，请重试');
+    localStorage.removeItem('admin_token');
+    document.getElementById('guideToken').textContent = '';
+    document.getElementById('guideInstallCmd').textContent = '';
+    document.getElementById('guideRunCmd').textContent = '';
+    setAdminState(false);
+  } catch (error) { alert(error.message); }
 });
 
 document.getElementById('addNodeBtn').addEventListener('click', () => {
@@ -693,7 +702,8 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
       })
     });
     if (res.ok) {
-      alert('设置已保存');
+      if (newPassword) { localStorage.removeItem('admin_token'); setAdminState(false); }
+      alert(newPassword ? '密码已修改，请重新登录' : '设置已保存');
       closeModal('settingsModal');
       fetchPublicSettings();
     } else {

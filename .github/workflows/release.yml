@@ -25,6 +25,12 @@ jobs:
       - name: Test
         run: go test -race ./...
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test internal/web/app_test.cjs
+      - run: python3 -m unittest discover -s tests -v
+
       - name: Build Linux x86-64 Release
         run: |
           mkdir -p dist
@@ -33,10 +39,12 @@ jobs:
           echo "Building for tag: $VERSION"
 
           # Linux AMD64
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/vibemonitor .
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X vibemonitor/internal/version.Version=$VERSION -X vibemonitor/internal/version.Commit=$GITHUB_SHA" -o dist/vibemonitor .
           tar -czf dist/vibemonitor-linux-amd64.tar.gz -C dist vibemonitor
           cp dist/vibemonitor dist/vibemonitor-linux-amd64
           rm dist/vibemonitor
+
+          cp install.sh dist/install.sh
 
           # Generate SHA256 checksums
           cd dist

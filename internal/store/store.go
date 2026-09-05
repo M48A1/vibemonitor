@@ -73,13 +73,14 @@ type Node struct {
 	PingHistory map[string][]PingSample `json:"ping_history,omitempty"`
 
 	// Traffic Billing Quota (sum mode: up + down)
-	TrafficLimit     int64     `json:"traffic_limit"`      // Bytes, 0 = no limit
-	ResetDay         int       `json:"reset_day"`          // 1-31 (day of month)
-	InitialUsed      int64     `json:"initial_used"`       // Bytes, manual offset for current cycle
-	CurrentCycleUsed int64     `json:"current_cycle_used"` // Bytes, accumulated by agent in current cycle
-	CycleStart       time.Time `json:"cycle_start"`        // Start timestamp of current cycle
-	LastTotalUp      int64     `json:"last_total_up"`      // Last reported raw totalUp
-	LastTotalDown    int64     `json:"last_total_down"`    // Last reported raw totalDown
+	TrafficLimit       int64     `json:"traffic_limit"`      // Bytes, 0 = no limit
+	ResetDay           int       `json:"reset_day"`          // 1-31 (day of month)
+	InitialUsed        int64     `json:"initial_used"`       // Bytes, manual offset for current cycle
+	CurrentCycleUsed   int64     `json:"current_cycle_used"` // Bytes, accumulated by agent in current cycle
+	CycleStart         time.Time `json:"cycle_start"`        // Start timestamp of current cycle
+	LastTotalUp        int64     `json:"last_total_up"`      // Last reported raw totalUp
+	TrafficBaselineSet bool      `json:"traffic_baseline_set"`
+	LastTotalDown      int64     `json:"last_total_down"` // Last reported raw totalDown
 
 	// Computed dynamic fields
 	CycleTotalUsed int64   `json:"cycle_total_used"` // InitialUsed + CurrentCycleUsed
@@ -152,7 +153,9 @@ func (s *Store) periodicFlusher() {
 		case <-ticker.C:
 			s.mu.Lock()
 			if s.dirty {
-				_ = s.saveLocked()
+				if err := s.saveLocked(); err != nil {
+					log.Printf("[Store] Save failed (will retry): %v", err)
+				}
 			}
 			s.mu.Unlock()
 		}
@@ -238,6 +241,12 @@ func (s *Store) load(defaultPassword string) error {
 		s.nodes = make(map[string]*Node)
 	}
 	for uuid, n := range s.nodes {
+		if n == nil {
+			return errors.New("invalid null node in data file")
+		}
+		if !n.TrafficBaselineSet && n.ResetDay > 0 && n.LastReport != nil {
+			n.TrafficBaselineSet = true
+		}
 		if n.Token != "" {
 			s.tokenIndex[n.Token] = uuid
 		}
@@ -248,7 +257,9 @@ func (s *Store) load(defaultPassword string) error {
 func (s *Store) saveLocked() error {
 	dir := filepath.Dir(s.filePath)
 	if dir != "." && dir != "" {
-		_ = os.MkdirAll(dir, 0755)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return err
+		}
 	}
 
 	df := DataFile{
@@ -283,8 +294,13 @@ func (s *Store) SetAdminPassword(newPwd string) error {
 	if newPwd == "" {
 		return errors.New("admin password cannot be empty")
 	}
+	previous := s.config
 	s.config.AdminPassword = newPwd
-	return s.saveLocked()
+	if err := s.saveLocked(); err != nil {
+		s.config = previous
+		return err
+	}
+	return nil
 }
 
 func (s *Store) GetConfig() Config {
@@ -296,6 +312,7 @@ func (s *Store) GetConfig() Config {
 func (s *Store) UpdateConfig(title, announcement, autoKey string, pingTargets []protocol.PingTarget) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	previous := s.config
 	if title != "" {
 		s.config.SiteTitle = title
 	}
@@ -307,6 +324,7 @@ func (s *Store) UpdateConfig(title, announcement, autoKey string, pingTargets []
 		s.config.PingTargets = pingTargets
 	}
 	if err := s.saveLocked(); err != nil {
+		s.config = previous
 		return err
 	}
 	s.notifyUpdate()
@@ -373,7 +391,20 @@ func (n *Node) checkCycleRollover(now time.Time) {
 }
 
 func (n *Node) calculateDynamicFields(now time.Time) {
-	n.Online = !n.LastSeen.IsZero() && now.Sub(n.LastSeen) < OfflineThreshold
+	threshold := OfflineThreshold
+	var interval float64
+	if n.BasicInfo != nil {
+		interval = n.BasicInfo.ReportIntervalSeconds
+	}
+	if n.LastReport != nil && n.LastReport.ReportIntervalSeconds > 0 {
+		interval = n.LastReport.ReportIntervalSeconds
+	}
+	if interval > 0 && interval <= 3600 {
+		if adaptive := time.Duration(interval * 3 * float64(time.Second)); adaptive > threshold {
+			threshold = adaptive
+		}
+	}
+	n.Online = !n.LastSeen.IsZero() && now.Sub(n.LastSeen) < threshold
 
 	if n.ResetDay > 0 {
 		n.checkCycleRollover(now)
@@ -430,7 +461,8 @@ func (s *Store) FindNodeByToken(token string) *Node {
 	if !ok {
 		return nil
 	}
-	return s.nodes[uuid]
+	copy := *s.nodes[uuid]
+	return &copy
 }
 
 type NodeOptions struct {
@@ -494,10 +526,13 @@ func (s *Store) CreateNodeWithOptions(opts NodeOptions) (*Node, error) {
 	s.tokenIndex[token] = uuid
 
 	if err := s.saveLocked(); err != nil {
+		delete(s.nodes, uuid)
+		delete(s.tokenIndex, token)
 		return nil, err
 	}
 	s.notifyUpdate()
-	return node, nil
+	copy := *node
+	return &copy, nil
 }
 
 func (s *Store) UpdateNode(uuid, name, group, region string, weight int) error {
@@ -520,6 +555,8 @@ func (s *Store) UpdateNodeWithOptions(uuid string, opts NodeOptions) error {
 	if !ok {
 		return errors.New("node not found")
 	}
+	previous := *n
+	n.checkCycleRollover(time.Now())
 	if opts.Name != "" {
 		n.Name = opts.Name
 	}
@@ -543,6 +580,7 @@ func (s *Store) UpdateNodeWithOptions(uuid string, opts NodeOptions) error {
 	}
 
 	if err := s.saveLocked(); err != nil {
+		*n = previous
 		return err
 	}
 	s.notifyUpdate()
@@ -561,6 +599,8 @@ func (s *Store) DeleteNode(uuid string) error {
 	delete(s.nodes, uuid)
 
 	if err := s.saveLocked(); err != nil {
+		s.nodes[uuid] = n
+		s.tokenIndex[n.Token] = uuid
 		return err
 	}
 	s.notifyUpdate()
@@ -578,15 +618,19 @@ func (s *Store) IngestBasicInfo(tokenOrUUID string, info protocol.BasicInfo, cli
 
 	node := s.nodes[uuid]
 	node.BasicInfo = &info
+	s.dirty = true
 	if clientIP != "" {
 		node.ClientIP = clientIP
 	}
 	node.LastSeen = time.Now().UTC()
 	node.Online = true
 
-	_ = s.saveLocked()
+	if err := s.saveLocked(); err != nil {
+		log.Printf("[Store] Save failed (will retry): %v", err)
+	}
 	s.notifyUpdate()
-	return node, nil
+	copy := *node
+	return &copy, nil
 }
 
 func (s *Store) IngestReport(tokenOrUUID string, report protocol.Report, clientIP string) (*Node, error) {
@@ -598,8 +642,12 @@ func (s *Store) IngestReport(tokenOrUUID string, report protocol.Report, clientI
 		return nil, errors.New("unauthorized client token")
 	}
 
+	if report.Network.TotalUp < 0 || report.Network.TotalDown < 0 {
+		return nil, errors.New("negative network counters")
+	}
 	node := s.nodes[uuid]
 	node.LastReport = &report
+	s.dirty = true
 	node.LastSeen = time.Now().UTC()
 	node.Online = true
 	if clientIP != "" && node.ClientIP == "" {
@@ -613,20 +661,21 @@ func (s *Store) IngestReport(tokenOrUUID string, report protocol.Report, clientI
 		curUp := report.Network.TotalUp
 		curDown := report.Network.TotalDown
 
-		if node.LastTotalUp > 0 && curUp >= node.LastTotalUp {
+		if node.TrafficBaselineSet && curUp >= node.LastTotalUp {
 			node.CurrentCycleUsed += (curUp - node.LastTotalUp)
-		} else if curUp > 0 && curUp < node.LastTotalUp {
+		} else if node.TrafficBaselineSet && curUp < node.LastTotalUp {
 			// Reboot detected: counter reset to 0 and started afresh
 			node.CurrentCycleUsed += curUp
 		}
 
-		if node.LastTotalDown > 0 && curDown >= node.LastTotalDown {
+		if node.TrafficBaselineSet && curDown >= node.LastTotalDown {
 			node.CurrentCycleUsed += (curDown - node.LastTotalDown)
-		} else if curDown > 0 && curDown < node.LastTotalDown {
+		} else if node.TrafficBaselineSet && curDown < node.LastTotalDown {
 			// Reboot detected
 			node.CurrentCycleUsed += curDown
 		}
 
+		node.TrafficBaselineSet = true
 		node.LastTotalUp = curUp
 		node.LastTotalDown = curDown
 	}
@@ -672,13 +721,16 @@ func (s *Store) IngestReport(tokenOrUUID string, report protocol.Report, clientI
 			}
 		}
 		if addedSample {
-			_ = s.saveLocked()
+			if err := s.saveLocked(); err != nil {
+				log.Printf("[Store] Save failed (will retry): %v", err)
+			}
 		}
 	}
 
 	s.dirty = true
 	s.notifyUpdate()
-	return node, nil
+	copy := *node
+	return &copy, nil
 }
 
 func (s *Store) GetPingHistory(uuid, targetName, timeRange string) (*PingHistoryResponse, error) {

@@ -43,20 +43,21 @@ type BasicInfoParams struct {
 
 // BasicInfo describes static hardware and OS information of a client node
 type BasicInfo struct {
-	CPUName          string `json:"cpu_name"`
-	CPUCores         int    `json:"cpu_cores"`
-	CPUPhysicalCores int    `json:"cpu_physical_cores"`
-	Arch             string `json:"arch"`
-	OS               string `json:"os"`
-	KernelVersion    string `json:"kernel_version"`
-	IPv4             string `json:"ipv4"`
-	IPv6             string `json:"ipv6"`
-	MemTotal         int64  `json:"mem_total"`
-	SwapTotal        int64  `json:"swap_total"`
-	DiskTotal        int64  `json:"disk_total"`
-	GPUName          string `json:"gpu_name"`
-	Virtualization   string `json:"virtualization"`
-	Version          string `json:"version"`
+	ReportIntervalSeconds float64 `json:"report_interval_seconds,omitempty"`
+	CPUName               string  `json:"cpu_name"`
+	CPUCores              int     `json:"cpu_cores"`
+	CPUPhysicalCores      int     `json:"cpu_physical_cores"`
+	Arch                  string  `json:"arch"`
+	OS                    string  `json:"os"`
+	KernelVersion         string  `json:"kernel_version"`
+	IPv4                  string  `json:"ipv4"`
+	IPv6                  string  `json:"ipv6"`
+	MemTotal              int64   `json:"mem_total"`
+	SwapTotal             int64   `json:"swap_total"`
+	DiskTotal             int64   `json:"disk_total"`
+	GPUName               string  `json:"gpu_name"`
+	Virtualization        string  `json:"virtualization"`
+	Version               string  `json:"version"`
 }
 
 // ReportParams wraps agent.report parameters
@@ -73,6 +74,7 @@ type PingTarget struct {
 
 // PingResult records latency measurement for a target
 type PingResult struct {
+	Method  string `json:"method,omitempty"`
 	Name    string `json:"name"`
 	Host    string `json:"host"`
 	Latency int    `json:"latency"` // ms, -1 if unreachable/timed out
@@ -80,19 +82,20 @@ type PingResult struct {
 
 // Report contains dynamic, real-time performance metrics
 type Report struct {
-	UUID        string            `json:"uuid,omitempty"`
-	CPU         CPUReport         `json:"cpu"`
-	RAM         RAMReport         `json:"ram"`
-	Swap        RAMReport         `json:"swap"`
-	Load        LoadReport        `json:"load"`
-	Disk        DiskReport        `json:"disk"`
-	Network     NetworkReport     `json:"network"`
-	Connections ConnectionsReport `json:"connections"`
-	PingResults []PingResult      `json:"ping_results,omitempty"`
-	Uptime      int64             `json:"uptime"`
-	Process     int               `json:"process"`
-	Message     string            `json:"message,omitempty"`
-	UpdatedAt   time.Time         `json:"updated_at"`
+	ReportIntervalSeconds float64           `json:"report_interval_seconds,omitempty"`
+	UUID                  string            `json:"uuid,omitempty"`
+	CPU                   CPUReport         `json:"cpu"`
+	RAM                   RAMReport         `json:"ram"`
+	Swap                  RAMReport         `json:"swap"`
+	Load                  LoadReport        `json:"load"`
+	Disk                  DiskReport        `json:"disk"`
+	Network               NetworkReport     `json:"network"`
+	Connections           ConnectionsReport `json:"connections"`
+	PingResults           []PingResult      `json:"ping_results,omitempty"`
+	Uptime                int64             `json:"uptime"`
+	Process               int               `json:"process"`
+	Message               string            `json:"message,omitempty"`
+	UpdatedAt             time.Time         `json:"updated_at"`
 }
 
 type CPUReport struct {

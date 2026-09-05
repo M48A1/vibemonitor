@@ -151,7 +151,7 @@ func TestInstallerValidation(t *testing.T) {
 		t.Fatal("missing standalone architecture detection")
 	}
 	for name, detection := range map[string]string{
-		"dynamic":    strings.Split(script, "mkdir -p")[0],
+		"dynamic":    strings.Split(script, "# Installation begins here")[0],
 		"standalone": "info() { :; }; error() { echo \"$1\"; exit 1; };\n" + standaloneText[start:end] + "\ndetect_arch\n",
 	} {
 		for _, platform := range []string{"Linux/x86_64", "Linux/amd64", "Linux/aarch64", "Linux/armv7l", "Linux/i686", "Darwin/x86_64", "FreeBSD/x86_64", "MINGW64_NT/x86_64"} {

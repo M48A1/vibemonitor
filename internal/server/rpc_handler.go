@@ -57,14 +57,14 @@ func (h *RPCHandler) HandleV2RPC(w http.ResponseWriter, r *http.Request) {
 	}
 
 	token := extractToken(r)
-	if token == "" {
-		writeJSON(w, http.StatusUnauthorized, protocol.ErrorResponse(nil, -32000, "missing token", nil))
+	if token == "" || h.store.FindNodeByToken(token) == nil {
+		writeJSON(w, http.StatusUnauthorized, protocol.ErrorResponse(nil, -32000, "invalid token", nil))
 		return
 	}
 
-	body, err := io.ReadAll(r.Body)
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRequestBytes))
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, protocol.ErrorResponse(nil, -32700, "failed to read body", nil))
+		writeJSON(w, jsonErrorStatus(err), protocol.ErrorResponse(nil, -32700, "failed to read body", nil))
 		return
 	}
 

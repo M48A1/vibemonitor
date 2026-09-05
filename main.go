@@ -15,9 +15,9 @@ import (
 
 	"vibemonitor/internal/agent"
 	"vibemonitor/internal/server"
+	"vibemonitor/internal/store"
+	"vibemonitor/internal/version"
 )
-
-const Version = "1.0.0-lite"
 
 func getEnv(key, defaultVal string) string {
 	if val := os.Getenv(key); val != "" {
@@ -36,6 +36,7 @@ Commands:
   server    Start the monitoring master server (default)
   agent     Start the lightweight probe agent
   version   Show version information
+  validate-data FILE  Validate a backup before restoring
   help      Show this help message
 
 Server Options:
@@ -54,7 +55,7 @@ Examples:
 
   # Start agent probe
   vibemonitor agent --server http://1.2.3.4:1314 --token YOUR_TOKEN
-`, Version)
+`, version.Version)
 }
 
 func runServer(args []string) {
@@ -103,8 +104,8 @@ func runAgent(args []string) {
 	}
 
 	interval, err := time.ParseDuration(*intervalStr)
-	if err != nil || interval <= 0 {
-		interval = 3 * time.Second
+	if err != nil || interval <= 0 || interval > time.Hour {
+		log.Fatal("report interval must be greater than zero and at most 1h")
 	}
 
 	client := agent.New(agent.Options{
@@ -126,7 +127,7 @@ func main() {
 	}
 
 	cmd := args[0]
-	if strings.HasPrefix(cmd, "-") {
+	if strings.HasPrefix(cmd, "-") && cmd != "-v" && cmd != "--version" && cmd != "-h" && cmd != "--help" {
 		// e.g. vibemonitor --listen ...
 		runServer(args)
 		return
@@ -138,7 +139,19 @@ func main() {
 	case "agent":
 		runAgent(args[1:])
 	case "version", "-v", "--version":
-		fmt.Printf("VibeMonitor version %s\n", Version)
+		fmt.Printf("VibeMonitor version %s (%s)\n", version.Version, version.Commit)
+	case "validate-data":
+		if len(args) != 2 {
+			log.Fatal("usage: vibemonitor validate-data FILE")
+		}
+		data, err := os.ReadFile(args[1])
+		if err != nil {
+			log.Fatal(err)
+		}
+		if err := store.ValidateData(data); err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println("Backup is valid")
 	case "help", "-h", "--help":
 		printHelp()
 	default:

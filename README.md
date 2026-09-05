@@ -1,206 +1,154 @@
-# ⚡ VibeMonitor (精简版服务器监控)
+# VibeMonitor
 
-> 极致轻量、安全纯粹、开箱即用的现代服务器探针监控系统。
+面向 Linux x86-64（Intel/AMD 64 位）的轻量服务器监控程序。主控服务、探针和内嵌网页共用一个 Go 二进制；不提供远程终端、文件管理、多用户或外部通知推送。
 
----
+## 功能
 
-## 🌟 为什么选择 VibeMonitor？
+- 采集 CPU、内存、Swap、磁盘、负载、网络速度、累计流量、连接数、进程数及运行时间。
+- 通过 WebSocket 更新节点卡片，支持分组、搜索、地区、站点标题、公告和深浅色主题。
+- 按上传＋下载累计月流量，支持配额、账单重置日、初始已用量和页面变色提醒。该统计是探针观测值，不等同于云厂商账单。
+- 自定义 IPv4 或域名延迟目标；最多 64 个目标。`域名:端口` 使用 TCP 连接测时，无端口目标优先调用系统 `ping -4`，失败后尝试 TCP 80/443。页面提示实际测量方式；TCP 连接耗时与 ICMP 往返延迟不可直接混作同一指标。
+- 延迟历史每个目标约 60 秒取一个样本，保留最多 1440 点，提供 1 小时和 24 小时视图。页面丢失率按留存采样计算，并非连续抓包统计。
+- 默认每 3 秒上报。自带探针上报间隔支持大于零、最多 1 小时；离线阈值取 10 秒和上报间隔三倍中的较大值。未携带间隔字段的第三方探针仍使用 10 秒阈值。
+- 单管理员登录；退出撤销当前会话，改密撤销所有会话。公开节点和 WebSocket 不包含节点密钥。
 
-原版探针系统近期集成了较多重量级功能（如复杂多租户/OAuth、多数据库迁移、Goja JS 插件、Pprof、主题市场、以及用于远程控制的反弹 Shell/终端与文件管理器）。根据 2026 年安全研究报告（如 Huntress），默认的双向远程命令控制容易成为恶意滥用的高危入口（LOLRMM）。
+程序体积、内存占用与节点数量、目标数量、访问量、编译版本有关，项目不承诺固定资源占用。实际部署前请按自身规模测试。
 
-**VibeMonitor 专注于最核心的探针监控与颜值展示**，进行了全面的重构与轻量化：
+## 安装要求
 
-1. **纯粹安全 (Safe by Design)**：
-   - 彻底剔除反弹 Shell (Terminal)、任意远程命令执行 (Exec)、远程文件上传下载管理 (Filemanager) 等危险后门功能。
-   - 纯粹的单向性能指标采集与上报，安心部署，杜绝被黑客利用的隐患。
-2. **彻底剔除插件系统与动态脚本引擎 (Zero Plugins / No JS Runtime)**：
-   - 完全剔除重量级的 Goja JavaScript 动态脚本解释器、插件市场、分块 ZIP 插件上传与动态路由挂载。
-   - 杜绝任意动态第三方脚本在服务端执行带来的安全漏洞与性能开销，保障核心代码 100% 静态编译、不可篡改。
-3. **剔除主题市场，仅保留单一高颜值无模糊主题 (Single Clean Theme)**：
-   - 彻底移除了原版复杂且易出现路径穿透的主题市场、外部 `.tar.zst` 解包与动态主题加载机制。
-   - 仅保留并内置现代卡片主题，并按需求**完全去除了毛玻璃与模糊效果**，改为高对比度、低资源开销的纯色平整卡片（原生支持 Dark/Light 切换），作为唯一默认内嵌仪表盘。
-4. **去除多用户复杂度 (Single Admin)**：
-   - 无需复杂的注册、OAuth、用户管理表与权限策略。
-   - 统一由单一管理员密码管理（支持环境变量预设或首次启动自动生成）。访客直达大屏，管理员一键登录。
-5. **零依赖单二进制 (Single Binary, Zero CGo)**：
-   - 纯 Go 编写（无 CGo、无 GCC 编译依赖、无 Node.js/npm 运行时依赖）。
-   - 现代响应式 Web 仪表盘**完全内嵌**在单一二进制文件中，二进制体积仅约 **6.5MB**！
-6. **周期性账单日流量统计与配额告警 (Sum 双向计费)**：
-   - 支持设置月流量配额（如 1000 GB）与每月账单重置日（如 15 号）。
-   - **支持初始已用偏移**：添加/编辑节点时支持填入当前周期已用流量，自动以此为基准并叠加探针增量；一旦到达下个周期重置日，自动清零偏移并纯按探针采集数据统计剩余。
-   - 包含超额变色预警（60% 橙色预警，90% 红色告警）与重启容灾增量统计。
-7. **极致轻量，极低资源占用**：
-   - 服务端 (Master) 内存占用仅 **10~15MB**。
-   - 探针客户端 (Agent) 内存占用 **< 5MB**。
-8. **高度兼容 v2 协议**：
-   - 完全兼容 v2 JSON-RPC 上报协议（如 `agent.report` / `agent.basicInfo`），不仅可以使用自带轻量 Agent，第三方客户端或测试脚本亦可无缝对接。
-9. **自定义延迟监测模块 (Custom Ping Latency Monitor)**：
-   - **无需内置硬编码测速点**：管理员可在管理面板“⚙️ 站点设置”中自由添加/修改任意测速目标（每行一个 `名称,IP或域名:端口`，例如：`上海电信,180.153.28.1:80`、`谷歌DNS,8.8.8.8`）。
-   - **自动调度与安全探测**：探针端自动同步测速目标列表并在后台多协程轻量测量端到端往返 RTT（纯 Go 原生 TCP/ICMP 探测，无需 root/raw-socket 权限）。
-   - **大屏实时卡片胶囊呈现**：节点卡片直观显示各测速点延迟（`<150ms` 绿胶囊、`150~250ms` 黄胶囊、`>250ms` 或超时红胶囊）。
-10. **彻底剔除原版臃肿‘仪表板’与时序聚合库 (Zero Bloated Dashboard)**：
-   - 彻底移除了原版多达近 2000 行代码的‘仪表板’视图，不加载任何庞大的第三方图表库（如 Recharts/Echarts 等）。
-   - 彻底剔除了 24 小时流量汇总走势图、Top 5 流量消耗排行、平均 CPU/内存占用排行以及延迟稳定性分析排行。
-   - 彻底剔除了底层繁重低效的时序指标数据库聚合引擎（MetricStore / TDigest / Coarse Rollup），杜绝磁盘与数据库膨胀，系统常驻内存严格保持在 10~15MB。
-11. **彻底剔除外部通知报警与多渠道推送系统 (Zero Notification / No Alert Bloat)**：
-   - 彻底移除了原版复杂的通知模块（包括 Telegram Bot、Discord、Webhook、邮件 SMTP、Bark、Server酱等推送通道与定时轮询）；
-   - 杜绝了后台繁琐的警报判定协程与出站网络开销，专注于极简纯净的实时探针监控与大屏卡片呈现。
+仅支持 **Linux x86-64 + systemd**，不支持 ARM、32 位 x86 或其他操作系统。安装器需要 root，以及 `curl`、`sha256sum`、`systemctl`、`mktemp`、`od`、`awk` 等常用工具。ICMP 测量需要系统提供 `ping`。
 
----
+安装器从 GitHub Releases 下载固定版本的二进制和 SHA-256 清单，校验通过后原子替换。启动或主控健康检查失败会恢复旧二进制和旧服务配置。探针的启动检查仅确认进程存活，是否成功连接主控请查看面板或日志。
 
-## 🚀 快速上手 (Linux VPS 一键安装)
+**需要先发布包含 `vibemonitor-linux-amd64`、`install.sh`、`sha256sums.txt` 的新版 Release。** 仅推送源码不会更新服务器，也不会创建新版 Release。SHA-256 用于完整性校验，信任来源仍是该 GitHub 仓库及其发布权限。
 
-本项目提供类似 Komari 的开箱即用一键安装脚本（纯直连 GitHub 官方 Releases，无任何第三方代理）：
-
-### 1. 部署服务端 (Master Server)
-
-在你的主控 VPS 上，以 root 权限执行：
+下载并查看安装脚本后执行：
 
 ```bash
-# 交互式菜单（支持安装/更新/查看状态/卸载）
-curl -fsSL https://raw.githubusercontent.com/m48a1/vibemonitor/main/install.sh | bash
-
-# 或非交互式一键静默安装（默认端口 1314）
-curl -fsSL https://raw.githubusercontent.com/m48a1/vibemonitor/main/install.sh | bash -s -- server
+curl -4 -fsSL -o install.sh https://raw.githubusercontent.com/M48A1/vibemonitor/main/install.sh
+bash install.sh
 ```
 
-> 首次启动若未指定密码，会自动生成随机管理员密码。可以通过 `journalctl -u vibemonitor-server -n 30` 或在屏幕输出中查看。
+菜单从终端读取输入；无交互终端时必须使用以下子命令。
 
-`--admin-password` 和 `VIBEMONITOR_ADMIN_PASSWORD` 仅在首次创建数据文件时设置初始密码。已有数据文件时，使用已保存的密码；在管理页面修改密码后，重启不会恢复安装时的旧密码。
-> 浏览器打开 `http://你的IP:1314`，点击右上角 **⚙️ 管理** 即可登录管理面板。
+### 主控
 
----
-
-### 2. 接入被监控节点 (Agent)
-
-在 Web 仪表盘点击 **⚙️ 管理** 登录后，点击 **➕ 添加节点** 生成专属 Token。
-
-在任意被监控的远程 Linux VPS 上，以 root 权限执行：
-
-#### 方式 A：GitHub 官方脚本一键安装 (推荐)
 ```bash
-curl -fsSL https://raw.githubusercontent.com/m48a1/vibemonitor/main/install.sh | bash -s -- agent -s http://<主控IP>:1314 -t <节点TOKEN>
+bash install.sh server -p 1314
 ```
 
-#### 方式 B：通过主控端动态下发一键安装
+首次创建数据文件时自动生成密码，可用以下命令查看初始化日志：
+
 ```bash
-curl -fsSL http://<主控IP>:1314/install.sh?token=<节点TOKEN> | bash
+journalctl -u vibemonitor-server -n 30
 ```
 
-#### 方式 C：单二进制直接运行
+也可用 `-w '初始密码'` 指定首次密码。已有数据文件时保留已保存的密码；网页改密不会在重启后恢复旧密码。
+
+### 探针
+
+在管理页面添加节点并取得 Token，然后运行：
+
 ```bash
-./vibemonitor agent --server http://<主控IP>:1314 --token <节点TOKEN>
+bash install.sh agent -s https://monitor.example.com -t YOUR_NODE_TOKEN -i 3s
 ```
 
----
+管理员页面的动态接入命令会下载并校验 Release 中的同一个安装器，不再使用主控网站页面作为二进制备用下载。
 
-## 🛠️ Linux Systemd 后台常驻部署 (服务端)
+旧动态安装器曾使用 `/opt/vibemonitor/vibemonitor` 和 `vibemonitor.service`；如从该方式迁移，确认新探针在线后停用旧探针服务，避免重复上报。不要停用同名的旧主控服务。
 
-在 Linux 服务器上，推荐使用 Systemd 管理服务端守护进程：
+## HTTPS 部署
 
-```bash
-# 1. 下载或移动二进制到系统目录
-sudo mv vibemonitor /usr/local/bin/vibemonitor
-sudo chmod +x /usr/local/bin/vibemonitor
+公网管理和探针连接应使用 HTTPS。直接访问 `http://IP:1314` 不提供传输加密。
 
-# 2. 创建数据存储目录
-sudo mkdir -p /etc/vibemonitor
+以 Nginx 在同一台机器代理为例，先将主控监听地址改为 `127.0.0.1:1314`。使用 `systemctl edit vibemonitor-server` 设置：
 
-# 3. 创建 Systemd 服务文件
-sudo tee /etc/systemd/system/vibemonitor.service > /dev/null <<EOF
-[Unit]
-Description=VibeMonitor Master Server
-After=network.target
-
+```ini
 [Service]
-Type=simple
-User=root
-WorkingDirectory=/etc/vibemonitor
-ExecStart=/usr/local/bin/vibemonitor server --listen 0.0.0.0:1314 --data /etc/vibemonitor/vibemonitor-data.json
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# 4. 启动并设置开机自启
-sudo systemctl daemon-reload
-sudo systemctl enable --now vibemonitor
-
-# 查看运行状态
-sudo systemctl status vibemonitor
+ExecStart=
+ExecStart=/usr/local/bin/vibemonitor server --listen 127.0.0.1:1314 --data /etc/vibemonitor/vibemonitor-data.json
 ```
 
----
+准备自己的域名及证书，将以下示例替换为实际域名与证书路径：
 
-## ⚙️ 命令行参数与环境变量
+```nginx
+server {
+    listen 80;
+    server_name monitor.example.com;
+    return 301 https://monitor.example.com$request_uri;
+}
+server {
+    listen 443 ssl;
+    server_name monitor.example.com;
+    ssl_certificate /etc/nginx/certs/monitor.example.com.fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/monitor.example.com.key;
+    client_max_body_size 1m;
+    location / {
+        proxy_pass http://127.0.0.1:1314;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 90s;
+    }
+}
+```
 
-| 参数 | 环境变量 | 默认值 | 作用说明 |
-| :--- | :--- | :--- | :--- |
-| `--listen`, `-l` | `VIBEMONITOR_LISTEN` | `0.0.0.0:1314` | 服务端监听地址与端口 |
-| `--data`, `-d` | `VIBEMONITOR_DATA` | `vibemonitor-data.json` | 本地数据持久化文件路径 |
-| `--admin-password`, `-p` | `VIBEMONITOR_ADMIN_PASSWORD` | *(自动生成)* | 首次初始化的管理员密码（单管理员） |
-| `--server`, `-s` | `VIBEMONITOR_SERVER` | 无 | (Agent 模式) 主控服务端地址 |
-| `--token`, `-t` | `VIBEMONITOR_TOKEN` | 无 | (Agent 模式) 节点的通信密钥 |
-| `--interval`, `-i` | `VIBEMONITOR_INTERVAL` | `3s` | (Agent 模式) 监控上报频率 |
+主控只信任本机回环代理的 HTTPS 标记，用于安全 Cookie 和动态安装链接。自带探针的上报密钥仅放在 Authorization 请求头；兼容接口仍接受旧探针的查询参数密钥。动态安装链接本身仍含节点密钥，不要公开分享或保留到公开访问日志。
 
----
+应用按直接连接地址限制登录尝试：每 5 分钟最多 10 次。同机反向代理下该额度由通过代理的用户共享；应用不会信任任意来源的转发 IP 来绕过限制。
 
-## 💻 本地编译与交叉编译
+## 数据、备份与恢复
 
-本项目采用纯 Go 标准库与现代 WebSocket 模块开发，发行版本仅支持 x86-64（Intel/AMD 64 位，Go 架构名 `amd64`），不支持 ARM 或 32 位 x86。仅提供 Linux 二进制；可在其他开发系统上交叉编译，但不能在这些系统上运行：
+默认数据文件为 `/etc/vibemonitor/vibemonitor-data.json`。配置和节点管理修改保存成功后才返回成功；失败会保留原配置。指标在内存接收后定期保存（约 15 秒），新延迟采样还会触发保存；后台写入失败会记日志并重试。进程崩溃可能丢失尚未落盘的近期指标。
 
 ```bash
-# 编译 Linux x86-64 二进制
+bash install.sh backup
+bash install.sh restore /etc/vibemonitor/backups/data-YYYYMMDD-HHMMSS.XXXXXX
+```
+
+备份会短暂停止正在运行的标准主控服务，以完成退出保存，然后复制数据并重新启动。恢复前验证文件结构、备份当前数据，恢复后若服务启动失败则回退到恢复前数据。标准服务名为 `vibemonitor-server`；自定义服务名或数据路径的手动部署需要自行停服并备份实际文件。
+
+备份和数据文件包含管理员密码及节点密钥，应仅供管理员读取。恢复也会恢复备份时的密码和节点密钥。安装更新前自动备份现有主控数据；备份保存在本机，应另行复制到其他机器，并自行制定保留期限。
+
+```bash
+bash install.sh status
+bash install.sh restart
+bash install.sh uninstall
+```
+
+卸载保留主控数据和备份。更新安装器会重写标准 unit；`systemctl edit` 创建的 drop-in 会由 systemd 保留。若 drop-in 改了监听端口，请为更新命令传入对应的 `-p` 端口，以便健康检查。
+
+## 编译与测试
+
+```bash
 make build
-
-# 运行全套单元测试与集成测试
-make test
-
-# 交叉编译 Linux x86-64 发行包
 make release-all
 ```
 
----
+均只编译 Linux amd64。可在 Mac 上交叉编译，但不能在 Mac 上运行产物。版本号来自 Git 标签或提交；Release 使用标签和提交哈希，可通过 `vibemonitor version` 或 `/api/version` 查询。
 
-## 📊 架构设计
-
-```
-                    +-----------------------------+
-                    |  Web 浏览器 / 手机移动端     |
-                    | (卡片式实时仪表盘, WebSocket)|
-                    +--------------▲--------------+
-                                   │  HTTP / WS
-                    +--------------▼--------------+
-                    |         VibeMonitor         |
-                    |     (Server 主控端)         |
-                    |   - 极速原子 JSON 持久化     |
-                    |   - 内存环形历史队列 (Spark) |
-                    |   - 兼容 v2 JSON-RPC        |
-                    +--------------▲--------------+
-                                   │  POST /v2/rpc (安全指标流)
-            +-----------------------+-----------------------+
-            │                                               │
-+-----------▼----------+                       +-----------▼----------+
-|  VibeMonitor Agent   |                       |    第三方兼容 Agent   |
-| (Linux x86-64 探针)|                       | (完全兼容 v2 协议上报) |
-+----------------------+                       +----------------------+
-```
-
-## 测试
-
-完整后端测试需要在 Linux x86-64 上运行。后端测试包含公开接口和 WebSocket 密钥隔离、节点认证、安装脚本校验、密码持久化及月底流量重置回归测试：
+在 Linux x86-64 上运行完整测试：
 
 ```bash
 go test -race ./...
-```
-
-前端回归测试使用 Node.js 内置测试运行器，无需安装额外依赖：
-
-```bash
 node --test internal/web/app_test.cjs
+python3 -m unittest discover -s tests -v
 ```
 
-## 📄 License
-MIT License.
+安装器测试使用临时目录和模拟网络、systemd，不会修改真实服务。GitHub Actions 在 main 推送和 PR 时执行这些检查；推送 `v*` 标签会测试、编译并创建 Release。
+
+## 参数
+
+| 参数 | 环境变量 | 默认值 |
+| --- | --- | --- |
+| `--listen`, `-l` | `VIBEMONITOR_LISTEN` | `0.0.0.0:1314` |
+| `--data`, `-d` | `VIBEMONITOR_DATA` | `vibemonitor-data.json` |
+| `--admin-password`, `-p` | `VIBEMONITOR_ADMIN_PASSWORD` | 首次自动生成 |
+| `--server`, `-s` | `VIBEMONITOR_SERVER` | 探针必填 |
+| `--token`, `-t` | `VIBEMONITOR_TOKEN` | 探针必填 |
+| `--interval`, `-i` | `VIBEMONITOR_INTERVAL` | `3s` |
+
+`vibemonitor validate-data FILE` 只检查备份格式，不启动服务或修改文件。

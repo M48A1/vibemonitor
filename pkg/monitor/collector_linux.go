@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"vibemonitor/internal/version"
 	"vibemonitor/pkg/protocol"
 )
 
@@ -33,7 +34,7 @@ func (c *LinuxCollector) GetBasicInfo() (protocol.BasicInfo, error) {
 		Arch:     runtime.GOARCH,
 		OS:       "Linux",
 		CPUCores: runtime.NumCPU(),
-		Version:  "1.0.0-lite",
+		Version:  version.Version,
 	}
 
 	// Read /etc/os-release
