@@ -225,7 +225,10 @@
           <label>币种<select class="form-input" id="editNodeCurrency"><option>CNY</option><option>USD</option><option>EUR</option><option>HKD</option><option>JPY</option><option>GBP</option></select></label>
         </div>
         <div style="display: flex; justify-content: space-between; gap: 10px; margin-top: 14px;">
-          <button type="button" class="btn btn-danger" id="deleteNodeBtn">删除节点</button>
+          <div style="display: flex; gap: 10px;">
+            <button type="button" class="btn btn-danger" id="deleteNodeBtn">删除节点</button>
+            <button type="button" class="btn" id="editNodeGuideBtn">显示节点接入命令</button>
+          </div>
           <div style="display: flex; gap: 10px;">
             <button type="button" class="btn" onclick="closeModal('editNodeModal')">取消</button>
             <button type="submit" class="btn btn-primary">保存修改</button>
