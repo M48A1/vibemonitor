@@ -122,23 +122,11 @@ function updateGlobalStats() {
   document.getElementById('statTotal').textContent = total;
   document.getElementById('statOnline').textContent = online;
 
-  let totalCpu = 0;
-  let activeCpuCount = 0;
-  let totalMemUsed = 0;
-  let totalMemMax = 0;
   let totalNetUp = 0;
   let totalNetDown = 0;
 
   nodes.forEach(n => {
     if (n.online && n.last_report) {
-      if (n.last_report.cpu) {
-        totalCpu += n.last_report.cpu.usage || 0;
-        activeCpuCount++;
-      }
-      if (n.last_report.ram) {
-        totalMemUsed += n.last_report.ram.used || 0;
-        totalMemMax += n.last_report.ram.total || 0;
-      }
       if (n.last_report.network) {
         totalNetUp += n.last_report.network.up || 0;
         totalNetDown += n.last_report.network.down || 0;
@@ -146,10 +134,6 @@ function updateGlobalStats() {
     }
   });
 
-  const avgCpu = activeCpuCount > 0 ? (totalCpu / activeCpuCount).toFixed(1) + '%' : '0%';
-  document.getElementById('statAvgCPU').textContent = avgCpu;
-  document.getElementById('statMemUsed').textContent = formatBytes(totalMemUsed);
-  document.getElementById('statMemTotal').textContent = formatBytes(totalMemMax);
   document.getElementById('statNetUp').textContent = formatSpeed(totalNetUp);
   document.getElementById('statNetDown').textContent = formatSpeed(totalNetDown);
 
@@ -528,7 +512,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
     const res = await fetch('/api/admin/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password })
+      body: JSON.stringify({ username: document.getElementById('loginUsername').value, password })
     });
     const data = await res.json();
     if (data.token) {

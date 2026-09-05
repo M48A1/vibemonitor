@@ -30,6 +30,7 @@ type Server struct {
 type Options struct {
 	ListenAddr    string
 	DataFile      string
+	AdminUsername string
 	AdminPassword string
 }
 
@@ -41,7 +42,7 @@ func New(opts Options) (*Server, error) {
 		opts.DataFile = "vibemonitor-data.json"
 	}
 
-	st, err := store.New(opts.DataFile, opts.AdminPassword)
+	st, err := store.New(opts.DataFile, opts.AdminPassword, opts.AdminUsername)
 	if err != nil {
 		return nil, err
 	}
@@ -147,6 +148,7 @@ func (s *Server) Handler() http.Handler {
 		s.authMu.RLock()
 		defer s.authMu.RUnlock()
 		var req struct {
+			Username string `json:"username"`
 			Password string `json:"password"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -154,8 +156,8 @@ func (s *Server) Handler() http.Handler {
 			return
 		}
 
-		if !s.store.VerifyAdminPassword(req.Password) {
-			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "invalid password"})
+		if !s.store.VerifyAdmin(req.Username, req.Password) {
+			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "invalid username or password"})
 			return
 		}
 

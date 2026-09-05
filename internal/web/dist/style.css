@@ -462,6 +462,8 @@ body {
 .sparkline-box {
   height: 32px;
   width: 100%;
+}
+
 /* Latency / Ping Section */
 .node-ping-section {
   display: flex;

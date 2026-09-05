@@ -30,7 +30,7 @@ func TestSessionRevocationAndFailedSettings(t *testing.T) {
 		return w
 	}
 	login := func() string {
-		w := call("POST", "/api/admin/login", `{"password":"original"}`, "", false)
+		w := call("POST", "/api/admin/login", `{"username":"admin","password":"original"}`, "", false)
 		var v struct{ Token string }
 		json.Unmarshal(w.Body.Bytes(), &v)
 		if v.Token == "" {
@@ -103,7 +103,7 @@ func TestRequestLimitsAndEarlyAuthentication(t *testing.T) {
 		t.Fatalf("oversized request status: %d", w.Code)
 	}
 	for i := 0; i < 11; i++ {
-		r = httptest.NewRequest("POST", "/api/admin/login", strings.NewReader(`{"password":"wrong"}`))
+		r = httptest.NewRequest("POST", "/api/admin/login", strings.NewReader(`{"username":"admin","password":"wrong"}`))
 		r.Header.Set("X-Forwarded-For", string(rune('a'+i)))
 		w = httptest.NewRecorder()
 		h.ServeHTTP(w, r)

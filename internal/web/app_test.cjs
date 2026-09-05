@@ -92,3 +92,19 @@ test('failed logout does not pretend that the server session was revoked', async
   assert.equal(app.context.localStorage.removed, undefined);
   assert.ok(warning);
 });
+
+test('modal styles are top-level rules with balanced blocks', () => {
+  const css = fs.readFileSync(path.join(__dirname, 'dist/style.css'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g, '');
+  let depth = 0;
+  const modalOffset = css.indexOf('.modal-overlay {');
+  assert.ok(modalOffset >= 0);
+  for (let i = 0; i < css.length; i++) {
+    if (i === modalOffset) assert.equal(depth, 0, 'modal rules must not be nested in another component');
+    if (css[i] === '{') depth++;
+    if (css[i] === '}') depth--;
+    assert.ok(depth >= 0, 'unexpected closing brace');
+  }
+  assert.equal(depth, 0, 'unclosed CSS block');
+});

@@ -55,7 +55,7 @@ func TestNodeCredentialIsolation(t *testing.T) {
 			t.Fatalf("credential endpoint status: %d", w.Code)
 		}
 	}
-	w := request("POST", "/api/admin/login", `{"password":"test-password"}`, "")
+	w := request("POST", "/api/admin/login", `{"username":"admin","password":"test-password"}`, "")
 	var login struct{ Token string }
 	json.Unmarshal(w.Body.Bytes(), &login)
 	w = request("GET", "/api/admin/nodes/"+uuid+"/token", "", login.Token)
