@@ -219,7 +219,7 @@ function renderPingPanels(node) {
   const previews = node.ping_preview || reports.map(p => ({name:p.name,host:p.host,samples:[],loss:null}));
   if (!previews.length) return '<div class="ping-empty">尚未配置 TCP 测试目标</div>';
   return '<div class="ping-panels">'+['延迟','丢包'].map((heading,column) => `<div class="ping-panel"><div class="panel-label">${heading}</div>${previews.map((p,i) => {
-    const report = reports.find(r => r.name===p.name && r.host===p.host);
+    const report = reports.find(r => r.name===p.name);
     const value = column ? (p.loss == null ? '待采样' : Number(p.loss).toFixed(1)+'%') : (!node.online || !report ? '待上报' : report.latency<0 ? '超时' : report.latency+' ms');
     const samples = p.samples || [];
     const bars = Array.from({length:24},(_,j) => {
@@ -227,7 +227,7 @@ function renderPingPanels(node) {
       const cls = !sample ? 'empty' : sample.l<0 ? 'lost' : column ? 'received' : sample.l>250 ? 'slow' : 'fast';
       return `<i class="sample-bar ${cls}" title="${!sample ? '暂无采样' : sample.l<0 ? '超时' : sample.l+' ms'}"></i>`;
     }).join('');
-    return `<button class="ping-sample-row" data-action="ping" data-uuid="${escapeHtml(node.uuid)}" data-target="${escapeHtml(p.name)}" title="${escapeHtml(p.host)} · 24 小时采样统计"><span class="ping-row-heading"><span><b class="target-dot target-${i%3}"></b>${escapeHtml(p.name)}</span><strong>${value}</strong></span><span class="sample-bars">${bars}</span></button>`;
+    return `<button class="ping-sample-row" data-action="ping" data-uuid="${escapeHtml(node.uuid)}" data-target="${escapeHtml(p.name)}" title="24 小时采样统计"><span class="ping-row-heading"><span><b class="target-dot target-${i%3}"></b>${escapeHtml(p.name)}</span><strong>${value}</strong></span><span class="sample-bars">${bars}</span></button>`;
   }).join('')}</div>`).join('')+'</div>';
 }
 
@@ -253,7 +253,6 @@ function renderNodes() {
     const ram = r.ram || {};
     const disk = r.disk || {};
     const net = r.network || {};
-    const load = r.load || {};
 
     const cpuUsage = isOnline ? (cpu.usage || 0).toFixed(1) : 0;
     let ramPct = 0;
@@ -271,12 +270,8 @@ function renderNodes() {
 
     const trafficLimit = node.traffic_limit || 0;
     const cycleTotalUsed = node.cycle_total_used || 0;
-    const cycleRemaining = node.cycle_remaining !== undefined ? node.cycle_remaining : (trafficLimit - cycleTotalUsed);
     const cyclePercent = node.cycle_percent || (trafficLimit > 0 ? (cycleTotalUsed / trafficLimit * 100) : 0);
-    const resetDay = node.reset_day || 1;
-    const daysUntilReset = node.days_until_reset !== undefined ? node.days_until_reset : 0;
     const trafficClass = cyclePercent >= 90 ? 'critical' : cyclePercent >= 60 ? 'high' : '';
-    const trafficColor = cyclePercent >= 90 ? 'var(--destructive)' : cyclePercent >= 60 ? 'var(--warning)' : 'var(--success)';
 
     const bill = billingDisplay(node.profile);
     const adminActions = isAdmin ? `
@@ -294,7 +289,6 @@ function renderNodes() {
             <span class="node-status-dot ${isOnline ? 'online' : ''}" title="${isOnline ? '在线' : '离线'}"></span>
             <div>
               <div class="node-name">${escapeHtml(node.name)}</div>
-              <div style="font-size: 11px; color: var(--text-muted);">${escapeHtml(node.client_ip || '等待连接')}</div>
             </div>
           </div>
           <div class="node-badges">
@@ -305,8 +299,8 @@ function renderNodes() {
 
         <div class="node-specs">
           <span>🖥️ ${escapeHtml(info.os || 'Linux')} (${escapeHtml(info.arch || 'x64')})</span>
-          <span>⚡ ${info.cpu_cores || cpu.cores || 1} 核</span>
-          <span>⏱️ 在线: ${formatUptime(r.uptime)}</span>
+          <span>⚡ ${info.cpu_cores || cpu.cores || 1}C</span>
+          <span>⏱️ ${formatUptime(r.uptime)}</span>
           <span class="price-badge">${bill.price}</span>
         </div>
 
@@ -325,7 +319,7 @@ function renderNodes() {
         <!-- Memory Metric -->
         <div class="metric-row">
           <div class="metric-meta">
-            <span class="metric-name">内存</span>
+            <span class="metric-name">RAM</span>
             <span class="metric-value">${formatBytes(ram.used)} / ${formatBytes(ram.total)} (${ramPct}%)</span>
           </div>
           <div class="progress-track">
@@ -336,7 +330,7 @@ function renderNodes() {
         <!-- Disk Metric -->
         <div class="metric-row">
           <div class="metric-meta">
-            <span class="metric-name">存储空间</span>
+            <span class="metric-name">Disk</span>
             <span class="metric-value">${formatBytes(disk.used)} / ${formatBytes(disk.total)} (${diskPct}%)</span>
           </div>
           <div class="progress-track">
@@ -344,45 +338,29 @@ function renderNodes() {
           </div>
         </div>
 
-        <!-- Traffic Quota Metric (sum billing mode) -->
         ${trafficLimit > 0 ? `
         <div class="metric-row">
           <div class="metric-meta">
-            <span class="metric-name">周期流量 (每月 ${resetDay} 号重置 · 还有 ${daysUntilReset} 天)</span>
-            <span class="metric-value" style="color: ${trafficColor};">
-              ${cycleRemaining >= 0 ? `剩余 ${formatBytes(cycleRemaining)}` : `超额 ${formatBytes(-cycleRemaining)}`}
-            </span>
+            <span class="metric-name">Traffic</span>
+            <span class="metric-value">${formatBytes(cycleTotalUsed)} / ${formatBytes(trafficLimit)} (${cyclePercent.toFixed(1)}%)</span>
           </div>
           <div class="progress-track">
             <div class="progress-bar ${trafficClass}" style="width: ${Math.min(cyclePercent, 100).toFixed(1)}%;"></div>
-          </div>
-          <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--muted-foreground);">
-            <span>已用: ${formatBytes(cycleTotalUsed)}</span>
-            <span>配额: ${formatBytes(trafficLimit)} (${cyclePercent.toFixed(1)}%)</span>
           </div>
         </div>
         ` : ''}
 
         </div>
 
+        <div class="node-summary">
+          <div class="summary-box"><span class="summary-value up">↑ ${formatSpeed(net.up || 0)}</span><span class="summary-value down">↓ ${formatSpeed(net.down || 0)}</span></div>
+          <div class="summary-box"><span class="summary-value">↑ ${formatBytes(net.totalUp || 0)}</span><span class="summary-value">↓ ${formatBytes(net.totalDown || 0)}</span></div>
+          <div class="summary-box"><span class="summary-value">▦ ${bill.remaining}</span><span class="summary-value">${bill.price}</span></div>
+        </div>
+
 
         ${renderPingPanels(node)}
 
-        <!-- Footer: Network & Load -->
-        <div class="node-footer">
-          <div class="footer-item">
-            <span class="footer-label">网络传输</span>
-            <span class="footer-val">↑ ${formatSpeed(net.up || 0)}</span>
-            <span class="footer-val">↓ ${formatSpeed(net.down || 0)}</span>
-          </div>
-          <div class="footer-item">
-            <span class="footer-label">负载 & 总流量</span>
-            <span class="footer-val">Load: ${(load.load1 || 0).toFixed(2)}</span>
-            <span class="footer-val" style="color: var(--text-muted); font-size: 11px;">总: ${formatBytes((net.totalUp || 0) + (net.totalDown || 0))}</span>
-          </div>
-        </div>
-
-        <div class="billing-summary"><strong>▦ ${bill.remaining}</strong><span>到期日 ${bill.date}</span><span>${bill.price}</span></div>
         ${adminActions}
       </div>
     `;
@@ -760,8 +738,8 @@ async function loadPingHistory() {
     if (!res.ok) throw new Error('加载失败');
     const data = await res.json();
 
-    if (data.host) {
-      document.getElementById('pingModalSubtitle').textContent = `目标: ${data.target} (${data.host}) · 历史方式: ${{tcp: 'TCP', icmp: 'ICMP', unknown: '未标明'}[data.method] || '暂无采样'}`;
+    if (data.target) {
+      document.getElementById('pingModalSubtitle').textContent = `目标: ${data.target} · 历史方式: ${{tcp: 'TCP', icmp: 'ICMP', unknown: '未标明'}[data.method] || '暂无采样'}`;
     }
 
     // Stats

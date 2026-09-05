@@ -102,7 +102,6 @@ func (s *Server) Handler() http.Handler {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"site_title":   cfg.SiteTitle,
 			"announcement": cfg.Announcement,
-			"ping_targets": cfg.PingTargets,
 		})
 	})
 
@@ -126,6 +125,10 @@ func (s *Server) Handler() http.Handler {
 		if err != nil {
 			writeJSON(w, http.StatusNotFound, map[string]any{"error": err.Error()})
 			return
+		}
+		resp.Host = ""
+		for i := range resp.Samples {
+			resp.Samples[i].Host = ""
 		}
 		writeJSON(w, http.StatusOK, resp)
 	})
