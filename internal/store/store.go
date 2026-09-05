@@ -101,6 +101,7 @@ type Config struct {
 	AdminPassword    string                `json:"admin_password"`
 	SiteTitle        string                `json:"site_title"`
 	Announcement     string                `json:"announcement"`
+	SiteIcon         string                `json:"site_icon,omitempty"`
 	AutoDiscoveryKey string                `json:"auto_discovery_key"`
 	PingTargets      []protocol.PingTarget `json:"ping_targets"`
 }

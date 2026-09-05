@@ -105,7 +105,7 @@ function setAdminState(admin) {
   const adminBtn = document.getElementById('adminBtn');
   const quickActions = document.getElementById('adminQuickActions');
   if (admin) {
-    adminBtn.textContent = '🔒 已管理员认证';
+    adminBtn.textContent = '⚙️ 管理';
     quickActions.style.display = 'flex';
   } else {
     adminBtn.textContent = '⚙️ 管理';
@@ -116,32 +116,22 @@ function setAdminState(admin) {
 
 // Global Stats Calculation
 function updateGlobalStats() {
-  const total = nodes.length;
-  const online = nodes.filter(n => n.online).length;
-
   let totalNetUp = 0;
   let totalNetDown = 0;
-  let cumulativeTraffic = 0;
 
   nodes.forEach(n => {
     if (n.last_report) {
       if (n.last_report.network) {
         totalNetUp += n.last_report.network.up || 0;
         totalNetDown += n.last_report.network.down || 0;
-        cumulativeTraffic += (n.last_report.network.total_up || 0) + (n.last_report.network.total_down || 0);
       }
     }
   });
 
-  document.getElementById('statOnline').textContent = formatBytes(cumulativeTraffic);
-
-  document.getElementById('statNetUp').textContent = formatSpeed(totalNetUp);
-  document.getElementById('statNetDown').textContent = formatSpeed(totalNetDown);
-
-  const trafficEl = document.getElementById('statTrafficTotal');
-  if (trafficEl) {
-    trafficEl.textContent = `实时上下行总和: ${formatSpeed(totalNetUp + totalNetDown)}`;
-  }
+  const up = document.getElementById('statNetUp');
+  const down = document.getElementById('statNetDown');
+  if (up) up.textContent = `↑ ${formatSpeed(totalNetUp)}`;
+  if (down) down.textContent = `↓ ${formatSpeed(totalNetDown)}`;
 
   updateGroupButtons();
 }
@@ -267,13 +257,7 @@ function renderNodes() {
     const trafficClass = cyclePercent >= 90 ? 'critical' : cyclePercent >= 60 ? 'high' : '';
 
     const bill = billingDisplay(node.profile);
-    const adminActions = isAdmin ? `
-      <div style="display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap;">
-        <button class="btn" style="padding: 4px 8px; font-size: 11px;" data-action="edit" data-uuid="${escapeHtml(node.uuid)}">编辑</button>
-        <button class="btn" style="padding: 4px 8px; font-size: 11px;" data-action="guide" data-uuid="${escapeHtml(node.uuid)}">接入命令</button>
-        <button class="btn btn-danger" style="padding: 4px 8px; font-size: 11px;" data-action="delete" data-uuid="${escapeHtml(node.uuid)}">删除</button>
-      </div>
-    ` : '';
+    const adminActions = '';
 
     return `
       <div class="node-card ${isOnline ? '' : 'offline'}">
@@ -295,6 +279,7 @@ function renderNodes() {
           <span>⚡ ${info.cpu_cores || cpu.cores || 1}C</span>
           <span>⏱️ ${formatUptime(r.uptime)}</span>
           <span class="price-badge">${bill.price}</span>
+          ${node.reset_day > 0 ? `<span class="billing-reset">♻️ ${node.reset_day}日重置</span>` : ''}
         </div>
 
         <div class="node-metrics">
@@ -405,9 +390,21 @@ async function fetchPublicSettings() {
     if (data.announcement !== undefined) {
       document.getElementById('siteAnnouncement').textContent = data.announcement || '实时服务器探针与性能监控 · 极简纯净版';
     }
+    if (data.site_icon) document.getElementById('siteIcon').href = data.site_icon;
   } catch (e) {
     console.error('Failed to fetch public settings:', e);
   }
+}
+
+async function fetchSettingsForAdmin() {
+  try {
+    const res = await fetch('/api/public');
+    const data = await res.json();
+    document.getElementById('settingSiteTitle').value = data.site_title || '';
+    document.getElementById('settingAnnouncement').value = data.announcement || '';
+    document.getElementById('settingSiteIcon').value = data.site_icon || '';
+    document.getElementById('settingNewPassword').value = '';
+  } catch (e) { console.error('Failed to fetch admin settings:', e); }
 }
 
 function connectWebSocket() {
@@ -496,7 +493,8 @@ window.deleteNode = async function(uuid) {
 // Event Listeners
 document.getElementById('adminBtn').addEventListener('click', () => {
   if (isAdmin) {
-    document.getElementById('addNodeBtn').click();
+    openModal('settingsModal');
+    fetchSettingsForAdmin();
   } else {
     document.getElementById('loginError').style.display = 'none';
     document.getElementById('loginPassword').value = '';
@@ -541,7 +539,39 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
   } catch (error) { alert(error.message); }
 });
 
-document.getElementById('addNodeBtn').addEventListener('click', () => {
+document.getElementById('settingsForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const token = getAdminToken();
+  const newPassword = document.getElementById('settingNewPassword').value;
+  if (newPassword && newPassword.length < 8) {
+    alert('管理员密码至少需要 8 位');
+    return;
+  }
+  try {
+    const res = await fetch('/api/admin/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({
+        site_title: document.getElementById('settingSiteTitle').value.trim(),
+        announcement: document.getElementById('settingAnnouncement').value.trim(),
+        site_icon: document.getElementById('settingSiteIcon').value.trim(),
+        new_password: newPassword
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '保存失败');
+    if (newPassword) {
+      localStorage.removeItem('admin_token');
+      setAdminState(false);
+    }
+    closeModal('settingsModal');
+    await fetchPublicSettings();
+    alert(newPassword ? '设置已保存，请使用新密码重新登录' : '设置已保存');
+  } catch (e) { alert(e.message); }
+});
+
+const addNodeBtn = document.getElementById('addNodeBtn');
+if (addNodeBtn) addNodeBtn.addEventListener('click', () => {
   document.getElementById('newNodeName').value = '';
   document.getElementById('newNodeGroup').value = '';
   document.getElementById('newNodeTrafficLimit').value = '';
