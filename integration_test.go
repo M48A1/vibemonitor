@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"vibemonitor/internal/server"
 	"vibemonitor/internal/store"
@@ -306,4 +308,46 @@ func postRPCWithClient(t *testing.T, client *http.Client, baseURL, token string,
 		t.Fatalf("Failed to decode RPC response: %v", err)
 	}
 	return rpcResp
+}
+
+func TestGracefulShutdownAndPersistence(t *testing.T) {
+	dataFile := "test-shutdown-data.json"
+	_ = os.Remove(dataFile)
+	defer os.Remove(dataFile)
+
+	srv, err := server.New(server.Options{
+		ListenAddr:    "127.0.0.1:19876",
+		DataFile:      dataFile,
+		AdminPassword: "shutdownPassword",
+	})
+	if err != nil {
+		t.Fatalf("Failed to initialize server: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- srv.Run(ctx)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	// Trigger cancel (simulating SIGTERM)
+	cancel()
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("Server shutdown with error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("Server did not shut down gracefully within timeout")
+	}
+
+	// Verify data file exists on disk
+	if _, err := os.Stat(dataFile); err != nil {
+		t.Fatalf("Expected data file to exist after shutdown: %v", err)
+	}
+	t.Log("[PASS] Graceful shutdown and persistence verified")
 }

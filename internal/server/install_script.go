@@ -62,22 +62,56 @@ esac
 
 mkdir -p "$INSTALL_DIR"
 
-echo "[*] Downloading vibemonitor binary for $BINARY_ARCH..."
-# If server provides precompiled binaries
-DOWNLOAD_URL="${SERVER_URL}/download/vibemonitor-linux-${BINARY_ARCH}"
-if curl -fsSL -o "$INSTALL_DIR/vibemonitor" "$DOWNLOAD_URL"; then
+echo "[*] Resolving vibemonitor binary for $BINARY_ARCH..."
+
+DOWNLOAD_SUCCESS=0
+
+# 1. Check local installed binary
+if [ -f "/usr/local/bin/vibemonitor" ]; then
+    cp "/usr/local/bin/vibemonitor" "$INSTALL_DIR/vibemonitor"
     chmod +x "$INSTALL_DIR/vibemonitor"
-    echo "[+] Downloaded binary successfully."
-else
-    echo "[!] Warning: Server download endpoint not present, checking local /usr/local/bin/vibemonitor..."
-    if [ -f "/usr/local/bin/vibemonitor" ]; then
-        cp "/usr/local/bin/vibemonitor" "$INSTALL_DIR/vibemonitor"
-        chmod +x "$INSTALL_DIR/vibemonitor"
-    else
-        echo "[-] Please ensure vibemonitor binary is placed at $INSTALL_DIR/vibemonitor"
-        exit 1
+    DOWNLOAD_SUCCESS=1
+    echo "[+] Using existing binary from /usr/local/bin/vibemonitor"
+fi
+
+# 2. Download from official GitHub Releases (direct, no CDN)
+if [ "$DOWNLOAD_SUCCESS" -eq 0 ]; then
+    TAR_URL="https://github.com/m48a1/vibemonitor/releases/latest/download/vibemonitor-linux-${BINARY_ARCH}.tar.gz"
+    RAW_URL="https://github.com/m48a1/vibemonitor/releases/latest/download/vibemonitor-linux-${BINARY_ARCH}"
+    TMP_DIR=$(mktemp -d)
+
+    echo "[*] Downloading from GitHub Releases..."
+    if curl -fsSL -o "${TMP_DIR}/vibemonitor.tar.gz" "$TAR_URL" 2>/dev/null; then
+        if tar -xzf "${TMP_DIR}/vibemonitor.tar.gz" -C "$TMP_DIR" 2>/dev/null && [ -f "${TMP_DIR}/vibemonitor" ]; then
+            cp "${TMP_DIR}/vibemonitor" "$INSTALL_DIR/vibemonitor"
+            DOWNLOAD_SUCCESS=1
+        fi
+    fi
+
+    if [ "$DOWNLOAD_SUCCESS" -eq 0 ]; then
+        if curl -fsSL -o "$INSTALL_DIR/vibemonitor" "$RAW_URL" 2>/dev/null; then
+            DOWNLOAD_SUCCESS=1
+        fi
+    fi
+    rm -rf "$TMP_DIR"
+fi
+
+# 3. Fallback to server download endpoint if present
+if [ "$DOWNLOAD_SUCCESS" -eq 0 ]; then
+    SERVER_DOWNLOAD_URL="${SERVER_URL}/download/vibemonitor-linux-${BINARY_ARCH}"
+    if curl -fsSL -o "$INSTALL_DIR/vibemonitor" "$SERVER_DOWNLOAD_URL" 2>/dev/null; then
+        DOWNLOAD_SUCCESS=1
     fi
 fi
+
+if [ "$DOWNLOAD_SUCCESS" -eq 0 ]; then
+    echo "[-] Error: Failed to download vibemonitor binary from GitHub."
+    echo "[-] Please ensure your VPS has network access to GitHub, or manually place the binary at $INSTALL_DIR/vibemonitor"
+    exit 1
+fi
+
+chmod +x "$INSTALL_DIR/vibemonitor"
+echo "[+] vibemonitor binary ready."
 
 echo "[*] Creating systemd service..."
 cat > "/etc/systemd/system/${SERVICE_NAME}.service" <<EOF

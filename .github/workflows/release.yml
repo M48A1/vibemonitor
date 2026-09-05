@@ -1,0 +1,76 @@
+name: Release and Build Binaries
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          check-latest: true
+
+      - name: Build All Architectures
+        run: |
+          mkdir -p dist
+          VERSION=${GITHUB_REF_NAME}
+
+          echo "Building for tag: $VERSION"
+
+          # Linux AMD64
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/vibemonitor .
+          tar -czf dist/vibemonitor-linux-amd64.tar.gz -C dist vibemonitor
+          cp dist/vibemonitor dist/vibemonitor-linux-amd64
+          rm dist/vibemonitor
+
+          # Linux ARM64
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o dist/vibemonitor .
+          tar -czf dist/vibemonitor-linux-arm64.tar.gz -C dist vibemonitor
+          cp dist/vibemonitor dist/vibemonitor-linux-arm64
+          rm dist/vibemonitor
+
+          # Linux ARMv7
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -ldflags="-s -w" -o dist/vibemonitor .
+          tar -czf dist/vibemonitor-linux-armv7.tar.gz -C dist vibemonitor
+          cp dist/vibemonitor dist/vibemonitor-linux-armv7
+          rm dist/vibemonitor
+
+          # macOS ARM64
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o dist/vibemonitor .
+          tar -czf dist/vibemonitor-darwin-arm64.tar.gz -C dist vibemonitor
+          rm dist/vibemonitor
+
+          # macOS AMD64
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o dist/vibemonitor .
+          tar -czf dist/vibemonitor-darwin-amd64.tar.gz -C dist vibemonitor
+          rm dist/vibemonitor
+
+          # Windows AMD64
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/vibemonitor.exe .
+          tar -czf dist/vibemonitor-windows-amd64.tar.gz -C dist vibemonitor.exe
+          rm dist/vibemonitor.exe
+
+          # Generate SHA256 checksums
+          cd dist
+          sha256sum * > sha256sums.txt
+          cd ..
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          draft: false
+          prerelease: false
+          generate_release_notes: true

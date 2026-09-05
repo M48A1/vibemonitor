@@ -105,9 +105,11 @@ type Store struct {
 	mu         sync.RWMutex
 	filePath   string
 	config     Config
-	nodes      map[string]*Node // uuid -> Node
+	nodes      map[string]*Node  // uuid -> Node
 	tokenIndex map[string]string // token -> uuid
-	onUpdate   func()           // optional callback when state changes
+	onUpdate   func()            // optional callback when state changes
+	dirty      bool
+	stopFlush  chan struct{}
 }
 
 func GenerateToken(length int) string {
@@ -129,12 +131,52 @@ func New(filePath string, defaultAdminPassword string) (*Store, error) {
 		filePath:   filePath,
 		nodes:      make(map[string]*Node),
 		tokenIndex: make(map[string]string),
+		stopFlush:  make(chan struct{}),
 	}
 
 	if err := s.load(defaultAdminPassword); err != nil {
 		return nil, err
 	}
+	go s.periodicFlusher()
 	return s, nil
+}
+
+func (s *Store) periodicFlusher() {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-s.stopFlush:
+			return
+		case <-ticker.C:
+			s.mu.Lock()
+			if s.dirty {
+				_ = s.saveLocked()
+			}
+			s.mu.Unlock()
+		}
+	}
+}
+
+func (s *Store) Save() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.saveLocked()
+}
+
+func (s *Store) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	select {
+	case <-s.stopFlush:
+	default:
+		close(s.stopFlush)
+	}
+	if s.dirty {
+		return s.saveLocked()
+	}
+	return nil
 }
 
 func (s *Store) SetOnUpdate(fn func()) {
@@ -225,7 +267,11 @@ func (s *Store) saveLocked() error {
 	if err := os.WriteFile(tmpFile, data, 0600); err != nil {
 		return err
 	}
-	return os.Rename(tmpFile, s.filePath)
+	if err := os.Rename(tmpFile, s.filePath); err != nil {
+		return err
+	}
+	s.dirty = false
+	return nil
 }
 
 func (s *Store) VerifyAdminPassword(pwd string) bool {
@@ -641,6 +687,7 @@ func (s *Store) IngestReport(tokenOrUUID string, report protocol.Report, clientI
 		}
 	}
 
+	s.dirty = true
 	s.notifyUpdate()
 	return node, nil
 }

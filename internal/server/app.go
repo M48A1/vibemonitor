@@ -1,9 +1,11 @@
 package server
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strings"
@@ -316,9 +318,38 @@ func (s *Server) Handler() http.Handler {
 	return mux
 }
 
-func (s *Server) Run() error {
+func (s *Server) Run(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	handler := s.Handler()
-	log.Printf("[Server] VibeMonitor listening on http://%s", s.addr)
-	return http.ListenAndServe(s.addr, handler)
+	httpServer := &http.Server{
+		Addr:    s.addr,
+		Handler: handler,
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		log.Printf("[Server] VibeMonitor listening on http://%s", s.addr)
+		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- err
+		}
+		close(errCh)
+	}()
+
+	select {
+	case <-ctx.Done():
+		log.Printf("[Server] Shutting down gracefully...")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = httpServer.Shutdown(shutdownCtx)
+		_ = s.store.Close()
+		log.Printf("[Server] Data flushed and server stopped.")
+		return nil
+	case err := <-errCh:
+		_ = s.store.Close()
+		return err
+	}
 }
 
