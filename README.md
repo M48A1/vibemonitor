@@ -1,6 +1,6 @@
 # VibeMonitor
 
-面向 Linux x86-64（Intel/AMD 64 位）的轻量服务器监控程序。主控服务、探针和内嵌网页共用一个 Go 二进制；不提供远程终端、文件管理、多用户或外部通知推送。
+面向 Linux x86-64（Intel/AMD 64 位）的轻量服务器监控程序。
 
 ## 功能
 
@@ -70,7 +70,7 @@ bash install.sh agent -s https://monitor.example.com -t YOUR_NODE_TOKEN -i 3s
 在目标机器上彻底卸载探针并删除本机 Token：
 
 ```bash
-curl -4 -fL --progress-bar -o install.sh https://github.com/M48A1/vibemonitor/releases/latest/download/install.sh && sudo bash install.sh agent-uninstall
+curl -4 -fL --progress-bar -o install.sh https://github.com/M48A1/vibemonitor/releases/latest/download/install.sh && bash install.sh agent-uninstall
 ```
 
 执行后输入 `yes` 确认。该操作只清理目标机器上的探针服务、Token 和程序，不会删除服务端节点记录。
@@ -184,7 +184,5 @@ python3 -m unittest discover -s tests -v
 ### 节点 TCP 测试与账单
 
 添加或编辑节点时，可独立配置 TCP 测试目标，每行 `名称,地址:端口`，例如 `电信,example.com:443`。表单也接受 `https://example.com`（转为端口 443）、`http://example.com`（端口 80）或 `tcp://example.com:443`。这里只测 TCP 建连延迟，不测下载速度或 HTTP 响应内容。每个节点最多 64 个目标；留空表示该节点不测试。旧节点启动时会将原有全局目标复制为各节点的独立配置；未指定端口的旧地址迁移为 TCP 80 端口，原 ICMP 历史不混入新目标。之后仅在节点信息中维护。
-
 节点卡片展示最近 24 个留存样本的延迟和成功/超时色块，丢包比例按最近 24 小时同一检测方式的留存样本计算（约每分钟一个）。无数据时显示待采样，点击目标可查看 1 小时或 24 小时曲线。改变目标地址或删除目标会清理对应旧历史。
-
 账单可设置到期日、月付/季付/年付、每期金额和币种；卡片显示价格与剩余天数，到期日按浏览器本地日期计算。账单信息在公开节点卡片显示，不包含自动扣费、自动续期或通知功能。配置保存在主 JSON 文件各节点的 `profile` 中，延迟历史仍保存在独立 ping 文件。
