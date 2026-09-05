@@ -54,6 +54,14 @@ journalctl -u vibemonitor-server -n 30
 bash install.sh agent -s https://monitor.example.com -t YOUR_NODE_TOKEN -i 3s
 ```
 
+在目标机器上彻底卸载探针并删除本机 Token：
+
+```bash
+curl -4 -fL --progress-bar -o install.sh https://github.com/M48A1/vibemonitor/releases/latest/download/install.sh && sudo bash install.sh agent-uninstall
+```
+
+执行后输入 `yes` 确认。该操作只清理目标机器上的探针服务、Token 和程序，不会删除服务端节点记录。
+
 管理员页面的动态接入命令会下载并校验 Release 中的同一个安装器，不再使用主控网站页面作为二进制备用下载。
 
 旧动态安装器曾使用 `/opt/vibemonitor/vibemonitor` 和 `vibemonitor.service`；如从该方式迁移，确认新探针在线后停用旧探针服务，避免重复上报。不要停用同名的旧主控服务。
