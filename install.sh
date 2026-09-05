@@ -9,7 +9,12 @@ UNIT_DIR="/etc/systemd/system"
 SERVER_SERVICE="vibemonitor-server"
 AGENT_SERVICE="vibemonitor-agent"
 
-info() { echo "[INFO] $*"; }
+# Color only on interactive terminals; logs remain readable when redirected.
+C_RESET='' C_BLUE='' C_GREEN='' C_YELLOW=''
+if [ -t 1 ] && [ "${TERM:-dumb}" != dumb ] && [ -z "${NO_COLOR:-}" ]; then
+    C_RESET=$'\033[0m'; C_BLUE=$'\033[1;36m'; C_GREEN=$'\033[1;32m'; C_YELLOW=$'\033[1;33m'
+fi
+info() { printf '%s[信息]%s %s\n' "$C_BLUE" "$C_RESET" "$*"; }
 success() { echo "[OK] $*"; }
 warn() { echo "[WARN] $*" >&2; }
 error() { echo "[ERROR] $*" >&2; exit 1; }
@@ -100,7 +105,11 @@ cleanup_update() {
 download_binary() {
     resolve_release
     local asset="vibemonitor-linux-amd64"
-    curl -4 -fsSL --connect-timeout 10 --max-time 180 -o "$UPDATE_DIR/new-binary" "$RELEASE_BASE/$asset"
+    info "正在下载 ${RELEASE_BASE##*/} · Linux x86-64"
+    local progress=(-sS)
+    if [ -t 2 ]; then progress=(--progress-bar --show-error); fi
+    curl -4 -fL "${progress[@]}" --connect-timeout 10 --max-time 180 -o "$UPDATE_DIR/new-binary" "$RELEASE_BASE/$asset"
+    info "正在校验下载文件…"
     curl -4 -fsSL --connect-timeout 10 --max-time 60 -o "$UPDATE_DIR/sha256sums.txt" "$RELEASE_BASE/sha256sums.txt"
     verify_checksum "$UPDATE_DIR/new-binary" "$UPDATE_DIR/sha256sums.txt" "$asset"
     # Reject HTML, scripts, wrong ELF class, and wrong machine architecture.
@@ -125,6 +134,7 @@ unit_arg() {
 
 finish_update() {
     local port="${1:-}"
+    info "正在启动服务并检查运行状态…"
     chmod 600 "$UNIT_DIR/$UPDATE_SERVICE.service"
     systemctl daemon-reload
     systemctl enable "$UPDATE_SERVICE" >/dev/null
@@ -276,22 +286,82 @@ uninstall_all() {
     rm -f "$INSTALL_BIN"
     info "Programs removed. Server data and backups retained in $CONFIG_DIR."
 }
+read_secret() {
+    local prompt="$1" variable="$2"
+    if ! { read -r -s -p "$prompt" "$variable" </dev/tty; } 2>/dev/null; then
+        error "No interactive terminal. Use command-line options."
+    fi
+    printf '\n'
+}
+
+service_label() {
+    if ! command -v systemctl >/dev/null 2>&1; then
+        printf '不可用'
+    elif systemctl is-active --quiet "$1"; then
+        printf '运行中'
+    elif [ -f "$UNIT_DIR/$1.service" ]; then
+        printf '已停止'
+    else
+        printf '未安装'
+    fi
+}
+
+menu_header() {
+    printf '\n%s================================================%s\n' "$C_BLUE" "$C_RESET"
+    printf '              VibeMonitor 管理面板\n'
+    printf '================================================\n'
+    printf '  支持系统  Linux x86-64 · IPv4\n'
+    printf '  服务端    %s    |    探针  %s\n' "$(service_label "$SERVER_SERVICE")" "$(service_label "$AGENT_SERVICE")"
+    printf '%s------------------------------------------------%s\n' "$C_BLUE" "$C_RESET"
+    printf '  安装与更新\n    1. 安装 / 更新服务端\n    2. 安装 / 更新探针\n\n'
+    printf '  服务管理\n    3. 查看状态\n    4. 重启服务\n    5. 停止服务\n    6. 查看最近日志\n\n'
+    printf '  数据与维护\n    8. 备份数据\n    9. 恢复备份\n    7. 卸载程序（保留数据）\n\n'
+    printf '    0. 退出\n'
+    printf '%s================================================%s\n' "$C_BLUE" "$C_RESET"
+}
+
+manage_services() {
+    local action="$1" service found=0
+    check_root
+    for service in "$SERVER_SERVICE" "$AGENT_SERVICE"; do
+        if [ -f "$UNIT_DIR/$service.service" ]; then
+            systemctl "$action" "$service"
+            found=1
+        fi
+    done
+    if [ "$found" = 0 ]; then warn "尚未安装服务。"; fi
+}
+
 menu() {
-    echo "1. 安装/更新服务端  2. 安装/更新探针  3. 状态  4. 重启  5. 停止  6. 日志  7. 卸载  8. 备份  9. 恢复  0. 退出"
-    read_input "请选择: " choice
-    case "$choice" in
-        1) read_input "端口 [1314]: " port; read_input "初始密码 [首次自动生成]: " password; install_server "${port:-1314}" "$password" ;;
-        2) read_input "主控 URL: " server; read_input "Token: " token; read_input "间隔 [3s]: " interval; install_agent "$server" "$token" "${interval:-3s}" ;;
-        3) show_status ;;
-        4) systemctl restart "$SERVER_SERVICE" "$AGENT_SERVICE" ;;
-        5) systemctl stop "$SERVER_SERVICE" "$AGENT_SERVICE" ;;
-        6) journalctl -u "$SERVER_SERVICE" -u "$AGENT_SERVICE" -n 50 -f ;;
-        7) uninstall_all ;;
-        8) backup_data ;;
-        9) read_input "备份文件: " source; restore_data "$source" ;;
-        0) return ;;
-        *) error "无效选项" ;;
-    esac
+    local choice port password server token interval source confirm pause
+    while true; do
+        menu_header
+        read_input "请选择 [0-9]: " choice
+        case "$choice" in
+            # Run installations in a subshell so their EXIT rollback always runs,
+            # even when the interactive menu is kept open afterwards.
+            1) read_input "监听端口 [1314]: " port
+               read_secret "初始密码 [留空自动生成，已有密码不变]: " password
+               ( install_server "${port:-1314}" "$password" ) ;;
+            2) read_input "主控地址（http:// 或 https://）: " server
+               read_secret "节点 Token（输入不显示）: " token
+               read_input "上报间隔 [3s]: " interval
+               ( install_agent "$server" "$token" "${interval:-3s}" ) ;;
+            3) show_status ;;
+            4) manage_services restart ;;
+            5) manage_services stop ;;
+            6) journalctl --no-pager -u "$SERVER_SERVICE" -u "$AGENT_SERVICE" -n 50 ;;
+            7) read_input "卸载所有程序和服务，保留数据。输入 yes 继续: " confirm
+               if [ "$confirm" = yes ]; then uninstall_all; fi ;;
+            8) backup_data ;;
+            9) read_input "备份主文件路径: " source
+               read_input "将覆盖当前配置、密码和数据。输入 yes 继续: " confirm
+               if [ "$confirm" = yes ]; then restore_data "$source"; fi ;;
+            0) return ;;
+            *) warn "请输入 0 到 9 之间的菜单编号。" ;;
+        esac
+        read_input "按回车返回管理菜单…" pause
+    done
 }
 
 # Sourcing is supported for isolated installer tests.
