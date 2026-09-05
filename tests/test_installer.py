@@ -88,6 +88,14 @@ curl() {
         self.assertFalse(backups.exists())
         self.assertFalse(data.exists())
 
+    def test_agent_uninstall_removes_local_token_and_binary(self):
+        (self.root / 'units/vibemonitor-server.service').unlink()
+        (self.root / 'units/vibemonitor-agent.service').write_text('ExecStart=/usr/local/bin/vibemonitor --token secret')
+        result = self.run_installer('uninstall_agent\n')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((self.root / 'units/vibemonitor-agent.service').exists())
+        self.assertFalse((self.root / 'bin/vibemonitor').exists())
+
     def test_successful_atomic_update(self):
         result = self.run_installer('install_server 1314 "password with spaces" owner\n')
         self.assertEqual(result.returncode, 0, result.stderr)

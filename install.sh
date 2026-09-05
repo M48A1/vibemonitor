@@ -340,13 +340,16 @@ uninstall_all() {
 uninstall_agent() {
     check_root
     local confirmation
-    read_input "将停止并删除探针服务，输入 yes 继续: " confirmation
+    read_input "将停止探针并彻底删除本机 Token、服务文件和程序，输入 yes 继续: " confirmation
     [ "$confirmation" = yes ] || return 0
     systemctl stop "$AGENT_SERVICE" 2>/dev/null || true
     systemctl disable "$AGENT_SERVICE" 2>/dev/null || true
     rm -f "$UNIT_DIR/$AGENT_SERVICE.service"
     systemctl daemon-reload
-    success "探针服务已卸载；服务端和数据未修改。"
+    if [ ! -f "$UNIT_DIR/$SERVER_SERVICE.service" ]; then
+        rm -f "$INSTALL_BIN"
+    fi
+    success "本机探针 Token、服务文件和程序已彻底清理；服务端节点记录未修改。"
 }
 read_secret() {
     local prompt="$1" variable="$2"
