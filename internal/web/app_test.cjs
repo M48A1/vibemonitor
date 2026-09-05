@@ -49,7 +49,7 @@ test('existing node selection retrieves private target addresses for the edit fo
   app.run('nodes[0].profile.targets[0].host = ""');
   app.context.fetch = async (url, options) => {
     assert.equal(url, '/api/admin/nodes/node-1/profile');
-    assert.equal(options.headers.Authorization, 'Bearer admin-session');
+    assert.equal(options.credentials, 'same-origin');
     return {ok:true,json:async()=>({profile:{targets:[{name:'TCP',host:'example.com:443'},{name:'IP',host:'1.1.1.1:443'}],price:5}})};
   };
   await choice.events.click();
@@ -113,7 +113,7 @@ test('connection instructions fetch credentials through the admin endpoint', asy
   };
   await app.context.showGuide('node-1');
   assert.equal(requested.url,'/api/admin/nodes/node-1/token');
-  assert.equal(requested.options.headers.Authorization,'Bearer admin-session');
+  assert.equal(requested.options.credentials,'same-origin');
   assert.equal(app.document.getElementById('guideToken').textContent,'node-secret');
 });
 
@@ -125,8 +125,8 @@ test('logout revokes the server session before clearing local state', async () =
   await app.document.getElementById('logoutBtn').events.click();
   assert.equal(request.url, '/api/admin/logout');
   assert.equal(request.options.method, 'POST');
-  assert.equal(request.options.headers.Authorization, 'Bearer admin-session');
-  assert.equal(app.context.localStorage.removed, 'admin_token');
+  assert.equal(request.options.credentials, 'same-origin');
+  assert.equal(app.context.localStorage.removed, undefined);
 });
 
 test('failed logout does not pretend that the server session was revoked', async () => {
