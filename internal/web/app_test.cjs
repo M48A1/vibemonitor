@@ -29,6 +29,30 @@ function dashboard() {
   return { context, document, run: code => vm.runInContext(code, context) };
 }
 
+test('menu focus loss without a new focus target does not swallow submenu clicks', () => {
+  const app = dashboard();
+  const menu = app.document.getElementById('nodeManagementMenu');
+  menu.open = true;
+  menu.contains = () => false;
+  menu.events.focusout({relatedTarget: null});
+  assert.equal(menu.open, true);
+  menu.events.focusout({relatedTarget: {}});
+  assert.equal(menu.open, false);
+});
+
+test('existing node selection populates the edit form', () => {
+  const app = dashboard();
+  app.run('isAdmin = true; nodes = [{uuid:"node-1", name:"Tokyo", group:"Production", region:"JP", profile:{targets:[{name:"TCP",host:"example.com:443"}],currency:"USD",price:5}}];');
+  app.document.getElementById('editExistingNodeBtn').events.click();
+  const choice = app.document.getElementById('nodeSelectionList').children[0];
+  assert.equal(choice.textContent, 'Tokyo · Production');
+  choice.events.click();
+  assert.equal(app.document.getElementById('editNodeUUID').value, 'node-1');
+  assert.equal(app.document.getElementById('editNodeName').value, 'Tokyo');
+  assert.equal(app.document.getElementById('editNodeTargets').value, 'TCP,example.com:443');
+  assert.equal(app.document.getElementById('editNodePrice').value, 5);
+});
+
 test('node cards render empty and populated reports without executing node data', () => {
   const app = dashboard();
   const payload = `<img src=x onerror="alert(1)">'quoted`;
