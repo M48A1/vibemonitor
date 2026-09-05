@@ -766,14 +766,19 @@ body {
 }
 
 /* Compact node overview with independent targets and billing. */
-.node-metrics, .billing-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 14px; }
+.node-metrics, .billing-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 14px; }
+.node-metrics { align-items: start; }
 .node-metrics .metric-meta { flex-wrap: wrap; gap: 4px; }
 .node-metrics .metric-value { font-size: 12px; }
-.node-card { gap: 20px; }
+.node-card { gap: 12px; padding: 16px; }
 .price-badge { margin-left: auto; font-weight: 600; }
 .billing-form { margin: 16px 0; }
 .billing-form label { display: grid; gap: 6px; font-size: 13px; }
-.billing-summary { display:flex; flex-wrap:wrap; gap:8px 16px; background:var(--card-data-bg); border-radius:12px; padding:12px; font-size:12px; }
+.billing-summary { display:flex; flex-wrap:wrap; gap:8px 16px; background:var(--card-data-bg); border-radius:12px; padding:10px 12px; font-size:12px; }
+.node-summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+.summary-box { display:flex; flex-direction:column; justify-content:center; gap:5px; min-height:64px; padding:10px 12px; border-radius:12px; background:var(--card-data-bg); color:var(--muted-foreground); }
+.summary-value { font-size:13px; font-weight:600; white-space:nowrap; }
+.summary-value.up { color:var(--success); } .summary-value.down { color:#2563eb; }
 .ping-panels { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
 .ping-panel { min-width:0; padding:12px; background:var(--card-data-bg); border-radius:14px; }
 .panel-label, .ping-empty { color:var(--muted-foreground); font-size:13px; }
@@ -789,3 +794,4 @@ body {
 .sample-bar.slow { background:#fbbf24; } .sample-bar.lost { background:#fb7185; }
 .sample-bar.empty { opacity:.35; }
 @media (max-width:400px) { .ping-panels { grid-template-columns:1fr; } }
+@media (max-width:480px) { .node-summary { gap:6px; } .summary-box { padding:8px; } .summary-value { font-size:11px; } }

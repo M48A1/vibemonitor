@@ -471,8 +471,31 @@ func (s *Store) GetNodes() []*Node {
 	for _, n := range s.nodes {
 		nodeCopy := *n
 		nodeCopy.Token = ""        // Credentials are only available through authenticated management.
+		nodeCopy.ClientIP = ""
+		if n.Profile != nil {
+			profile := *n.Profile
+			profile.Targets = append([]protocol.PingTarget(nil), profile.Targets...)
+			for i := range profile.Targets {
+				profile.Targets[i].Host = ""
+			}
+			nodeCopy.Profile = &profile
+		}
 		nodeCopy.PingHistory = nil // Kept compact for dashboard list
 		nodeCopy.PingPreview = s.pingPreviewLocked(n)
+		for i := range nodeCopy.PingPreview {
+			nodeCopy.PingPreview[i].Host = ""
+			for j := range nodeCopy.PingPreview[i].Samples {
+				nodeCopy.PingPreview[i].Samples[j].Host = ""
+			}
+		}
+		if nodeCopy.LastReport != nil {
+			report := *nodeCopy.LastReport
+			report.PingResults = append([]protocol.PingResult(nil), report.PingResults...)
+			for i := range report.PingResults {
+				report.PingResults[i].Host = ""
+			}
+			nodeCopy.LastReport = &report
+		}
 		nodeCopy.calculateDynamicFields(now)
 		list = append(list, &nodeCopy)
 	}
