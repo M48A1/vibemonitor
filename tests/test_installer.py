@@ -109,17 +109,23 @@ curl() {
     def test_restore_keeps_a_backup_and_replaces_data(self):
         (self.root / 'config/vibemonitor-data.json').write_text('old data')
         (self.root / 'restored').write_text('restored data')
+        (self.root / 'restored.ping.json').write_text('restored ping')
+        (self.root / 'config/vibemonitor-data.json.ping.json').write_text('old ping')
         binary = self.root / 'bin/vibemonitor'
         binary.write_text('#!/bin/sh\nexit 0\n')
         binary.chmod(0o755)
         result = self.run_installer('restore_data "$TEST_ROOT/restored"\n')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual((self.root / 'config/vibemonitor-data.json').read_text(), 'restored data')
+        self.assertEqual((self.root / 'config/vibemonitor-data.json.ping.json').read_text(), 'restored ping')
+        self.assertTrue(any(p.read_text() == 'old ping' for p in (self.root / 'config/backups').iterdir()))
         self.assertTrue(any(p.read_text() == 'old data' for p in (self.root / 'config/backups').iterdir()))
 
     def test_failed_restore_start_rolls_data_back(self):
         (self.root / 'config/vibemonitor-data.json').write_text('old data')
         (self.root / 'restored').write_text('restored data')
+        (self.root / 'restored.ping.json').write_text('restored ping')
+        (self.root / 'config/vibemonitor-data.json.ping.json').write_text('old ping')
         binary = self.root / 'bin/vibemonitor'
         binary.write_text('#!/bin/sh\nexit 0\n')
         binary.chmod(0o755)
@@ -132,6 +138,7 @@ restore_data "$TEST_ROOT/restored"
 """)
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual((self.root / 'config/vibemonitor-data.json').read_text(), 'old data')
+        self.assertEqual((self.root / 'config/vibemonitor-data.json.ping.json').read_text(), 'old ping')
 
     def test_invalid_backup_does_not_stop_service(self):
         (self.root / 'config/vibemonitor-data.json').write_text('old data')
