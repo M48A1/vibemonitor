@@ -336,6 +336,18 @@ uninstall_all() {
     rm -f "$INSTALL_BIN"
     info "程序、配置、账号、数据和备份已全部删除。"
 }
+
+uninstall_agent() {
+    check_root
+    local confirmation
+    read_input "将停止并删除探针服务，输入 yes 继续: " confirmation
+    [ "$confirmation" = yes ] || return 0
+    systemctl stop "$AGENT_SERVICE" 2>/dev/null || true
+    systemctl disable "$AGENT_SERVICE" 2>/dev/null || true
+    rm -f "$UNIT_DIR/$AGENT_SERVICE.service"
+    systemctl daemon-reload
+    success "探针服务已卸载；服务端和数据未修改。"
+}
 read_secret() {
     local prompt="$1" variable="$2"
     printf '%s' "$prompt"
@@ -459,6 +471,7 @@ case "$CMD" in
     status) show_status ;;
     restart) systemctl restart "$SERVER_SERVICE" "$AGENT_SERVICE" ;;
     uninstall) uninstall_all ;;
-    help|--help|-h) echo "Usage: $0 [server [-p PORT] [-w PASSWORD] | agent -s URL -t TOKEN [-i INTERVAL] | backup | restore FILE | status | restart | uninstall]" ;;
+    agent-uninstall|uninstall-agent) uninstall_agent ;;
+    help|--help|-h) echo "Usage: $0 [server [-p PORT] -u USER -w PASSWORD | agent -s URL -t TOKEN [-i INTERVAL] | agent-uninstall | backup | restore FILE | status | restart | uninstall]" ;;
     *) error "Unknown command: $CMD" ;;
 esac

@@ -38,14 +38,13 @@
     <section class="stats-banner" id="statsBanner">
       <div class="stat-box">
         <div class="stat-label">
-          <span>在线节点</span>
-          <span>🖥️</span>
+          <span>累计流量</span>
+          <span>📊</span>
         </div>
         <div class="stat-value">
-          <span style="color: var(--success);" id="statOnline">0</span>
-          <span class="stat-sub">/ <span id="statTotal">0</span> 台</span>
+          <span style="color: var(--success);" id="statOnline">0 B</span>
         </div>
-        <div style="font-size: 11px; color: var(--muted-foreground);" id="statStatusText">全部运行正常</div>
+        <div style="font-size: 11px; color: var(--muted-foreground);" id="statStatusText">所有节点上行 + 下行</div>
       </div>
 
       <div class="stat-box">
@@ -230,10 +229,17 @@
         <div>
           <span class="form-label">Linux 一键安装命令 (推荐，自动配置 Systemd)</span>
           <div class="code-box" id="guideInstallCmd">curl -fsSL ... | bash</div>
+          <button type="button" class="btn" onclick="copyGuideCommand('guideInstallCmd')">复制安装命令</button>
         </div>
         <div>
           <span class="form-label">单二进制运行命令</span>
           <div class="code-box" id="guideRunCmd">./vibemonitor agent --server ... --token ...</div>
+          <button type="button" class="btn" onclick="copyGuideCommand('guideRunCmd')">复制运行命令</button>
+        </div>
+        <div>
+          <span class="form-label">卸载探针命令</span>
+          <div class="code-box" id="guideUninstallCmd">curl -fsSL ... | bash -s -- agent-uninstall</div>
+          <button type="button" class="btn btn-danger" onclick="copyGuideCommand('guideUninstallCmd')">复制卸载命令</button>
         </div>
         <div>
           <span class="form-label">通信 Token</span>
