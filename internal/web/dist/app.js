@@ -118,20 +118,22 @@ function setAdminState(admin) {
 function updateGlobalStats() {
   const total = nodes.length;
   const online = nodes.filter(n => n.online).length;
-  document.getElementById('statTotal').textContent = total;
-  document.getElementById('statOnline').textContent = online;
 
   let totalNetUp = 0;
   let totalNetDown = 0;
+  let cumulativeTraffic = 0;
 
   nodes.forEach(n => {
-    if (n.online && n.last_report) {
+    if (n.last_report) {
       if (n.last_report.network) {
         totalNetUp += n.last_report.network.up || 0;
         totalNetDown += n.last_report.network.down || 0;
+        cumulativeTraffic += (n.last_report.network.total_up || 0) + (n.last_report.network.total_down || 0);
       }
     }
   });
+
+  document.getElementById('statOnline').textContent = formatBytes(cumulativeTraffic);
 
   document.getElementById('statNetUp').textContent = formatSpeed(totalNetUp);
   document.getElementById('statNetDown').textContent = formatSpeed(totalNetDown);
@@ -487,8 +489,19 @@ window.showGuide = async function(uuid) {
   const host = window.location.origin;
   document.getElementById('guideInstallCmd').textContent = `curl -fsSL ${host}/install.sh?token=${token} | bash`;
   document.getElementById('guideRunCmd').textContent = `./vibemonitor agent --server ${host} --token ${token}`;
+  document.getElementById('guideUninstallCmd').textContent = `curl -fsSL ${host}/install.sh?token=${encodeURIComponent(token)} | bash -s -- agent-uninstall`;
   document.getElementById('guideToken').textContent = token;
   openModal('nodeGuideModal');
+};
+
+window.copyGuideCommand = async function(id) {
+  const value = document.getElementById(id).textContent;
+  try {
+    await navigator.clipboard.writeText(value);
+    alert('命令已复制');
+  } catch (e) {
+    alert('复制失败，请手动复制命令');
+  }
 };
 
 window.deleteNode = async function(uuid) {
