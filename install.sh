@@ -165,15 +165,36 @@ clear_backups() {
     fi
 }
 
+confirm_full_cleanup() {
+    local confirmation
+    warn "将永久删除全部配置、管理员账号密码、节点、监控历史和备份，无法恢复。"
+    read_input "确认清空重装/彻底卸载？输入 yes 继续，其他输入取消: " confirmation
+    [ "$confirmation" = yes ]
+}
+
+clear_server_data() {
+    [ -n "$CONFIG_DIR" ] && [ "$CONFIG_DIR" != / ] && [ "$CONFIG_DIR" != /etc ] || error "Invalid configuration directory."
+    [ ! -L "$CONFIG_DIR" ] || error "Configuration directory must not be a symbolic link."
+    if systemctl is-active --quiet "$SERVER_SERVICE"; then
+        systemctl stop "$SERVER_SERVICE" || error "Cannot stop server; data was not deleted."
+    fi
+    # Stop first: shutdown flush must finish before deleting persistent files.
+    rm -rf -- "$CONFIG_DIR"
+    success "全部配置、账号、监控数据和备份已删除。"
+}
+
 install_server() {
     local port="${1:-1314}" password="${2:-}" username="${3:-admin}"
     [[ "$port" =~ ^[0-9]+$ && ${#port} -le 5 ]] || error "Invalid port."
     (( 10#$port >= 1 && 10#$port <= 65535 )) || error "Port must be 1-65535."
     check_root; detect_arch; check_dependencies
-    confirm_backup_cleanup || return 0
-    clear_backups
+    confirm_full_cleanup || return 0
     begin_update "$SERVER_SERVICE"
     download_binary
+    clear_server_data
+    WAS_ACTIVE=0 # Deleted data cannot be recovered; do not restart old credentials on failure.
+    mkdir -p "$CONFIG_DIR"
+    rm -rf -- "$UNIT_DIR/$SERVER_SERVICE.service.d"
     local args
     args="$(unit_arg "$INSTALL_BIN") server --listen $(unit_arg "0.0.0.0:$port") --data $(unit_arg "$CONFIG_DIR/vibemonitor-data.json")"
     args="$args --admin-username $(unit_arg "$username")"
@@ -301,16 +322,17 @@ read_input() {
 show_status() { systemctl --no-pager status "$SERVER_SERVICE" "$AGENT_SERVICE" || true; }
 uninstall_all() {
     check_root
-    confirm_backup_cleanup || return 0
-    clear_backups
+    confirm_full_cleanup || return 0
+    clear_server_data
     for service in "$SERVER_SERVICE" "$AGENT_SERVICE" vibemonitor; do
         systemctl stop "$service" 2>/dev/null || true
         systemctl disable "$service" 2>/dev/null || true
         rm -f "$UNIT_DIR/$service.service"
+        rm -rf -- "$UNIT_DIR/$service.service.d"
     done
     systemctl daemon-reload
     rm -f "$INSTALL_BIN"
-    info "Programs removed. Server data retained in $CONFIG_DIR; backups deleted."
+    info "程序、配置、账号、数据和备份已全部删除。"
 }
 read_secret() {
     local prompt="$1" variable="$2"
@@ -340,9 +362,9 @@ menu_header() {
     printf '  支持系统  Linux x86-64 · IPv4\n'
     printf '  服务端    %s    |    探针  %s\n' "$(service_label "$SERVER_SERVICE")" "$(service_label "$AGENT_SERVICE")"
     printf '%s------------------------------------------------%s\n' "$C_BLUE" "$C_RESET"
-    printf '  安装与更新\n    1. 安装 / 更新服务端\n    2. 安装 / 更新探针\n\n'
+    printf '  安装与更新\n    1. 安装 / 清空重装服务端（删除全部数据）\n    2. 安装 / 更新探针\n\n'
     printf '  服务管理\n    3. 查看状态\n    4. 重启服务\n    5. 停止服务\n    6. 查看最近日志\n\n'
-    printf '  数据与维护\n    8. 备份数据\n    9. 恢复备份\n    7. 卸载程序（保留数据、删除备份）\n\n'
+    printf '  数据与维护\n    8. 备份数据\n    9. 恢复备份\n    7. 彻底卸载（删除全部配置和数据）\n\n'
     printf '    0. 退出\n'
     printf '%s================================================%s\n' "$C_BLUE" "$C_RESET"
 }
@@ -369,10 +391,10 @@ menu() {
             # even when the interactive menu is kept open afterwards.
             1) read_input "监听端口 [1314]: " port
                if [ -f "$CONFIG_DIR/vibemonitor-data.json" ]; then
-                   info "已有管理员账号和密码将保留；以下设置仅首次安装生效。"
+                   info "重装会删除旧账号和全部数据，使用下面的新账号密码。"
                fi
                read_input "管理员账号 [admin，仅一个管理员]: " username
-               read_secret "初始密码 [留空自动生成，已有密码不变]: " password
+               read_secret "管理员密码 [留空自动生成]: " password
                ( install_server "${port:-1314}" "$password" "${username:-admin}" ) ;;
             2) read_input "主控地址（http:// 或 https://）: " server
                read_secret "节点 Token（输入不显示）: " token
