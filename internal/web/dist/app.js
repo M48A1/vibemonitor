@@ -37,7 +37,7 @@ function getRegionBadge(code) {
     SG: '🇸🇬 SG', TW: '🇹🇼 TW', KR: '🇰🇷 KR', DE: '🇩🇪 DE',
     GB: '🇬🇧 UK', FR: '🇫🇷 FR', CA: '🇨🇦 CA', RU: '🇷🇺 RU',
   };
-  return flags[code] || `🌐 ${code}`;
+  return flags[code] || `🌐 ${escapeHtml(code)}`;
 }
 
 function generateSparkline(history, field, width = 280, height = 28) {
@@ -246,9 +246,9 @@ function renderNodes() {
 
     const adminActions = isAdmin ? `
       <div style="display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap;">
-        <button class="btn" style="padding: 4px 8px; font-size: 11px;" onclick="openEditModal('${node.uuid}')">编辑</button>
-        <button class="btn" style="padding: 4px 8px; font-size: 11px;" onclick="showGuide('${node.uuid}', '${node.token}')">接入命令</button>
-        <button class="btn btn-danger" style="padding: 4px 8px; font-size: 11px;" onclick="deleteNode('${node.uuid}')">删除</button>
+        <button class="btn" style="padding: 4px 8px; font-size: 11px;" data-action="edit" data-uuid="${escapeHtml(node.uuid)}">编辑</button>
+        <button class="btn" style="padding: 4px 8px; font-size: 11px;" data-action="guide" data-uuid="${escapeHtml(node.uuid)}">接入命令</button>
+        <button class="btn btn-danger" style="padding: 4px 8px; font-size: 11px;" data-action="delete" data-uuid="${escapeHtml(node.uuid)}">删除</button>
       </div>
     ` : '';
 
@@ -259,7 +259,7 @@ function renderNodes() {
             <span class="node-status-dot ${isOnline ? 'online' : ''}" title="${isOnline ? '在线' : '离线'}"></span>
             <div>
               <div class="node-name">${escapeHtml(node.name)}</div>
-              <div style="font-size: 11px; color: var(--text-muted);">${node.client_ip || '等待连接'}</div>
+              <div style="font-size: 11px; color: var(--text-muted);">${escapeHtml(node.client_ip || '等待连接')}</div>
             </div>
           </div>
           <div class="node-badges">
@@ -269,7 +269,7 @@ function renderNodes() {
         </div>
 
         <div class="node-specs">
-          <span>🖥️ ${escapeHtml(info.os || 'Linux')} (${info.arch || 'x64'})</span>
+          <span>🖥️ ${escapeHtml(info.os || 'Linux')} (${escapeHtml(info.arch || 'x64')})</span>
           <span>⚡ ${info.cpu_cores || cpu.cores || 1} 核</span>
           <span>⏱️ 在线: ${formatUptime(r.uptime)}</span>
         </div>
@@ -332,14 +332,14 @@ function renderNodes() {
         </div>
 
         <!-- Ping Latency Badges -->
-        ${(report.ping_results && report.ping_results.length > 0) ? `
+        ${(r.ping_results && r.ping_results.length > 0) ? `
         <div class="node-ping-section">
           <div class="ping-header">
             <span>📶 延迟监测</span>
-            <span style="cursor: pointer; color: var(--primary); font-size: 11px;" onclick="openPingChart('${node.uuid}', '${escapeHtml(node.name)}', '${escapeHtml(report.ping_results[0].name)}')">📈 波动图 ›</span>
+            <span style="cursor: pointer; color: var(--primary); font-size: 11px;" data-action="ping" data-uuid="${escapeHtml(node.uuid)}" data-target="${escapeHtml(r.ping_results[0].name)}">📈 波动图 ›</span>
           </div>
           <div class="ping-badges">
-            ${report.ping_results.map(p => {
+            ${r.ping_results.map(p => {
               let pillClass = 'good';
               let text = `${p.latency}ms`;
               if (p.latency < 0) {
@@ -351,7 +351,7 @@ function renderNodes() {
                 pillClass = 'warn';
               }
               return `
-                <div class="ping-pill ${pillClass}" title="${escapeHtml(p.host)} (点击查看 1h/24h 波动曲线)" onclick="openPingChart('${node.uuid}', '${escapeHtml(node.name)}', '${escapeHtml(p.name)}')">
+                <div class="ping-pill ${pillClass}" title="${escapeHtml(p.host)} (点击查看 1h/24h 波动曲线)" data-action="ping" data-uuid="${escapeHtml(node.uuid)}" data-target="${escapeHtml(p.name)}">
                   <span class="ping-dot"></span>
                   <span>${escapeHtml(p.name)}:</span>
                   <span>${text}</span>
@@ -384,8 +384,22 @@ function renderNodes() {
 
 function escapeHtml(str) {
   if (!str) return '';
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
+
+// Bind actions without interpreting node data as JavaScript.
+document.getElementById('nodeGrid').addEventListener('click', (event) => {
+  const action = event.target.closest('[data-action]');
+  if (!action) return;
+  const node = nodes.find(n => n.uuid === action.dataset.uuid);
+  if (!node) return;
+  switch (action.dataset.action) {
+    case 'edit': if (isAdmin) openEditModal(node.uuid); break;
+    case 'guide': if (isAdmin) showGuide(node.uuid); break;
+    case 'delete': if (isAdmin) deleteNode(node.uuid); break;
+    case 'ping': openPingChart(node.uuid, node.name, action.dataset.target); break;
+  }
+});
 
 // Data Fetching & WebSocket
 async function fetchNodes() {
@@ -458,7 +472,19 @@ function connectWebSocket() {
 }
 
 // Admin Actions
-window.showGuide = function(uuid, token) {
+window.showGuide = async function(uuid) {
+  let token;
+  try {
+    const res = await fetch(`/api/admin/nodes/${encodeURIComponent(uuid)}/token`, {
+      headers: { 'Authorization': 'Bearer ' + getAdminToken() }
+    });
+    if (!res.ok) throw new Error('请重新登录后获取接入命令');
+    const data = await res.json();
+    token = data.token;
+  } catch (error) {
+    alert(error.message);
+    return;
+  }
   const host = window.location.origin;
   document.getElementById('guideInstallCmd').textContent = `curl -fsSL ${host}/install.sh?token=${token} | bash`;
   document.getElementById('guideRunCmd').textContent = `./vibemonitor agent --server ${host} --token ${token}`;
@@ -562,7 +588,7 @@ document.getElementById('addNodeForm').addEventListener('submit', async (e) => {
     if (data.node) {
       closeModal('addNodeModal');
       fetchNodes();
-      showGuide(data.node.uuid, data.node.token);
+      showGuide(data.node.uuid);
     } else {
       alert('创建失败: ' + (data.error || '未知错误'));
     }

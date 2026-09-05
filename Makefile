@@ -5,9 +5,10 @@ BINARY_NAME=vibemonitor
 all: build
 
 build:
-	CGO_ENABLED=0 go build -ldflags="-s -w" -o $(BINARY_NAME) .
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o $(BINARY_NAME) .
 
 test:
+	@test "$$(uname -s)/$$(uname -m)" = "Linux/x86_64" || { echo "Full tests require Linux x86-64."; exit 1; }
 	go test -v ./...
 
 clean:
@@ -16,13 +17,6 @@ clean:
 	rm -rf dist
 
 release-all:
+	mkdir -p dist
 	# Linux AMD64
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/$(BINARY_NAME)-linux-amd64 .
-	# Linux ARM64
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o dist/$(BINARY_NAME)-linux-arm64 .
-	# macOS ARM64
-	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o dist/$(BINARY_NAME)-darwin-arm64 .
-	# macOS AMD64
-	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o dist/$(BINARY_NAME)-darwin-amd64 .
-	# Windows AMD64
-	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/$(BINARY_NAME)-windows-amd64.exe .

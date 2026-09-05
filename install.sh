@@ -42,20 +42,17 @@ check_root() {
 }
 
 detect_arch() {
+    if [ "$(uname -s)" != "Linux" ]; then
+        error "Only Linux x86-64 is supported."
+    fi
     local arch
     arch=$(uname -m)
     case "$arch" in
         x86_64|amd64)
             SYSTEM_ARCH="amd64"
             ;;
-        aarch64|arm64)
-            SYSTEM_ARCH="arm64"
-            ;;
-        armv7*|armhf)
-            SYSTEM_ARCH="armv7"
-            ;;
         *)
-            error "Unsupported architecture: $arch"
+            error "Only x86-64 (Intel/AMD 64-bit) is supported. Detected: $arch"
             ;;
     esac
     info "Detected CPU Architecture: ${GREEN}${SYSTEM_ARCH}${PLAIN}"

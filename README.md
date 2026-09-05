@@ -65,6 +65,8 @@ curl -fsSL https://raw.githubusercontent.com/m48a1/vibemonitor/main/install.sh |
 ```
 
 > 首次启动若未指定密码，会自动生成随机管理员密码。可以通过 `journalctl -u vibemonitor-server -n 30` 或在屏幕输出中查看。
+
+`--admin-password` 和 `VIBEMONITOR_ADMIN_PASSWORD` 仅在首次创建数据文件时设置初始密码。已有数据文件时，使用已保存的密码；在管理页面修改密码后，重启不会恢复安装时的旧密码。
 > 浏览器打开 `http://你的IP:1314`，点击右上角 **⚙️ 管理** 即可登录管理面板。
 
 ---
@@ -138,7 +140,7 @@ sudo systemctl status vibemonitor
 | :--- | :--- | :--- | :--- |
 | `--listen`, `-l` | `VIBEMONITOR_LISTEN` | `0.0.0.0:1314` | 服务端监听地址与端口 |
 | `--data`, `-d` | `VIBEMONITOR_DATA` | `vibemonitor-data.json` | 本地数据持久化文件路径 |
-| `--admin-password`, `-p` | `VIBEMONITOR_ADMIN_PASSWORD` | *(自动生成)* | 管理员认证密码（单管理员） |
+| `--admin-password`, `-p` | `VIBEMONITOR_ADMIN_PASSWORD` | *(自动生成)* | 首次初始化的管理员密码（单管理员） |
 | `--server`, `-s` | `VIBEMONITOR_SERVER` | 无 | (Agent 模式) 主控服务端地址 |
 | `--token`, `-t` | `VIBEMONITOR_TOKEN` | 无 | (Agent 模式) 节点的通信密钥 |
 | `--interval`, `-i` | `VIBEMONITOR_INTERVAL` | `3s` | (Agent 模式) 监控上报频率 |
@@ -147,16 +149,16 @@ sudo systemctl status vibemonitor
 
 ## 💻 本地编译与交叉编译
 
-本项目采用纯 Go 标准库与现代 WebSocket 模块开发，支持全平台一键跨平台交叉编译：
+本项目采用纯 Go 标准库与现代 WebSocket 模块开发，发行版本仅支持 x86-64（Intel/AMD 64 位，Go 架构名 `amd64`），不支持 ARM 或 32 位 x86。仅提供 Linux 二进制；可在其他开发系统上交叉编译，但不能在这些系统上运行：
 
 ```bash
-# 编译当前平台二进制
+# 编译 Linux x86-64 二进制
 make build
 
 # 运行全套单元测试与集成测试
 make test
 
-# 交叉编译全平台发行包 (Linux amd64/arm64, macOS, Windows)
+# 交叉编译 Linux x86-64 发行包
 make release-all
 ```
 
@@ -182,8 +184,22 @@ make release-all
             │                                               │
 +-----------▼----------+                       +-----------▼----------+
 |  VibeMonitor Agent   |                       |    第三方兼容 Agent   |
-| (Linux/macOS/Win探针)|                       | (完全兼容 v2 协议上报) |
+| (Linux x86-64 探针)|                       | (完全兼容 v2 协议上报) |
 +----------------------+                       +----------------------+
+```
+
+## 测试
+
+完整后端测试需要在 Linux x86-64 上运行。后端测试包含公开接口和 WebSocket 密钥隔离、节点认证、安装脚本校验、密码持久化及月底流量重置回归测试：
+
+```bash
+go test -race ./...
+```
+
+前端回归测试使用 Node.js 内置测试运行器，无需安装额外依赖：
+
+```bash
+node --test internal/web/app_test.cjs
 ```
 
 ## 📄 License

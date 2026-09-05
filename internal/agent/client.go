@@ -1,3 +1,5 @@
+//go:build linux && amd64
+
 package agent
 
 import (
@@ -50,10 +52,10 @@ func New(opts Options) *Client {
 	serverURL := strings.TrimRight(opts.ServerURL, "/")
 
 	return &Client{
-		serverURL:   serverURL,
-		token:       opts.Token,
-		interval:    opts.Interval,
-		collector:   monitor.NewCollector(),
+		serverURL: serverURL,
+		token:     opts.Token,
+		interval:  opts.Interval,
+		collector: monitor.NewCollector(),
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},

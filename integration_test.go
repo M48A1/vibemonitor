@@ -1,3 +1,5 @@
+//go:build linux && amd64
+
 package main
 
 import (
@@ -130,10 +132,10 @@ func TestFullWorkflow(t *testing.T) {
 	// 6. Test VibeMonitor v2 JSON-RPC Agent Ingestion
 	// Upload BasicInfo
 	basicInfo := protocol.BasicInfo{
-		CPUName:  "Apple M1 Max",
+		CPUName:  "Intel Xeon",
 		CPUCores: 10,
-		Arch:     "arm64",
-		OS:       "Darwin",
+		Arch:     "amd64",
+		OS:       "Linux",
 		MemTotal: 32 * 1024 * 1024 * 1024,
 	}
 	basicReq := protocol.Request{
