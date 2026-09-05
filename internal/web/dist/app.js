@@ -2,7 +2,6 @@
 
 let nodes = [];
 let currentGroup = 'all';
-let searchQuery = '';
 let isAdmin = false;
 let ws = null;
 let pollTimer = null;
@@ -175,16 +174,7 @@ function updateGroupButtons() {
 // Render Nodes
 function renderNodes() {
   const grid = document.getElementById('nodeGrid');
-  const filtered = nodes.filter(n => {
-    const matchGroup = currentGroup === 'all' || n.group === currentGroup;
-    const q = searchQuery.toLowerCase();
-    const matchSearch = !q ||
-      n.name.toLowerCase().includes(q) ||
-      (n.region && n.region.toLowerCase().includes(q)) ||
-      (n.group && n.group.toLowerCase().includes(q)) ||
-      (n.client_ip && n.client_ip.toLowerCase().includes(q));
-    return matchGroup && matchSearch;
-  });
+  const filtered = nodes.filter(n => currentGroup === 'all' || n.group === currentGroup);
 
   if (filtered.length === 0) {
     grid.innerHTML = `
@@ -696,11 +686,6 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
   } catch (e) {
     alert('请求失败: ' + e.message);
   }
-});
-
-document.getElementById('searchInput').addEventListener('input', (e) => {
-  searchQuery = e.target.value;
-  renderNodes();
 });
 
 // --- Ping Fluctuation Chart State & Logic ---
