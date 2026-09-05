@@ -165,16 +165,15 @@ func TestFullWorkflow(t *testing.T) {
 	}
 	sResp.Body.Close()
 
-	// Verify /api/public returns ping_targets
+	// Public settings must not expose ping target addresses.
 	pResp, _ := client.Get(baseURL + "/api/public")
 	var pubData map[string]any
 	_ = json.NewDecoder(pResp.Body).Decode(&pubData)
 	pResp.Body.Close()
-	pts, ok := pubData["ping_targets"].([]any)
-	if !ok || len(pts) != 1 {
-		t.Fatalf("Expected 1 ping target in /api/public, got %v", pubData["ping_targets"])
+	if _, ok := pubData["ping_targets"]; ok {
+		t.Fatalf("Public settings leaked ping targets: %v", pubData["ping_targets"])
 	}
-	t.Log("[PASS] Ping targets configured and verified in /api/public")
+	t.Log("[PASS] Public settings do not expose ping target addresses")
 
 	// Upload Report with PingResults
 	report := protocol.Report{
