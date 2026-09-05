@@ -59,7 +59,12 @@ function generateSparkline(history, field, width = 280, height = 28) {
 
 // Modal handling
 window.openModal = function(id) {
-  document.getElementById(id).classList.add('active');
+  const m = document.getElementById(id);
+  m.classList.add('active');
+  setTimeout(() => {
+    const focusable = m.querySelector('input:not([style*="display: none"]):not([style*="display:none"])');
+    if (focusable) focusable.focus();
+  }, 50);
 };
 
 window.closeModal = function(id) {
@@ -724,6 +729,28 @@ document.getElementById('editNodeForm').addEventListener('submit', async (e) => 
   }
 });
 
+document.getElementById('deleteNodeBtn').addEventListener('click', async () => {
+  const uuid = document.getElementById('editNodeUUID').value;
+  if (!uuid) return;
+  if (!confirm('确定要删除该节点吗？此操作不可恢复。')) return;
+  const token = getAdminToken();
+  try {
+    const res = await fetch(`/api/admin/nodes/${uuid}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': 'Bearer ' + token
+      }
+    });
+    if (res.ok) {
+      closeModal('editNodeModal');
+      fetchNodes();
+    } else {
+      alert('删除失败');
+    }
+  } catch (e) {
+    alert('请求失败: ' + e.message);
+  }
+});
 // --- Ping Fluctuation Chart State & Logic ---
 let currentPingNodeUUID = null;
 let currentPingNodeName = '';
