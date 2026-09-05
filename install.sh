@@ -269,7 +269,8 @@ restore_data() {
 read_input() {
     local prompt="$1" variable="$2"
     # Read the controlling terminal, never the piped script source.
-    if ! { read -r -p "$prompt" "$variable" </dev/tty; } 2>/dev/null; then
+    printf '%s' "$prompt"
+    if ! { read -r "$variable" </dev/tty; } 2>/dev/null; then
         error "No interactive terminal. Use: bash install.sh server, agent, backup, or restore FILE."
     fi
 }
@@ -288,7 +289,8 @@ uninstall_all() {
 }
 read_secret() {
     local prompt="$1" variable="$2"
-    if ! { read -r -s -p "$prompt" "$variable" </dev/tty; } 2>/dev/null; then
+    printf '%s' "$prompt"
+    if ! { read -r -s "$variable" </dev/tty; } 2>/dev/null; then
         error "No interactive terminal. Use command-line options."
     fi
     printf '\n'
