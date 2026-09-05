@@ -27,6 +27,7 @@ INSTALL_BIN="$TEST_ROOT/bin/vibemonitor"
 CONFIG_DIR="$TEST_ROOT/config"
 UNIT_DIR="$TEST_ROOT/units"
 check_root() { :; }
+read_input() { printf -v "$2" yes; }
 detect_arch() { SYSTEM_ARCH=amd64; }
 check_dependencies() { :; }
 resolve_release() { RELEASE_BASE=https://example.invalid/v1; }
@@ -52,6 +53,29 @@ curl() {
     def run_installer(self, code, fail=False):
         return subprocess.run(['bash', '-c', self.prelude + code], capture_output=True, text=True,
             env={**os.environ, 'SOURCE_INSTALLER':str(ROOT / 'install.sh'), 'TEST_ROOT':str(self.root), 'FAIL_NEW':'1' if fail else '0'}, timeout=10)
+
+    def test_cleanup_requires_confirmation(self):
+        backups = self.root / 'config/backups'
+        backups.mkdir()
+        (backups / 'old.json').write_text('backup')
+        result = self.run_installer('read_input() { printf -v "$2" no; }\ninstall_server 1314 pass\n')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((backups / 'old.json').exists())
+        self.assertEqual((self.root / 'bin/vibemonitor').read_text(), 'old binary')
+        result = self.run_installer('install_server 1314 pass\n')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(backups.exists())
+
+    def test_uninstall_cleans_only_backups(self):
+        backups = self.root / 'config/backups'
+        backups.mkdir()
+        (backups / 'old.json').write_text('backup')
+        data = self.root / 'config/vibemonitor-data.json'
+        data.write_text('keep data')
+        result = self.run_installer('uninstall_all\n')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(backups.exists())
+        self.assertEqual(data.read_text(), 'keep data')
 
     def test_successful_atomic_update(self):
         result = self.run_installer('install_server 1314 "password with spaces"\n')

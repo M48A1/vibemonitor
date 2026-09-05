@@ -148,11 +148,30 @@ finish_update() {
     success "$UPDATE_SERVICE is running. Agent connectivity can be checked in the dashboard and journal."
 }
 
+confirm_backup_cleanup() {
+    local confirmation
+    warn "此操作将删除 $CONFIG_DIR/backups 内的全部备份，无法恢复。当前配置和监控数据保留。"
+    read_input "确认继续安装/更新或卸载？输入 yes 继续，其他输入取消: " confirmation
+    [ "$confirmation" = yes ]
+}
+
+clear_backups() {
+    # Only remove this application's dedicated backup directory.
+    [ -n "$CONFIG_DIR" ] && [ "$CONFIG_DIR" != / ] || error "Invalid configuration directory."
+    [ ! -L "$CONFIG_DIR/backups" ] || error "Backup directory must not be a symbolic link."
+    if [ -e "$CONFIG_DIR/backups" ]; then
+        rm -rf -- "$CONFIG_DIR/backups"
+        success "旧备份已全部删除。"
+    fi
+}
+
 install_server() {
     local port="${1:-1314}" password="${2:-}" username="${3:-admin}"
     [[ "$port" =~ ^[0-9]+$ && ${#port} -le 5 ]] || error "Invalid port."
     (( 10#$port >= 1 && 10#$port <= 65535 )) || error "Port must be 1-65535."
-    if [ -f "$CONFIG_DIR/vibemonitor-data.json" ]; then backup_data; fi
+    check_root; detect_arch; check_dependencies
+    confirm_backup_cleanup || return 0
+    clear_backups
     begin_update "$SERVER_SERVICE"
     download_binary
     local args
@@ -180,6 +199,9 @@ install_agent() {
     local server="$1" token="$2" interval="${3:-3s}"
     [[ "$server" == http://* || "$server" == https://* ]] || error "Server URL must start with http:// or https://."
     [ -n "$token" ] || error "A node token is required."
+    check_root; detect_arch; check_dependencies
+    confirm_backup_cleanup || return 0
+    clear_backups
     begin_update "$AGENT_SERVICE"
     download_binary
     cat > "$UNIT_DIR/$AGENT_SERVICE.service" <<EOF
@@ -279,6 +301,8 @@ read_input() {
 show_status() { systemctl --no-pager status "$SERVER_SERVICE" "$AGENT_SERVICE" || true; }
 uninstall_all() {
     check_root
+    confirm_backup_cleanup || return 0
+    clear_backups
     for service in "$SERVER_SERVICE" "$AGENT_SERVICE" vibemonitor; do
         systemctl stop "$service" 2>/dev/null || true
         systemctl disable "$service" 2>/dev/null || true
@@ -286,7 +310,7 @@ uninstall_all() {
     done
     systemctl daemon-reload
     rm -f "$INSTALL_BIN"
-    info "Programs removed. Server data and backups retained in $CONFIG_DIR."
+    info "Programs removed. Server data retained in $CONFIG_DIR; backups deleted."
 }
 read_secret() {
     local prompt="$1" variable="$2"
@@ -318,7 +342,7 @@ menu_header() {
     printf '%s------------------------------------------------%s\n' "$C_BLUE" "$C_RESET"
     printf '  安装与更新\n    1. 安装 / 更新服务端\n    2. 安装 / 更新探针\n\n'
     printf '  服务管理\n    3. 查看状态\n    4. 重启服务\n    5. 停止服务\n    6. 查看最近日志\n\n'
-    printf '  数据与维护\n    8. 备份数据\n    9. 恢复备份\n    7. 卸载程序（保留数据）\n\n'
+    printf '  数据与维护\n    8. 备份数据\n    9. 恢复备份\n    7. 卸载程序（保留数据、删除备份）\n\n'
     printf '    0. 退出\n'
     printf '%s================================================%s\n' "$C_BLUE" "$C_RESET"
 }
@@ -358,8 +382,7 @@ menu() {
             4) manage_services restart ;;
             5) manage_services stop ;;
             6) journalctl --no-pager -u "$SERVER_SERVICE" -u "$AGENT_SERVICE" -n 50 ;;
-            7) read_input "卸载所有程序和服务，保留数据。输入 yes 继续: " confirm
-               if [ "$confirm" = yes ]; then uninstall_all; fi ;;
+            7) uninstall_all ;;
             8) backup_data ;;
             9) read_input "备份主文件路径: " source
                read_input "将覆盖当前配置、密码和数据。输入 yes 继续: " confirm
