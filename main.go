@@ -1,3 +1,5 @@
+//go:build linux && amd64
+
 package main
 
 import (
@@ -39,7 +41,7 @@ Commands:
 Server Options:
   --listen, -l            Address to listen on (default: 0.0.0.0:1314, env: VIBEMONITOR_LISTEN)
   --data, -d              Path to data storage file (default: vibemonitor-data.json, env: VIBEMONITOR_DATA)
-  --admin-password, -p    Admin password (single admin mode, env: VIBEMONITOR_ADMIN_PASSWORD)
+  --admin-password, -p    Initial admin password (first run only, env: VIBEMONITOR_ADMIN_PASSWORD)
 
 Agent Options:
   --server, -s            VibeMonitor server URL (required, e.g. http://127.0.0.1:1314, env: VIBEMONITOR_SERVER)
@@ -61,7 +63,7 @@ func runServer(args []string) {
 	fs.StringVar(listen, "l", *listen, "Address to listen on (shorthand)")
 	data := fs.String("data", getEnv("VIBEMONITOR_DATA", "vibemonitor-data.json"), "Path to data file")
 	fs.StringVar(data, "d", *data, "Path to data file (shorthand)")
-	adminPass := fs.String("admin-password", getEnv("VIBEMONITOR_ADMIN_PASSWORD", ""), "Admin password")
+	adminPass := fs.String("admin-password", getEnv("VIBEMONITOR_ADMIN_PASSWORD", ""), "Initial admin password (first run only)")
 	fs.StringVar(adminPass, "p", *adminPass, "Admin password (shorthand)")
 
 	_ = fs.Parse(args)

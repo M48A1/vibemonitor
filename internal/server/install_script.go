@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"strings"
@@ -15,12 +16,20 @@ func HandleInstallScript(s *store.Store) http.HandlerFunc {
 			http.Error(w, "Error: missing token in URL, e.g. /install.sh?token=YOUR_TOKEN", http.StatusBadRequest)
 			return
 		}
+		if _, err := hex.DecodeString(token); err != nil || s.FindNodeByToken(token) == nil {
+			http.Error(w, "Invalid node token", http.StatusUnauthorized)
+			return
+		}
 
 		scheme := "http"
 		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
 			scheme = "https"
 		}
 		host := r.Host
+		if host == "" || strings.ContainsAny(host, "\"'`$\\\r\n\t ;%/?#@") {
+			http.Error(w, "Invalid server host", http.StatusBadRequest)
+			return
+		}
 		serverURL := fmt.Sprintf("%s://%s", scheme, host)
 
 		script := fmt.Sprintf(`#!/usr/bin/env bash
@@ -42,20 +51,20 @@ if [ "$(id -u)" != "0" ]; then
     exit 1
 fi
 
+# Detect supported operating system and architecture
+if [ "$(uname -s)" != "Linux" ]; then
+    echo "[-] Only Linux x86-64 is supported."
+    exit 1
+fi
+
 # Detect Architecture
 ARCH=$(uname -m)
 case "$ARCH" in
     x86_64|amd64)
         BINARY_ARCH="amd64"
         ;;
-    aarch64|arm64)
-        BINARY_ARCH="arm64"
-        ;;
-    armv7l|armhf)
-        BINARY_ARCH="arm"
-        ;;
     *)
-        echo "[-] Unsupported architecture: $ARCH"
+        echo "[-] Only x86-64 (Intel/AMD 64-bit) is supported. Detected: $ARCH"
         exit 1
         ;;
 esac

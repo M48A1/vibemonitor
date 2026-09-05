@@ -196,6 +196,20 @@ func (s *Server) Handler() http.Handler {
 	})
 
 	// Node Management
+	mux.HandleFunc("GET /api/admin/nodes/{uuid}/token", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		if !s.checkAdmin(r) {
+			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
+			return
+		}
+		node := s.store.GetNode(r.PathValue("uuid"))
+		if node == nil {
+			writeJSON(w, http.StatusNotFound, map[string]any{"error": "node not found"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"token": node.Token})
+	})
+
 	mux.HandleFunc("POST /api/admin/nodes", func(w http.ResponseWriter, r *http.Request) {
 		if !s.checkAdmin(r) {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
@@ -352,4 +366,3 @@ func (s *Server) Run(ctx context.Context) error {
 		return err
 	}
 }
-

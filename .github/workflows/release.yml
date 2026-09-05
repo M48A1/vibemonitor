@@ -19,10 +19,13 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version-file: go.mod
           check-latest: true
 
-      - name: Build All Architectures
+      - name: Test
+        run: go test -race ./...
+
+      - name: Build Linux x86-64 Release
         run: |
           mkdir -p dist
           VERSION=${GITHUB_REF_NAME}
@@ -34,33 +37,6 @@ jobs:
           tar -czf dist/vibemonitor-linux-amd64.tar.gz -C dist vibemonitor
           cp dist/vibemonitor dist/vibemonitor-linux-amd64
           rm dist/vibemonitor
-
-          # Linux ARM64
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o dist/vibemonitor .
-          tar -czf dist/vibemonitor-linux-arm64.tar.gz -C dist vibemonitor
-          cp dist/vibemonitor dist/vibemonitor-linux-arm64
-          rm dist/vibemonitor
-
-          # Linux ARMv7
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -ldflags="-s -w" -o dist/vibemonitor .
-          tar -czf dist/vibemonitor-linux-armv7.tar.gz -C dist vibemonitor
-          cp dist/vibemonitor dist/vibemonitor-linux-armv7
-          rm dist/vibemonitor
-
-          # macOS ARM64
-          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o dist/vibemonitor .
-          tar -czf dist/vibemonitor-darwin-arm64.tar.gz -C dist vibemonitor
-          rm dist/vibemonitor
-
-          # macOS AMD64
-          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o dist/vibemonitor .
-          tar -czf dist/vibemonitor-darwin-amd64.tar.gz -C dist vibemonitor
-          rm dist/vibemonitor
-
-          # Windows AMD64
-          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/vibemonitor.exe .
-          tar -czf dist/vibemonitor-windows-amd64.tar.gz -C dist vibemonitor.exe
-          rm dist/vibemonitor.exe
 
           # Generate SHA256 checksums
           cd dist

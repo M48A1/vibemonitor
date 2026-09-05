@@ -55,19 +55,19 @@ type HistoryPoint struct {
 }
 
 type Node struct {
-	UUID        string               `json:"uuid"`
-	Token       string               `json:"token"`
-	Name        string               `json:"name"`
-	Group       string               `json:"group"`
-	Region      string               `json:"region"`
-	Weight      int                  `json:"weight"`
-	CreatedAt   time.Time            `json:"created_at"`
-	LastSeen    time.Time            `json:"last_seen"`
-	Online      bool                 `json:"online"`
-	ClientIP    string               `json:"client_ip,omitempty"`
-	BasicInfo   *protocol.BasicInfo  `json:"basic_info,omitempty"`
-	LastReport  *protocol.Report     `json:"last_report,omitempty"`
-	History     []HistoryPoint       `json:"history,omitempty"`
+	UUID       string              `json:"uuid"`
+	Token      string              `json:"token,omitempty"`
+	Name       string              `json:"name"`
+	Group      string              `json:"group"`
+	Region     string              `json:"region"`
+	Weight     int                 `json:"weight"`
+	CreatedAt  time.Time           `json:"created_at"`
+	LastSeen   time.Time           `json:"last_seen"`
+	Online     bool                `json:"online"`
+	ClientIP   string              `json:"client_ip,omitempty"`
+	BasicInfo  *protocol.BasicInfo `json:"basic_info,omitempty"`
+	LastReport *protocol.Report    `json:"last_report,omitempty"`
+	History    []HistoryPoint      `json:"history,omitempty"`
 
 	// 60-second Ping Latency History (TargetName -> []PingSample, persisted in JSON)
 	PingHistory map[string][]PingSample `json:"ping_history,omitempty"`
@@ -223,9 +223,6 @@ func (s *Store) load(defaultPassword string) error {
 	}
 
 	s.config = df.Config
-	if defaultPassword != "" {
-		s.config.AdminPassword = defaultPassword
-	}
 	if s.config.SiteTitle == "" {
 		s.config.SiteTitle = "VibeMonitor"
 	}
@@ -336,7 +333,7 @@ func GetBillingCycleRange(resetDay int, now time.Time) (start, end time.Time) {
 		return targetDay
 	}
 
-	if day >= resetDay {
+	if day >= clampDay(year, month, resetDay) {
 		startDay := clampDay(year, month, resetDay)
 		start = time.Date(year, month, startDay, 0, 0, 0, 0, now.Location())
 
@@ -404,6 +401,7 @@ func (s *Store) GetNodes() []*Node {
 	list := make([]*Node, 0, len(s.nodes))
 	for _, n := range s.nodes {
 		nodeCopy := *n
+		nodeCopy.Token = ""        // Credentials are only available through authenticated management.
 		nodeCopy.PingHistory = nil // Kept compact for dashboard list
 		nodeCopy.calculateDynamicFields(now)
 		list = append(list, &nodeCopy)
@@ -504,13 +502,13 @@ func (s *Store) CreateNodeWithOptions(opts NodeOptions) (*Node, error) {
 
 func (s *Store) UpdateNode(uuid, name, group, region string, weight int) error {
 	return s.UpdateNodeWithOptions(uuid, NodeOptions{
-		Name:   name,
-		Group:  group,
-		Region: region,
-		Weight: weight,
-		ResetDay: -1,
+		Name:           name,
+		Group:          group,
+		Region:         region,
+		Weight:         weight,
+		ResetDay:       -1,
 		TrafficLimitGB: -1,
-		InitialUsedGB: -1,
+		InitialUsedGB:  -1,
 	})
 }
 
@@ -575,12 +573,7 @@ func (s *Store) IngestBasicInfo(tokenOrUUID string, info protocol.BasicInfo, cli
 
 	uuid, ok := s.tokenIndex[tokenOrUUID]
 	if !ok {
-		// Try matching by UUID directly
-		if _, exists := s.nodes[tokenOrUUID]; exists {
-			uuid = tokenOrUUID
-		} else {
-			return nil, errors.New("unauthorized client token")
-		}
+		return nil, errors.New("unauthorized client token")
 	}
 
 	node := s.nodes[uuid]
@@ -602,11 +595,7 @@ func (s *Store) IngestReport(tokenOrUUID string, report protocol.Report, clientI
 
 	uuid, ok := s.tokenIndex[tokenOrUUID]
 	if !ok {
-		if _, exists := s.nodes[tokenOrUUID]; exists {
-			uuid = tokenOrUUID
-		} else {
-			return nil, errors.New("unauthorized client token")
-		}
+		return nil, errors.New("unauthorized client token")
 	}
 
 	node := s.nodes[uuid]
@@ -782,4 +771,3 @@ func (s *Store) GetPingHistory(uuid, targetName, timeRange string) (*PingHistory
 		Samples: filtered,
 	}, nil
 }
-
