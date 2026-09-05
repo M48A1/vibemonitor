@@ -183,6 +183,18 @@ clear_server_data() {
     success "全部配置、账号、监控数据和备份已删除。"
 }
 
+update_server() {
+    local port="${1:-1314}"
+    [[ "$port" =~ ^[0-9]+$ && ${#port} -le 5 ]] || error "Invalid port."
+    (( 10#$port >= 1 && 10#$port <= 65535 )) || error "Port must be 1-65535."
+    check_root; detect_arch; check_dependencies
+    [ -f "$INSTALL_BIN" ] && [ -f "$UNIT_DIR/$SERVER_SERVICE.service" ] || error "尚未安装主控，请先安装。"
+    info "更新主控程序，保留现有账号、节点、配置、历史、备份及服务设置。"
+    begin_update "$SERVER_SERVICE"
+    download_binary
+    finish_update "$port"
+}
+
 install_server() {
     local port="${1:-1314}" password="${2:-}" username="${3:-}"
     [[ "$username" =~ [^[:space:]] ]] || error "管理员账号不能为空，请填写 --username。"
@@ -380,6 +392,7 @@ menu_header() {
     printf '  服务端    %s    |    探针  %s\n' "$(service_label "$SERVER_SERVICE")" "$(service_label "$AGENT_SERVICE")"
     printf '%s------------------------------------------------%s\n' "$C_BLUE" "$C_RESET"
     printf '  安装与更新\n    1. 安装 / 清空重装服务端（删除全部数据）\n    2. 安装 / 更新探针\n\n'
+    printf '    10. 更新主控（保留全部数据）\n\n'
     printf '  服务管理\n    3. 查看状态\n    4. 重启服务\n    5. 停止服务\n    6. 查看最近日志\n\n'
     printf '  数据与维护\n    8. 备份数据\n    9. 恢复备份\n    7. 彻底卸载（删除全部配置和数据）\n\n'
     printf '    0. 退出\n'
@@ -402,7 +415,7 @@ menu() {
     local choice port password username server token interval source confirm pause
     while true; do
         menu_header
-        read_input "请选择 [0-9]: " choice
+        read_input "请选择 [0-10]: " choice
         case "$choice" in
             # Run installations in a subshell so their EXIT rollback always runs,
             # even when the interactive menu is kept open afterwards.
@@ -434,8 +447,10 @@ menu() {
             9) read_input "备份主文件路径: " source
                read_input "将覆盖当前配置、密码和数据。输入 yes 继续: " confirm
                if [ "$confirm" = yes ]; then restore_data "$source"; fi ;;
+            10) read_input "当前主控监听端口 [1314]: " port
+                ( update_server "${port:-1314}" ) ;;
             0) return ;;
-            *) warn "请输入 0 到 9 之间的菜单编号。" ;;
+            *) warn "请输入 0 到 10 之间的菜单编号。" ;;
         esac
         read_input "按回车返回管理菜单…" pause
     done
@@ -446,6 +461,15 @@ if [[ -n "${BASH_SOURCE[0]:-}" && "${BASH_SOURCE[0]}" != "$0" ]]; then return; f
 CMD="${1:-menu}"
 if [ $# -gt 0 ]; then shift; fi
 case "$CMD" in
+    update|update-server)
+        port=1314
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                -p|--port) port="${2:?missing port}"; shift 2 ;;
+                *) error "Unknown update option: $1" ;;
+            esac
+        done
+        update_server "$port" ;;
     server)
         port=1314; password=""; username=""
         while [ $# -gt 0 ]; do
@@ -475,6 +499,6 @@ case "$CMD" in
     restart) systemctl restart "$SERVER_SERVICE" "$AGENT_SERVICE" ;;
     uninstall) uninstall_all ;;
     agent-uninstall|uninstall-agent) uninstall_agent ;;
-    help|--help|-h) echo "Usage: $0 [server [-p PORT] -u USER -w PASSWORD | agent -s URL -t TOKEN [-i INTERVAL] | agent-uninstall | backup | restore FILE | status | restart | uninstall]" ;;
+    help|--help|-h) echo "Usage: $0 [update [-p PORT] | server [-p PORT] -u USER -w PASSWORD | agent -s URL -t TOKEN [-i INTERVAL] | agent-uninstall | backup | restore FILE | status | restart | uninstall]" ;;
     *) error "Unknown command: $CMD" ;;
 esac

@@ -570,8 +570,42 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
   } catch (e) { alert(e.message); }
 });
 
+const nodeManagementMenu = document.getElementById('nodeManagementMenu');
+nodeManagementMenu.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    nodeManagementMenu.open = false;
+    nodeManagementMenu.querySelector('summary').focus();
+  }
+});
+nodeManagementMenu.addEventListener('focusout', (event) => {
+  if (!nodeManagementMenu.contains(event.relatedTarget)) nodeManagementMenu.open = false;
+});
+document.getElementById('editExistingNodeBtn').addEventListener('click', () => {
+  nodeManagementMenu.open = false;
+  if (!isAdmin) return;
+  const list = document.getElementById('nodeSelectionList');
+  list.innerHTML = '';
+  if (nodes.length === 0) {
+    list.textContent = '暂无节点，请先通过“节点管理 → 新建节点”创建。';
+  }
+  nodes.forEach(node => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn';
+    button.textContent = `${node.name || node.uuid}${node.group ? ' · ' + node.group : ''}`;
+    button.addEventListener('click', () => {
+      closeModal('selectNodeModal');
+      openEditModal(node.uuid);
+    });
+    list.appendChild(button);
+  });
+  openModal('selectNodeModal');
+});
+
 const addNodeBtn = document.getElementById('addNodeBtn');
 if (addNodeBtn) addNodeBtn.addEventListener('click', () => {
+  nodeManagementMenu.open = false;
+  if (!isAdmin) return;
   document.getElementById('newNodeName').value = '';
   document.getElementById('newNodeGroup').value = '';
   document.getElementById('newNodeTrafficLimit').value = '';

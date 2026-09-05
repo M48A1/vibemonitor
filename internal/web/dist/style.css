@@ -3,6 +3,26 @@
    Clean, high-contrast, modern flat card UI without blur
    ========================================================= */
 
+.node-management { position: relative; display: inline-block; }
+.node-management > summary { list-style: none; }
+.node-management > summary::-webkit-details-marker { display: none; }
+.node-management-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  display: grid;
+  gap: 6px;
+  min-width: 180px;
+  padding: 8px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg);
+}
+.node-selection-list { display: grid; gap: 8px; }
+.node-selection-list .btn { justify-content: flex-start; white-space: normal; overflow-wrap: anywhere; text-align: left; }
+
 :root {
   /* Light Mode */
   --background: #f8fafc;

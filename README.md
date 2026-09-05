@@ -32,6 +32,19 @@ bash install.sh
 
 菜单从终端读取输入；无交互终端时必须使用以下子命令。
 
+### 更新已安装的主控（保留数据）
+
+下载新版安装器后使用 `update`，或在菜单选择 **10. 更新主控（保留全部数据）**：
+
+```bash
+curl -4 -fsSL -o install.sh https://github.com/M48A1/vibemonitor/releases/latest/download/install.sh
+sudo bash install.sh update -p 1314
+```
+
+端口请填写现有主控实际监听端口。此命令只替换程序并重启主控，保留账号、节点、配置、监控历史、备份和现有 systemd 设置，无需重新填写密码和 Token。启动或健康检查失败时回退旧程序，不回退新程序启动后产生的数据变化。同机探针共用程序文件，重启探针后使用新版。
+
+`update` 不执行下文安装/重装的清理步骤。`server` 仍是清空重装命令，请勿用它进行保留数据升级。
+
 ### 主控
 
 ```bash
