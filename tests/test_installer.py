@@ -58,15 +58,19 @@ curl() {
         backups = self.root / 'config/backups'
         backups.mkdir()
         (backups / 'old.json').write_text('backup')
+        data = self.root / 'config/vibemonitor-data.json'
+        data.write_text('old credentials')
         result = self.run_installer('read_input() { printf -v "$2" no; }\ninstall_server 1314 pass\n')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue((backups / 'old.json').exists())
+        self.assertTrue(data.exists())
         self.assertEqual((self.root / 'bin/vibemonitor').read_text(), 'old binary')
         result = self.run_installer('install_server 1314 pass\n')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(backups.exists())
+        self.assertFalse(data.exists())
 
-    def test_uninstall_cleans_only_backups(self):
+    def test_uninstall_cleans_all_data(self):
         backups = self.root / 'config/backups'
         backups.mkdir()
         (backups / 'old.json').write_text('backup')
@@ -75,7 +79,7 @@ curl() {
         result = self.run_installer('uninstall_all\n')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(backups.exists())
-        self.assertEqual(data.read_text(), 'keep data')
+        self.assertFalse(data.exists())
 
     def test_successful_atomic_update(self):
         result = self.run_installer('install_server 1314 "password with spaces"\n')
