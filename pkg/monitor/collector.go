@@ -14,9 +14,9 @@ type Collector interface {
 
 // NetTracker tracks cumulative bytes to calculate real-time speeds (bytes/sec)
 type NetTracker struct {
-	mu           sync.Mutex
-	lastTime     time.Time
-	lastTotalUp  int64
+	mu            sync.Mutex
+	lastTime      time.Time
+	lastTotalUp   int64
 	lastTotalDown int64
 }
 

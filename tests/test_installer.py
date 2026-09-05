@@ -67,6 +67,27 @@ curl() {
         self.assertEqual((self.root / 'units/vibemonitor-server.service').read_text(), 'old unit')
         self.assertEqual(list((self.root / 'bin').glob('*.update.*')), [])
 
+    def test_failed_rollback_preserves_recovery_files(self):
+        overrides = [
+            'mv() { case "$*" in *restore-binary*) return 1;; *) command mv "$@";; esac; }',
+            'cp() { case "$*" in *"previous-unit "*) return 1;; *) command cp "$@";; esac; }',
+            'systemctl() { if [ "$1" = daemon-reload ]; then return 1; fi; return 0; }',
+        ]
+        for override in overrides:
+            with self.subTest(override=override):
+                # Each attempt starts from a working version and unit.
+                (self.root / 'bin/vibemonitor').write_text('old binary')
+                (self.root / 'units/vibemonitor-server.service').write_text('old unit')
+                before = set((self.root / 'bin').glob('*.update.*'))
+                result = self.run_installer(override + '\ninstall_server 1314 "pass"\n', fail=True)
+                self.assertNotEqual(result.returncode, 0)
+                retained = set((self.root / 'bin').glob('*.update.*')) - before
+                self.assertEqual(len(retained), 1, result.stderr)
+                recovery = retained.pop()
+                self.assertEqual((recovery / 'previous-binary').read_text(), 'old binary')
+                self.assertEqual((recovery / 'previous-unit').read_text(), 'old unit')
+                self.assertIn(str(recovery), result.stderr)
+
     def test_bad_checksum_never_replaces_or_stops_service(self):
         (self.root / 'sums').write_text('0' * 64 + '  vibemonitor-linux-amd64\n')
         result = self.run_installer('install_server 1314 "pass"\n')

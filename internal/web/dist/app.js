@@ -806,7 +806,7 @@ async function loadPingHistory() {
     const data = await res.json();
 
     if (data.host) {
-      document.getElementById('pingModalSubtitle').textContent = `目标: ${data.target} (${data.host})`;
+      document.getElementById('pingModalSubtitle').textContent = `目标: ${data.target} (${data.host}) · 历史方式: ${{tcp: 'TCP', icmp: 'ICMP', unknown: '未标明'}[data.method] || '暂无采样'}`;
     }
 
     // Stats
