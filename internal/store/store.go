@@ -17,6 +17,7 @@ import (
 )
 
 const (
+	MaxPingTargets          = 64
 	MaxHistoryPoints        = 60
 	OfflineThreshold        = 10 * time.Second
 	MaxPingSamplesPerTarget = 1440 // 24 hours at 60-second intervals
@@ -24,8 +25,10 @@ const (
 )
 
 type PingSample struct {
-	Timestamp int64 `json:"t"` // Unix timestamp in seconds
-	Latency   int   `json:"l"` // ms, -1 for timeout
+	Host      string `json:"host"`
+	Method    string `json:"method"`
+	Timestamp int64  `json:"t"` // Unix timestamp in seconds
+	Latency   int    `json:"l"` // ms, -1 for timeout
 }
 
 type PingStats struct {
@@ -38,6 +41,7 @@ type PingStats struct {
 }
 
 type PingHistoryResponse struct {
+	Method  string       `json:"method,omitempty"`
 	UUID    string       `json:"uuid"`
 	Target  string       `json:"target"`
 	Host    string       `json:"host,omitempty"`
@@ -225,6 +229,9 @@ func (s *Store) load(defaultPassword string) error {
 		return fmt.Errorf("failed to parse data file %s: %w", s.filePath, err)
 	}
 
+	if err := validatePingTargets(df.Config.PingTargets); err != nil {
+		return fmt.Errorf("invalid saved ping targets: %w", err)
+	}
 	s.config = df.Config
 	if s.config.SiteTitle == "" {
 		s.config.SiteTitle = "VibeMonitor"
@@ -251,6 +258,9 @@ func (s *Store) load(defaultPassword string) error {
 			s.tokenIndex[n.Token] = uuid
 		}
 	}
+	s.prunePingDataLocked()
+	s.dirty = true // Persist migration of legacy or unconfigured history.
+
 	return nil
 }
 
@@ -310,25 +320,23 @@ func (s *Store) GetConfig() Config {
 }
 
 func (s *Store) UpdateConfig(title, announcement, autoKey string, pingTargets []protocol.PingTarget) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	previous := s.config
-	if title != "" {
-		s.config.SiteTitle = title
-	}
-	s.config.Announcement = announcement
-	if autoKey != "" {
-		s.config.AutoDiscoveryKey = autoKey
-	}
-	if pingTargets != nil {
-		s.config.PingTargets = pingTargets
-	}
-	if err := s.saveLocked(); err != nil {
-		s.config = previous
+	if err := validatePingTargets(pingTargets); err != nil {
 		return err
 	}
-	s.notifyUpdate()
-	return nil
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	next := s.config
+	if title != "" {
+		next.SiteTitle = title
+	}
+	next.Announcement = announcement
+	if autoKey != "" {
+		next.AutoDiscoveryKey = autoKey
+	}
+	if pingTargets != nil {
+		next.PingTargets = pingTargets
+	}
+	return s.commitConfigLocked(next)
 }
 
 // GetBillingCycleRange returns the start and end time of the billing cycle.
@@ -642,6 +650,10 @@ func (s *Store) IngestReport(tokenOrUUID string, report protocol.Report, clientI
 		return nil, errors.New("unauthorized client token")
 	}
 
+	if len(report.PingResults) > MaxPingTargets {
+		return nil, errors.New("too many ping results")
+	}
+	report.PingResults = filterPingResults(report.PingResults, s.config.PingTargets)
 	if report.Network.TotalUp < 0 || report.Network.TotalDown < 0 {
 		return nil, errors.New("negative network counters")
 	}
@@ -711,6 +723,8 @@ func (s *Store) IngestReport(tokenOrUUID string, report protocol.Report, clientI
 			if len(samples) == 0 || (nowUnix-samples[len(samples)-1].Timestamp) >= PingSampleIntervalSec {
 				samples = append(samples, PingSample{
 					Timestamp: nowUnix,
+					Host:      p.Host,
+					Method:    p.Method,
 					Latency:   p.Latency,
 				})
 				if len(samples) > MaxPingSamplesPerTarget {
@@ -742,17 +756,24 @@ func (s *Store) GetPingHistory(uuid, targetName, timeRange string) (*PingHistory
 		return nil, errors.New("node not found")
 	}
 
-	if targetName == "" {
-		for name := range node.PingHistory {
-			targetName = name
+	if targetName == "" && len(s.config.PingTargets) > 0 {
+		targetName = s.config.PingTargets[0].Name
+	}
+	var targetHost string
+	for _, target := range s.config.PingTargets {
+		if target.Name == targetName {
+			targetHost = target.Host
 			break
 		}
-		if targetName == "" && len(s.config.PingTargets) > 0 {
-			targetName = s.config.PingTargets[0].Name
+	}
+	allSamples := node.PingHistory[targetName]
+	method := ""
+	for i := len(allSamples) - 1; i >= 0; i-- {
+		if allSamples[i].Host == targetHost && targetHost != "" {
+			method = allSamples[i].Method
+			break
 		}
 	}
-
-	allSamples := node.PingHistory[targetName]
 	nowUnix := time.Now().Unix()
 	var duration int64 = 86400 // default 24h
 	if timeRange == "1h" {
@@ -762,7 +783,7 @@ func (s *Store) GetPingHistory(uuid, targetName, timeRange string) (*PingHistory
 	cutoff := nowUnix - duration
 	filtered := make([]PingSample, 0, len(allSamples))
 	for _, smp := range allSamples {
-		if smp.Timestamp >= cutoff {
+		if smp.Timestamp >= cutoff && targetHost != "" && smp.Host == targetHost && smp.Method == method {
 			filtered = append(filtered, smp)
 		}
 	}
@@ -806,15 +827,8 @@ func (s *Store) GetPingHistory(uuid, targetName, timeRange string) (*PingHistory
 		stats.PacketLoss = math.Round(float64(lostCount)/float64(len(filtered))*1000.0) / 10.0
 	}
 
-	var targetHost string
-	for _, pt := range s.config.PingTargets {
-		if pt.Name == targetName {
-			targetHost = pt.Host
-			break
-		}
-	}
-
 	return &PingHistoryResponse{
+		Method:  method,
 		UUID:    uuid,
 		Target:  targetName,
 		Host:    targetHost,

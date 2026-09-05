@@ -12,10 +12,60 @@ import (
 
 // UpdateSettings commits the complete settings change or leaves memory unchanged.
 func (s *Store) UpdateSettings(title, announcement string, targets []protocol.PingTarget, password string) error {
-	if len(targets) > 64 {
+	if err := validatePingTargets(targets); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	next := s.config
+	if title != "" || announcement != "" || targets != nil {
+		if title != "" {
+			next.SiteTitle = title
+		}
+		next.Announcement = announcement
+		if targets != nil {
+			next.PingTargets = targets
+		}
+	}
+	if password != "" {
+		next.AdminPassword = password
+	}
+	return s.commitConfigLocked(next)
+}
+
+// ValidateData checks a backup without modifying or starting a store.
+func ValidateData(data []byte) error {
+	var df DataFile
+	if err := json.Unmarshal(data, &df); err != nil {
+		return err
+	}
+	if df.Config.AdminPassword == "" || df.Nodes == nil {
+		return errors.New("backup is missing configuration or nodes")
+	}
+	if err := validatePingTargets(df.Config.PingTargets); err != nil {
+		return err
+	}
+	tokens := make(map[string]bool)
+	for id, node := range df.Nodes {
+		if node == nil || id == "" || node.UUID != id || node.Token == "" || tokens[node.Token] {
+			return errors.New("backup contains invalid or duplicate nodes")
+		}
+		tokens[node.Token] = true
+	}
+	return nil
+}
+
+func validatePingTargets(targets []protocol.PingTarget) error {
+	if len(targets) > MaxPingTargets {
 		return errors.New("at most 64 ping targets are allowed")
 	}
+	seen := make(map[string]bool)
 	for _, target := range targets {
+		if seen[target.Name] {
+			return errors.New("duplicate ping target name")
+		}
+		seen[target.Name] = true
+
 		if target.Name == "" || len(target.Name) > 128 || len(target.Host) > 253 {
 			return errors.New("invalid ping target")
 		}
@@ -38,44 +88,6 @@ func (s *Store) UpdateSettings(title, announcement string, targets []protocol.Pi
 			}
 		}
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	previous := s.config
-	if title != "" || announcement != "" || targets != nil {
-		if title != "" {
-			s.config.SiteTitle = title
-		}
-		s.config.Announcement = announcement
-		if targets != nil {
-			s.config.PingTargets = targets
-		}
-	}
-	if password != "" {
-		s.config.AdminPassword = password
-	}
-	if err := s.saveLocked(); err != nil {
-		s.config = previous
-		return err
-	}
-	s.notifyUpdate()
-	return nil
-}
 
-// ValidateData checks a backup without modifying or starting a store.
-func ValidateData(data []byte) error {
-	var df DataFile
-	if err := json.Unmarshal(data, &df); err != nil {
-		return err
-	}
-	if df.Config.AdminPassword == "" || df.Nodes == nil {
-		return errors.New("backup is missing configuration or nodes")
-	}
-	tokens := make(map[string]bool)
-	for id, node := range df.Nodes {
-		if node == nil || id == "" || node.UUID != id || node.Token == "" || tokens[node.Token] {
-			return errors.New("backup contains invalid or duplicate nodes")
-		}
-		tokens[node.Token] = true
-	}
 	return nil
 }

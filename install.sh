@@ -64,29 +64,36 @@ begin_update() {
 }
 
 cleanup_update() {
-    local result=$?
+    local result=$? rollback_failed=0
     trap - EXIT
     if [ "$UPDATE_COMMITTED" != 1 ] && [ "$BINARY_REPLACED" = 1 ]; then
         warn "Installation failed; restoring the previous binary and service configuration."
-        systemctl stop "$UPDATE_SERVICE" >/dev/null 2>&1 || true
-        if [ "$BINARY_REPLACED" = 1 ]; then
-            if [ -f "$UPDATE_DIR/previous-binary" ]; then
-                mv -f "$UPDATE_DIR/previous-binary" "$INSTALL_BIN" || warn "Could not restore binary."
-            else
-                rm -f "$INSTALL_BIN"
+        systemctl stop "$UPDATE_SERVICE" >/dev/null 2>&1 || rollback_failed=1
+        if [ -f "$UPDATE_DIR/previous-binary" ]; then
+            # Keep the recovery copy until every rollback step has succeeded.
+            if ! cp -p "$UPDATE_DIR/previous-binary" "$UPDATE_DIR/restore-binary" || ! mv -f "$UPDATE_DIR/restore-binary" "$INSTALL_BIN"; then
+                warn "Could not restore binary."
+                rollback_failed=1
             fi
+        else
+            rm -f "$INSTALL_BIN" || rollback_failed=1
         fi
         if [ -f "$UPDATE_DIR/previous-unit" ]; then
-            cp -p "$UPDATE_DIR/previous-unit" "$UNIT_DIR/$UPDATE_SERVICE.service" || warn "Could not restore unit."
+            cp -p "$UPDATE_DIR/previous-unit" "$UNIT_DIR/$UPDATE_SERVICE.service" || rollback_failed=1
         else
-            rm -f "$UNIT_DIR/$UPDATE_SERVICE.service"
+            rm -f "$UNIT_DIR/$UPDATE_SERVICE.service" || rollback_failed=1
         fi
-        if [ "$WAS_ENABLED" = 0 ]; then systemctl disable "$UPDATE_SERVICE" >/dev/null 2>&1 || true; fi
-        systemctl daemon-reload || true
-        if [ "$WAS_ACTIVE" = 1 ]; then systemctl restart "$UPDATE_SERVICE" || warn "Previous service could not restart; inspect its logs."; fi
+        if [ "$WAS_ENABLED" = 0 ]; then systemctl disable "$UPDATE_SERVICE" >/dev/null 2>&1 || rollback_failed=1; fi
+        systemctl daemon-reload || rollback_failed=1
+        if [ "$WAS_ACTIVE" = 1 ]; then systemctl restart "$UPDATE_SERVICE" || rollback_failed=1; fi
         result=1
     fi
-    rm -rf "$UPDATE_DIR"
+    if [ "$rollback_failed" = 1 ]; then
+        warn "Rollback incomplete. Recovery files retained at: $UPDATE_DIR"
+        warn "Check $UPDATE_SERVICE before removing those files."
+    else
+        rm -rf "$UPDATE_DIR"
+    fi
     exit "$result"
 }
 
