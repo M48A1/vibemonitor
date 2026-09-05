@@ -694,6 +694,11 @@ window.openEditModal = async function(uuid) {
   openModal('editNodeModal');
 };
 
+document.getElementById('editNodeGuideBtn').addEventListener('click', () => {
+  const uuid = document.getElementById('editNodeUUID').value;
+  if (uuid) showGuide(uuid);
+});
+
 document.getElementById('editNodeForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const uuid = document.getElementById('editNodeUUID').value;
