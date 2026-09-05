@@ -30,33 +30,36 @@ func filterPingResults(results []protocol.PingResult, targets []protocol.PingTar
 }
 
 func (s *Store) prunePingDataLocked() {
-	allowed := make(map[string]string, len(s.config.PingTargets))
-	for _, target := range s.config.PingTargets {
+	for _, node := range s.nodes {
+		s.pruneNodePingLocked(node)
+	}
+}
+func (s *Store) pruneNodePingLocked(node *Node) {
+	allowed := make(map[string]string, len(s.targetsLocked(node)))
+	for _, target := range s.targetsLocked(node) {
 		allowed[target.Name] = target.Host
 	}
-	for _, node := range s.nodes {
-		clean := make(map[string][]PingSample)
-		for name, host := range allowed {
-			var samples []PingSample
-			for _, sample := range node.PingHistory[name] {
-				// Legacy samples have no trustworthy host/method provenance.
-				if sample.Host == host && (sample.Method == "tcp" || sample.Method == "icmp" || sample.Method == "unknown") {
-					samples = append(samples, sample)
-				}
-			}
-			if len(samples) > MaxPingSamplesPerTarget {
-				samples = samples[len(samples)-MaxPingSamplesPerTarget:]
-			}
-			if len(samples) > 0 {
-				clean[name] = samples
+	clean := make(map[string][]PingSample)
+	for name, host := range allowed {
+		var samples []PingSample
+		for _, sample := range node.PingHistory[name] {
+			// Legacy samples have no trustworthy host/method provenance.
+			if sample.Host == host && (sample.Method == "tcp" || sample.Method == "icmp" || sample.Method == "unknown") {
+				samples = append(samples, sample)
 			}
 		}
-		node.PingHistory = clean
-		if node.LastReport != nil {
-			report := *node.LastReport
-			report.PingResults = filterPingResults(report.PingResults, s.config.PingTargets)
-			node.LastReport = &report
+		if len(samples) > MaxPingSamplesPerTarget {
+			samples = samples[len(samples)-MaxPingSamplesPerTarget:]
 		}
+		if len(samples) > 0 {
+			clean[name] = samples
+		}
+	}
+	node.PingHistory = clean
+	if node.LastReport != nil {
+		report := *node.LastReport
+		report.PingResults = filterPingResults(report.PingResults, s.targetsLocked(node))
+		node.LastReport = &report
 	}
 }
 

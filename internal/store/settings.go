@@ -50,6 +50,9 @@ func ValidateData(data []byte) error {
 		if node == nil || id == "" || node.UUID != id || node.Token == "" || tokens[node.Token] {
 			return errors.New("backup contains invalid or duplicate nodes")
 		}
+		if err := validateProfile(node.Profile); err != nil {
+			return err
+		}
 		tokens[node.Token] = true
 	}
 	return nil

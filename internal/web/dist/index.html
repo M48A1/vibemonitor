@@ -66,12 +66,10 @@
     <div class="controls-bar">
       <div class="filter-group">
         <div id="groupButtons" style="display: flex; gap: 6px; flex-wrap: wrap;">
-          <button class="btn active" data-group="all">全部</button>
         </div>
       </div>
       <div id="adminQuickActions" style="display: none;">
         <button class="btn btn-primary" id="addNodeBtn">➕ 添加节点</button>
-        <button class="btn" id="settingsBtn">⚙️ 站点设置</button>
         <button class="btn btn-danger" id="logoutBtn">退出登录</button>
       </div>
     </div>
@@ -148,6 +146,17 @@
           <label class="form-label">当前周期已用流量 (GB, 选填)</label>
           <input type="number" class="form-input" id="newNodeInitialUsed" placeholder="如已用 250 (仅本周期叠加，下周期自动清零)" min="0" step="any">
         </div>
+        <div class="form-group">
+          <label class="form-label">此节点的 TCP 测试目标</label>
+          <textarea class="form-input" id="newNodeTargets" rows="3" placeholder="电信,example.com:443&#10;移动,1.1.1.1:443"></textarea>
+          <small>每行一个“名称,地址:端口”，支持 tcp://、http://、https:// 链接（仅测 TCP 连接，不检查网页）。留空不测试。</small>
+        </div>
+        <div class="billing-form">
+          <label>到期日<input class="form-input" type="date" id="newNodeDue"></label>
+          <label>付款周期<select class="form-input" id="newNodeCycle"><option value="">未设置</option><option value="month">月付</option><option value="quarter">季付</option><option value="year">年付</option></select></label>
+          <label>每期金额<input class="form-input" type="number" min="0" max="1000000000" step="0.01" id="newNodePrice" placeholder="0.00"></label>
+          <label>币种<select class="form-input" id="newNodeCurrency"><option>CNY</option><option>USD</option><option>EUR</option><option>HKD</option><option>JPY</option><option>GBP</option></select></label>
+        </div>
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px;">
           <button type="button" class="btn" onclick="closeModal('addNodeModal')">取消</button>
           <button type="submit" class="btn btn-primary">创建节点</button>
@@ -191,6 +200,17 @@
           <label class="form-label">本周期附加初始已用 (GB)</label>
           <input type="number" class="form-input" id="editNodeInitialUsed" min="0" step="any">
         </div>
+        <div class="form-group">
+          <label class="form-label">此节点的 TCP 测试目标</label>
+          <textarea class="form-input" id="editNodeTargets" rows="3" placeholder="电信,example.com:443&#10;移动,1.1.1.1:443"></textarea>
+          <small>每行一个“名称,地址:端口”，支持 tcp://、http://、https:// 链接（仅测 TCP 连接，不检查网页）。留空不测试。</small>
+        </div>
+        <div class="billing-form">
+          <label>到期日<input class="form-input" type="date" id="editNodeDue"></label>
+          <label>付款周期<select class="form-input" id="editNodeCycle"><option value="">未设置</option><option value="month">月付</option><option value="quarter">季付</option><option value="year">年付</option></select></label>
+          <label>每期金额<input class="form-input" type="number" min="0" max="1000000000" step="0.01" id="editNodePrice" placeholder="0.00"></label>
+          <label>币种<select class="form-input" id="editNodeCurrency"><option>CNY</option><option>USD</option><option>EUR</option><option>HKD</option><option>JPY</option><option>GBP</option></select></label>
+        </div>
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px;">
           <button type="button" class="btn" onclick="closeModal('editNodeModal')">取消</button>
           <button type="submit" class="btn btn-primary">保存修改</button>
@@ -223,43 +243,6 @@
           <button type="button" class="btn btn-primary" onclick="closeModal('nodeGuideModal')">完成</button>
         </div>
       </div>
-    </div>
-  </div>
-
-  <!-- Site Settings Modal -->
-  <div class="modal-overlay" id="settingsModal">
-    <div class="modal">
-      <div class="modal-header">
-        <h3 class="modal-title">站点配置</h3>
-        <button class="modal-close" onclick="closeModal('settingsModal')">&times;</button>
-      </div>
-      <form id="settingsForm">
-        <div class="form-group">
-          <label class="form-label">网站标题</label>
-          <input type="text" class="form-input" id="settingSiteTitle" required>
-        </div>
-        <div class="form-group">
-          <label class="form-label">公告信息</label>
-          <input type="text" class="form-input" id="settingAnnouncement">
-        </div>
-        <div class="form-group">
-          <label class="form-label">延迟监测目标 (每行一个：名称,地址/IP)</label>
-          <textarea class="form-input" id="settingPingTargets" rows="4" style="resize: vertical; font-family: monospace; font-size: 13px;" placeholder="例如:
-上海电信,180.153.28.1:80
-上海联通,210.22.80.1:80
-广州移动,120.196.165.2:80
-谷歌DNS,8.8.8.8"></textarea>
-          <div style="font-size: 11px; color: var(--muted-foreground); margin-top: 4px;">留空则不启用测速。支持 IP 或 host:port，探针会自动测量往返延迟。</div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">修改管理员密码 (留空则不修改)</label>
-          <input type="password" class="form-input" id="settingNewPassword" placeholder="输入新管理员密码">
-        </div>
-        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px;">
-          <button type="button" class="btn" onclick="closeModal('settingsModal')">取消</button>
-          <button type="submit" class="btn btn-primary">保存修改</button>
-        </div>
-      </form>
     </div>
   </div>
 

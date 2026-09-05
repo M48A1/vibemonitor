@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -59,19 +60,21 @@ type HistoryPoint struct {
 }
 
 type Node struct {
-	UUID       string              `json:"uuid"`
-	Token      string              `json:"token,omitempty"`
-	Name       string              `json:"name"`
-	Group      string              `json:"group"`
-	Region     string              `json:"region"`
-	Weight     int                 `json:"weight"`
-	CreatedAt  time.Time           `json:"created_at"`
-	LastSeen   time.Time           `json:"last_seen"`
-	Online     bool                `json:"online"`
-	ClientIP   string              `json:"client_ip,omitempty"`
-	BasicInfo  *protocol.BasicInfo `json:"basic_info,omitempty"`
-	LastReport *protocol.Report    `json:"last_report,omitempty"`
-	History    []HistoryPoint      `json:"history,omitempty"`
+	Profile     *NodeProfile        `json:"profile,omitempty"`
+	PingPreview []PingPreview       `json:"ping_preview,omitempty"`
+	UUID        string              `json:"uuid"`
+	Token       string              `json:"token,omitempty"`
+	Name        string              `json:"name"`
+	Group       string              `json:"group"`
+	Region      string              `json:"region"`
+	Weight      int                 `json:"weight"`
+	CreatedAt   time.Time           `json:"created_at"`
+	LastSeen    time.Time           `json:"last_seen"`
+	Online      bool                `json:"online"`
+	ClientIP    string              `json:"client_ip,omitempty"`
+	BasicInfo   *protocol.BasicInfo `json:"basic_info,omitempty"`
+	LastReport  *protocol.Report    `json:"last_report,omitempty"`
+	History     []HistoryPoint      `json:"history,omitempty"`
 
 	// 60-second Ping Latency History (TargetName -> []PingSample, persisted in JSON)
 	PingHistory map[string][]PingSample `json:"ping_history,omitempty"`
@@ -259,6 +262,18 @@ func (s *Store) load(defaultPassword, username string) error {
 	for uuid, n := range s.nodes {
 		if n == nil {
 			return errors.New("invalid null node in data file")
+		}
+		if n.Profile == nil {
+			targets := append([]protocol.PingTarget{}, s.config.PingTargets...)
+			for i := range targets {
+				if !strings.Contains(targets[i].Host, ":") {
+					targets[i].Host += ":80"
+				}
+			}
+			n.Profile = &NodeProfile{Targets: targets}
+		}
+		if err := validateProfile(n.Profile); err != nil {
+			return err
 		}
 		if !n.TrafficBaselineSet && n.ResetDay > 0 && n.LastReport != nil {
 			n.TrafficBaselineSet = true
@@ -457,6 +472,7 @@ func (s *Store) GetNodes() []*Node {
 		nodeCopy := *n
 		nodeCopy.Token = ""        // Credentials are only available through authenticated management.
 		nodeCopy.PingHistory = nil // Kept compact for dashboard list
+		nodeCopy.PingPreview = s.pingPreviewLocked(n)
 		nodeCopy.calculateDynamicFields(now)
 		list = append(list, &nodeCopy)
 	}
@@ -489,6 +505,7 @@ func (s *Store) FindNodeByToken(token string) *Node {
 }
 
 type NodeOptions struct {
+	Profile        *NodeProfile
 	Name           string
 	Group          string
 	Region         string
@@ -507,6 +524,9 @@ func (s *Store) CreateNode(name, group, region string) (*Node, error) {
 }
 
 func (s *Store) CreateNodeWithOptions(opts NodeOptions) (*Node, error) {
+	if err := validateProfile(opts.Profile); err != nil {
+		return nil, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -530,6 +550,7 @@ func (s *Store) CreateNodeWithOptions(opts NodeOptions) (*Node, error) {
 	}
 
 	node := &Node{
+		Profile:          opts.Profile,
 		UUID:             uuid,
 		Token:            token,
 		Name:             opts.Name,
@@ -571,6 +592,9 @@ func (s *Store) UpdateNode(uuid, name, group, region string, weight int) error {
 }
 
 func (s *Store) UpdateNodeWithOptions(uuid string, opts NodeOptions) error {
+	if err := validateProfile(opts.Profile); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -579,6 +603,10 @@ func (s *Store) UpdateNodeWithOptions(uuid string, opts NodeOptions) error {
 		return errors.New("node not found")
 	}
 	previous := *n
+	if opts.Profile != nil {
+		n.Profile = opts.Profile
+		s.pruneNodePingLocked(n)
+	}
 	n.checkCycleRollover(time.Now())
 	if opts.Name != "" {
 		n.Name = opts.Name
@@ -668,7 +696,7 @@ func (s *Store) IngestReport(tokenOrUUID string, report protocol.Report, clientI
 	if len(report.PingResults) > MaxPingTargets {
 		return nil, errors.New("too many ping results")
 	}
-	report.PingResults = filterPingResults(report.PingResults, s.config.PingTargets)
+	report.PingResults = filterPingResults(report.PingResults, s.targetsLocked(s.nodes[uuid]))
 	if report.Network.TotalUp < 0 || report.Network.TotalDown < 0 {
 		return nil, errors.New("negative network counters")
 	}
@@ -771,11 +799,12 @@ func (s *Store) GetPingHistory(uuid, targetName, timeRange string) (*PingHistory
 		return nil, errors.New("node not found")
 	}
 
-	if targetName == "" && len(s.config.PingTargets) > 0 {
-		targetName = s.config.PingTargets[0].Name
+	targets := s.targetsLocked(node)
+	if targetName == "" && len(targets) > 0 {
+		targetName = targets[0].Name
 	}
 	var targetHost string
-	for _, target := range s.config.PingTargets {
+	for _, target := range targets {
 		if target.Name == targetName {
 			targetHost = target.Host
 			break

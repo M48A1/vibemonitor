@@ -88,11 +88,11 @@ func (h *RPCHandler) HandleV2RPC(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusUnauthorized, protocol.ErrorResponse(req.ID, -32000, err.Error(), nil))
 			return
 		}
-		cfg := h.store.GetConfig()
+		targets := h.store.NodeTargets(node.UUID)
 		log.Printf("[RPC] BasicInfo reported from node %s (%s)", node.Name, clientIP)
 		writeJSON(w, http.StatusOK, protocol.SuccessResponse(req.ID, map[string]any{
 			"status":       "success",
-			"ping_targets": cfg.PingTargets,
+			"ping_targets": targets,
 		}))
 
 	case protocol.MethodAgentReport:
@@ -101,16 +101,16 @@ func (h *RPCHandler) HandleV2RPC(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, protocol.ErrorResponse(req.ID, -32602, "invalid report params", err.Error()))
 			return
 		}
-		_, err := h.store.IngestReport(token, params.Report, clientIP)
+		node, err := h.store.IngestReport(token, params.Report, clientIP)
 		if err != nil {
 			writeJSON(w, http.StatusUnauthorized, protocol.ErrorResponse(req.ID, -32000, err.Error(), nil))
 			return
 		}
-		cfg := h.store.GetConfig()
+		targets := h.store.NodeTargets(node.UUID)
 		writeJSON(w, http.StatusOK, protocol.SuccessResponse(req.ID, map[string]any{
 			"status":       "success",
 			"events":       []any{},
-			"ping_targets": cfg.PingTargets,
+			"ping_targets": targets,
 		}))
 
 	case protocol.MethodAgentPull:
