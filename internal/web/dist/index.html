@@ -46,7 +46,13 @@
         </div>
       </div>
       <div id="adminQuickActions" style="display: none;">
-        <button class="btn btn-primary" id="addNodeBtn">➕ 添加节点</button>
+        <details class="node-management" id="nodeManagementMenu">
+          <summary class="btn btn-primary">节点管理 ▾</summary>
+          <div class="node-management-menu">
+            <button type="button" class="btn" id="editExistingNodeBtn">编辑现有节点</button>
+            <button type="button" class="btn" id="addNodeBtn">新建节点</button>
+          </div>
+        </details>
         <button class="btn btn-danger" id="logoutBtn">退出登录</button>
       </div>
     </div>
@@ -103,6 +109,16 @@
           <button type="submit" class="btn btn-primary">登录</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="selectNodeModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 class="modal-title">编辑现有节点</h3>
+        <button class="modal-close" onclick="closeModal('selectNodeModal')">&times;</button>
+      </div>
+      <div class="node-selection-list" id="nodeSelectionList"></div>
     </div>
   </div>
 

@@ -54,6 +54,31 @@ curl() {
         return subprocess.run(['bash', '-c', self.prelude + code], capture_output=True, text=True,
             env={**os.environ, 'SOURCE_INSTALLER':str(ROOT / 'install.sh'), 'TEST_ROOT':str(self.root), 'FAIL_NEW':'1' if fail else '0'}, timeout=10)
 
+    def test_update_preserves_data_backups_and_service_settings(self):
+        data = self.root / 'config/vibemonitor-data.json'
+        data.write_text('existing account and nodes')
+        backups = self.root / 'config/backups'
+        backups.mkdir()
+        (backups / 'saved.json').write_text('backup')
+        dropin = self.root / 'units/vibemonitor-server.service.d'
+        dropin.mkdir()
+        (dropin / 'override.conf').write_text('custom settings')
+        result = self.run_installer('update_server 1314\n')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(data.read_text(), 'existing account and nodes')
+        self.assertEqual((backups / 'saved.json').read_text(), 'backup')
+        self.assertEqual((dropin / 'override.conf').read_text(), 'custom settings')
+        self.assertEqual((self.root / 'units/vibemonitor-server.service').read_text(), 'old unit')
+        self.assertNotEqual((self.root / 'bin/vibemonitor').read_text(), 'old binary')
+
+    def test_update_failure_restores_binary_without_deleting_data(self):
+        data = self.root / 'config/vibemonitor-data.json'
+        data.write_text('existing account and nodes')
+        result = self.run_installer('update_server 1314\n', fail=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(data.read_text(), 'existing account and nodes')
+        self.assertEqual((self.root / 'bin/vibemonitor').read_text(), 'old binary')
+
     def test_credentials_required_before_changes(self):
         for args in ['1314 "" owner', '1314 pass ""', '1314 "   " owner', '1314 pass "   "']:
             result = self.run_installer('install_server ' + args + '\n')
