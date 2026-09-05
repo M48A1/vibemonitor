@@ -48,49 +48,46 @@
 
 ---
 
-## 🚀 快速上手
+## 🚀 快速上手 (Linux VPS 一键安装)
 
-### 1. 启动服务端 (Master Server)
+本项目提供类似 Komari 的开箱即用一键安装脚本（纯直连 GitHub 官方 Releases，无任何第三方代理）：
 
-直接下载或编译二进制，一条命令即可启动：
+### 1. 部署服务端 (Master Server)
+
+在你的主控 VPS 上，以 root 权限执行：
 
 ```bash
-# 启动服务端（默认监听 0.0.0.0:1314）
-./vibemonitor server
+# 交互式菜单（支持安装/更新/查看状态/卸载）
+curl -fsSL https://raw.githubusercontent.com/m48a1/vibemonitor/main/install.sh | bash
+
+# 或非交互式一键静默安装（默认端口 1314）
+curl -fsSL https://raw.githubusercontent.com/m48a1/vibemonitor/main/install.sh | bash -s -- server
 ```
 
-> 首次启动时，若未指定密码，控制台会自动打印生成的专属管理员密码：
-> ```text
-> =====================================================
->  [INITIAL SETUP] Generated Admin Password: a1b2c3d4e5f6
->  Please save this password to login to the dashboard!
-> =====================================================
-> ```
-> 可以在浏览器打开 `http://你的IP:1314`，点击右上角 **⚙️ 管理** 输入该密码进入管理面板。
-
-你也可以在启动时自定义密码与监听端口：
-```bash
-./vibemonitor server --listen 0.0.0.0:1314 --admin-password "YourPassword123"
-```
+> 首次启动若未指定密码，会自动生成随机管理员密码。可以通过 `journalctl -u vibemonitor-server -n 30` 或在屏幕输出中查看。
+> 浏览器打开 `http://你的IP:1314`，点击右上角 **⚙️ 管理** 即可登录管理面板。
 
 ---
 
 ### 2. 接入被监控节点 (Agent)
 
-在 Web 仪表盘点击 **⚙️ 管理** 登录后，点击 **➕ 添加节点**：
-- 输入节点名称（如 `Tokyo-VPS-01`）与地区（如 `JP`）。
-- 创建后系统将生成专属通信 Token，并自动展示一行复制命令。
+在 Web 仪表盘点击 **⚙️ 管理** 登录后，点击 **➕ 添加节点** 生成专属 Token。
 
-#### 方式 A：Linux VPS 一键命令 (推荐)
-在被监控的远程 Linux VPS 上，以 root 权限执行：
+在任意被监控的远程 Linux VPS 上，以 root 权限执行：
+
+#### 方式 A：GitHub 官方脚本一键安装 (推荐)
 ```bash
-curl -fsSL http://<你的主控IP>:1314/install.sh?token=<节点TOKEN> | bash
+curl -fsSL https://raw.githubusercontent.com/m48a1/vibemonitor/main/install.sh | bash -s -- agent -s http://<主控IP>:1314 -t <节点TOKEN>
 ```
-> 该脚本会自动配置 Systemd 服务并开机自启后台常驻。
 
-#### 方式 B：单二进制直接运行
+#### 方式 B：通过主控端动态下发一键安装
 ```bash
-./vibemonitor agent --server http://<你的主控IP>:1314 --token <节点TOKEN>
+curl -fsSL http://<主控IP>:1314/install.sh?token=<节点TOKEN> | bash
+```
+
+#### 方式 C：单二进制直接运行
+```bash
+./vibemonitor agent --server http://<主控IP>:1314 --token <节点TOKEN>
 ```
 
 ---

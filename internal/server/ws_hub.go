@@ -12,18 +12,29 @@ import (
 	"vibemonitor/internal/store"
 )
 
+type wsClient struct {
+	conn    *websocket.Conn
+	writeMu sync.Mutex
+}
+
+func (c *wsClient) writeMessage(ctx context.Context, msgType websocket.MessageType, p []byte) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	return c.conn.Write(ctx, msgType, p)
+}
+
 type WSHub struct {
 	mu      sync.RWMutex
-	conns   map[*websocket.Conn]struct{}
+	clients map[*wsClient]struct{}
 	store   *store.Store
 	trigger chan struct{}
 }
 
 func NewWSHub(s *store.Store) *WSHub {
 	hub := &WSHub{
-		conns:   make(map[*websocket.Conn]struct{}),
+		clients: make(map[*wsClient]struct{}),
 		store:   s,
-		trigger: make(chan struct{}, 10),
+		trigger: make(chan struct{}, 1),
 	}
 	s.SetOnUpdate(func() {
 		select {
@@ -39,25 +50,22 @@ func (h *WSHub) run() {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
+	lastBroadcast := time.Now()
+	minInterval := 1 * time.Second
+
 	for {
 		select {
-		case <-hubWakeup(h.trigger, ticker.C):
+		case <-h.trigger:
+			// Throttled broadcast on update
+			if time.Since(lastBroadcast) >= minInterval {
+				lastBroadcast = time.Now()
+				h.broadcastNodes()
+			}
+		case <-ticker.C:
+			lastBroadcast = time.Now()
 			h.broadcastNodes()
 		}
 	}
-}
-
-func hubWakeup(c1 <-chan struct{}, c2 <-chan time.Time) <-chan struct{} {
-	out := make(chan struct{}, 1)
-	go func() {
-		select {
-		case <-c1:
-			out <- struct{}{}
-		case <-c2:
-			out <- struct{}{}
-		}
-	}()
-	return out
 }
 
 func (h *WSHub) HandleWS(w http.ResponseWriter, r *http.Request) {
@@ -70,18 +78,20 @@ func (h *WSHub) HandleWS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "")
 
+	client := &wsClient{conn: conn}
+
 	h.mu.Lock()
-	h.conns[conn] = struct{}{}
+	h.clients[client] = struct{}{}
 	h.mu.Unlock()
 
 	defer func() {
 		h.mu.Lock()
-		delete(h.conns, conn)
+		delete(h.clients, client)
 		h.mu.Unlock()
 	}()
 
 	// Send initial data immediately
-	_ = h.sendNodesTo(conn)
+	_ = h.sendNodesTo(client)
 
 	ctx := r.Context()
 	for {
@@ -91,13 +101,13 @@ func (h *WSHub) HandleWS(w http.ResponseWriter, r *http.Request) {
 		}
 		if typ == websocket.MessageText {
 			if string(msg) == "get" {
-				_ = h.sendNodesTo(conn)
+				_ = h.sendNodesTo(client)
 			}
 		}
 	}
 }
 
-func (h *WSHub) sendNodesTo(conn *websocket.Conn) error {
+func (h *WSHub) sendNodesTo(client *wsClient) error {
 	nodes := h.store.GetNodes()
 	payload, err := json.Marshal(map[string]any{
 		"nodes":  nodes,
@@ -108,18 +118,18 @@ func (h *WSHub) sendNodesTo(conn *websocket.Conn) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	return conn.Write(ctx, websocket.MessageText, payload)
+	return client.writeMessage(ctx, websocket.MessageText, payload)
 }
 
 func (h *WSHub) broadcastNodes() {
 	h.mu.RLock()
-	conns := make([]*websocket.Conn, 0, len(h.conns))
-	for c := range h.conns {
-		conns = append(conns, c)
+	clients := make([]*wsClient, 0, len(h.clients))
+	for c := range h.clients {
+		clients = append(clients, c)
 	}
 	h.mu.RUnlock()
 
-	if len(conns) == 0 {
+	if len(clients) == 0 {
 		return
 	}
 
@@ -132,11 +142,11 @@ func (h *WSHub) broadcastNodes() {
 		return
 	}
 
-	for _, conn := range conns {
-		go func(c *websocket.Conn) {
+	for _, client := range clients {
+		go func(c *wsClient) {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
-			_ = c.Write(ctx, websocket.MessageText, payload)
-		}(conn)
+			_ = c.writeMessage(ctx, websocket.MessageText, payload)
+		}(client)
 	}
 }

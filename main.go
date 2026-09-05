@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"vibemonitor/internal/agent"
@@ -73,7 +75,10 @@ func runServer(args []string) {
 		log.Fatalf("Failed to initialize server: %v", err)
 	}
 
-	if err := srv.Run(); err != nil {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	if err := srv.Run(ctx); err != nil {
 		log.Fatalf("Server stopped with error: %v", err)
 	}
 }
