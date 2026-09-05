@@ -1,396 +1,296 @@
 #!/usr/bin/env bash
-#=============================================================================
-#  ⚡ VibeMonitor Linux VPS One-Line Installer
-#  GitHub: https://github.com/m48a1/vibemonitor
-#=============================================================================
-
+# VibeMonitor Linux x86-64 installer and maintenance commands.
 set -e
-
-RED="\033[31m"
-GREEN="\033[32m"
-YELLOW="\033[33m"
-BLUE="\033[36m"
-PLAIN="\033[0m"
-
-GITHUB_REPO="m48a1/vibemonitor"
+umask 077
+GITHUB_REPO="M48A1/vibemonitor"
 INSTALL_BIN="/usr/local/bin/vibemonitor"
 CONFIG_DIR="/etc/vibemonitor"
+UNIT_DIR="/etc/systemd/system"
 SERVER_SERVICE="vibemonitor-server"
 AGENT_SERVICE="vibemonitor-agent"
 
-info() {
-    echo -e "${BLUE}[INFO]${PLAIN} $1"
-}
-
-success() {
-    echo -e "${GREEN}[SUCCESS]${PLAIN} $1"
-}
-
-warn() {
-    echo -e "${YELLOW}[WARN]${PLAIN} $1"
-}
-
-error() {
-    echo -e "${RED}[ERROR]${PLAIN} $1"
-    exit 1
-}
-
-check_root() {
-    if [ "$(id -u)" != "0" ]; then
-        error "Please run this script as root (e.g. sudo bash $0)."
-    fi
-}
+info() { echo "[INFO] $*"; }
+success() { echo "[OK] $*"; }
+warn() { echo "[WARN] $*" >&2; }
+error() { echo "[ERROR] $*" >&2; exit 1; }
+check_root() { [ "$(id -u)" = 0 ] || error "Run as root."; }
 
 detect_arch() {
-    if [ "$(uname -s)" != "Linux" ]; then
-        error "Only Linux x86-64 is supported."
-    fi
-    local arch
-    arch=$(uname -m)
-    case "$arch" in
-        x86_64|amd64)
-            SYSTEM_ARCH="amd64"
-            ;;
-        *)
-            error "Only x86-64 (Intel/AMD 64-bit) is supported. Detected: $arch"
-            ;;
+    [ "$(uname -s)" = Linux ] || error "Only Linux x86-64 is supported."
+    case "$(uname -m)" in
+        x86_64|amd64) SYSTEM_ARCH=amd64 ;;
+        *) error "Only x86-64 (Intel/AMD 64-bit) is supported." ;;
     esac
-    info "Detected CPU Architecture: ${GREEN}${SYSTEM_ARCH}${PLAIN}"
 }
 
 check_dependencies() {
-    for cmd in curl tar systemctl; do
-        if ! command -v "$cmd" >/dev/null 2>&1; then
-            info "Installing required dependency: $cmd..."
-            if command -v apt-get >/dev/null 2>&1; then
-                apt-get update -y && apt-get install -y "$cmd"
-            elif command -v yum >/dev/null 2>&1; then
-                yum install -y "$cmd"
-            elif command -v dnf >/dev/null 2>&1; then
-                dnf install -y "$cmd"
-            elif command -v apk >/dev/null 2>&1; then
-                apk add --no-cache "$cmd"
+    for cmd in curl sha256sum systemctl mktemp od awk; do
+        command -v "$cmd" >/dev/null 2>&1 || error "Missing dependency: $cmd. Install it before continuing."
+    done
+    [ -d /run/systemd/system ] || error "This installer requires a running systemd system."
+}
+
+resolve_release() {
+    local effective tag
+    effective=$(curl -4 -fsSL --connect-timeout 10 --max-time 60 -o /dev/null -w '%{url_effective}' "https://github.com/${GITHUB_REPO}/releases/latest")
+    tag=${effective##*/}
+    [[ "$effective" == https://github.com/*/releases/tag/* && "$tag" =~ ^[A-Za-z0-9._-]+$ ]] || error "Could not resolve a release version."
+    RELEASE_BASE="https://github.com/${GITHUB_REPO}/releases/download/${tag}"
+}
+
+verify_checksum() {
+    local file="$1" manifest="$2" asset="$3" expected
+    expected=$(awk -v asset="$asset" '$2 == asset {print $1}' "$manifest")
+    [[ "$expected" =~ ^[[:xdigit:]]{64}$ ]] || error "Missing or invalid checksum for $asset."
+    printf '%s  %s\n' "$expected" "$file" | sha256sum -c - >/dev/null || error "Checksum verification failed."
+}
+
+# The replacement and old binary live on the destination filesystem for atomic rename.
+begin_update() {
+    UPDATE_SERVICE="$1"
+    check_root; detect_arch; check_dependencies
+    mkdir -p "$(dirname "$INSTALL_BIN")" "$CONFIG_DIR" "$UNIT_DIR"
+    UPDATE_DIR=$(mktemp -d "${INSTALL_BIN}.update.XXXXXX")
+    UPDATE_COMMITTED=0
+    BINARY_REPLACED=0
+    WAS_ACTIVE=0
+    WAS_ENABLED=0
+    systemctl is-active --quiet "$UPDATE_SERVICE" && WAS_ACTIVE=1
+    systemctl is-enabled --quiet "$UPDATE_SERVICE" && WAS_ENABLED=1
+    trap 'rm -rf "$UPDATE_DIR"' EXIT
+    if [ -f "$INSTALL_BIN" ]; then cp -p "$INSTALL_BIN" "$UPDATE_DIR/previous-binary"; fi
+    if [ -f "$UNIT_DIR/$UPDATE_SERVICE.service" ]; then cp -p "$UNIT_DIR/$UPDATE_SERVICE.service" "$UPDATE_DIR/previous-unit"; fi
+    trap cleanup_update EXIT
+}
+
+cleanup_update() {
+    local result=$?
+    trap - EXIT
+    if [ "$UPDATE_COMMITTED" != 1 ] && [ "$BINARY_REPLACED" = 1 ]; then
+        warn "Installation failed; restoring the previous binary and service configuration."
+        systemctl stop "$UPDATE_SERVICE" >/dev/null 2>&1 || true
+        if [ "$BINARY_REPLACED" = 1 ]; then
+            if [ -f "$UPDATE_DIR/previous-binary" ]; then
+                mv -f "$UPDATE_DIR/previous-binary" "$INSTALL_BIN" || warn "Could not restore binary."
             else
-                error "Command '$cmd' is missing and package manager is not supported. Please install it manually."
+                rm -f "$INSTALL_BIN"
             fi
         fi
-    done
+        if [ -f "$UPDATE_DIR/previous-unit" ]; then
+            cp -p "$UPDATE_DIR/previous-unit" "$UNIT_DIR/$UPDATE_SERVICE.service" || warn "Could not restore unit."
+        else
+            rm -f "$UNIT_DIR/$UPDATE_SERVICE.service"
+        fi
+        if [ "$WAS_ENABLED" = 0 ]; then systemctl disable "$UPDATE_SERVICE" >/dev/null 2>&1 || true; fi
+        systemctl daemon-reload || true
+        if [ "$WAS_ACTIVE" = 1 ]; then systemctl restart "$UPDATE_SERVICE" || warn "Previous service could not restart; inspect its logs."; fi
+        result=1
+    fi
+    rm -rf "$UPDATE_DIR"
+    exit "$result"
 }
 
 download_binary() {
-    detect_arch
-    check_dependencies
+    resolve_release
+    local asset="vibemonitor-linux-amd64"
+    curl -4 -fsSL --connect-timeout 10 --max-time 180 -o "$UPDATE_DIR/new-binary" "$RELEASE_BASE/$asset"
+    curl -4 -fsSL --connect-timeout 10 --max-time 60 -o "$UPDATE_DIR/sha256sums.txt" "$RELEASE_BASE/sha256sums.txt"
+    verify_checksum "$UPDATE_DIR/new-binary" "$UPDATE_DIR/sha256sums.txt" "$asset"
+    # Reject HTML, scripts, wrong ELF class, and wrong machine architecture.
+    [ "$(od -An -tx1 -N5 "$UPDATE_DIR/new-binary" | tr -d ' \n')" = 7f454c4602 ] || error "Download is not a 64-bit ELF executable."
+    [ "$(od -An -tx1 -j18 -N2 "$UPDATE_DIR/new-binary" | tr -d ' \n')" = 3e00 ] || error "Download is not an x86-64 executable."
+    chmod 755 "$UPDATE_DIR/new-binary"
+    "$UPDATE_DIR/new-binary" version
+    mv -f "$UPDATE_DIR/new-binary" "$INSTALL_BIN"
+    BINARY_REPLACED=1
+}
 
-    mkdir -p "$CONFIG_DIR"
-    local tmp_dir
-    tmp_dir=$(mktemp -d)
-    trap 'rm -rf "$tmp_dir"' EXIT
+# Escape one systemd ExecStart argument; never interpret it as shell source.
+unit_arg() {
+    local value="$1"
+    [[ "$value" != *$'\n'* && "$value" != *$'\r'* ]] || error "Arguments cannot contain line breaks."
+    value=${value//\\/\\\\}
+    value=${value//\"/\\\"}
+    value=${value//\$/\$\$}
+    value=${value//%/%%}
+    printf '"%s"' "$value"
+}
 
-    info "Fetching latest release binary for ${SYSTEM_ARCH} from GitHub..."
-
-    # Direct official GitHub download URLs
-    local tar_url="https://github.com/${GITHUB_REPO}/releases/latest/download/vibemonitor-linux-${SYSTEM_ARCH}.tar.gz"
-    local raw_bin_url="https://github.com/${GITHUB_REPO}/releases/latest/download/vibemonitor-linux-${SYSTEM_ARCH}"
-
-    local download_success=0
-
-    # Try downloading tar.gz archive first
-    if curl -fsSL -o "${tmp_dir}/vibemonitor.tar.gz" "$tar_url" 2>/dev/null; then
-        if tar -xzf "${tmp_dir}/vibemonitor.tar.gz" -C "$tmp_dir" 2>/dev/null && [ -f "${tmp_dir}/vibemonitor" ]; then
-            cp "${tmp_dir}/vibemonitor" "$INSTALL_BIN"
-            download_success=1
-        fi
+finish_update() {
+    local port="${1:-}"
+    chmod 600 "$UNIT_DIR/$UPDATE_SERVICE.service"
+    systemctl daemon-reload
+    systemctl enable "$UPDATE_SERVICE" >/dev/null
+    systemctl restart "$UPDATE_SERVICE"
+    sleep 3
+    systemctl is-active --quiet "$UPDATE_SERVICE" || error "Service did not remain running."
+    if [ -n "$port" ]; then
+        [ "$(curl -4 -fsS --max-time 5 "http://127.0.0.1:$port/ping")" = pong ] || error "Server health check failed."
     fi
-
-    # Fallback to direct binary if tar.gz is not available
-    if [ "$download_success" -eq 0 ]; then
-        if curl -fsSL -o "${tmp_dir}/vibemonitor" "$raw_bin_url" 2>/dev/null; then
-            cp "${tmp_dir}/vibemonitor" "$INSTALL_BIN"
-            download_success=1
-        fi
-    fi
-
-    if [ "$download_success" -eq 0 ]; then
-        error "Failed to download vibemonitor binary from GitHub (${GITHUB_REPO}). Please check your network connection to GitHub or verify if a release exists."
-    fi
-
-    chmod +x "$INSTALL_BIN"
-    success "VibeMonitor binary installed to ${INSTALL_BIN}."
+    UPDATE_COMMITTED=1
+    success "$UPDATE_SERVICE is running. Agent connectivity can be checked in the dashboard and journal."
 }
 
 install_server() {
-    local listen_port="${1:-1314}"
-    local admin_password="$2"
-
-    check_root
+    local port="${1:-1314}" password="${2:-}"
+    [[ "$port" =~ ^[0-9]+$ && ${#port} -le 5 ]] || error "Invalid port."
+    (( 10#$port >= 1 && 10#$port <= 65535 )) || error "Port must be 1-65535."
+    if [ -f "$CONFIG_DIR/vibemonitor-data.json" ]; then backup_data; fi
+    begin_update "$SERVER_SERVICE"
     download_binary
-
-    info "Configuring VibeMonitor Master Server..."
-
-    local exec_cmd="${INSTALL_BIN} server --listen 0.0.0.0:${listen_port} --data ${CONFIG_DIR}/vibemonitor-data.json"
-    if [ -n "$admin_password" ]; then
-        exec_cmd="${exec_cmd} --admin-password ${admin_password}"
-    fi
-
-    cat > "/etc/systemd/system/${SERVER_SERVICE}.service" <<EOF
+    local args
+    args="$(unit_arg "$INSTALL_BIN") server --listen $(unit_arg "0.0.0.0:$port") --data $(unit_arg "$CONFIG_DIR/vibemonitor-data.json")"
+    if [ -n "$password" ]; then args="$args --admin-password $(unit_arg "$password")"; fi
+    cat > "$UNIT_DIR/$SERVER_SERVICE.service" <<EOF
 [Unit]
-Description=VibeMonitor Master Server
-After=network.target
-
+Description=VibeMonitor Server
+After=network-online.target
 [Service]
 Type=simple
-User=root
-WorkingDirectory=${CONFIG_DIR}
-ExecStart=${exec_cmd}
+WorkingDirectory=$CONFIG_DIR
+ExecStart=$args
 Restart=always
 RestartSec=3
-LimitNOFILE=65535
-
 [Install]
 WantedBy=multi-user.target
 EOF
-
-    systemctl daemon-reload
-    systemctl enable "${SERVER_SERVICE}" >/dev/null 2>&1
-    systemctl restart "${SERVER_SERVICE}"
-
-    success "================================================="
-    success "  🎉 VibeMonitor Master Server successfully started! "
-    success "  Dashboard URL: http://<Your_VPS_IP>:${listen_port}"
-    success "  Service Status: systemctl status ${SERVER_SERVICE}"
-    success "================================================="
-    if [ -z "$admin_password" ]; then
-        info "Admin password was automatically generated."
-        info "Run 'journalctl -u ${SERVER_SERVICE} -n 30' to view the initial password."
-    fi
+    finish_update "$port"
+    info "Initial password, if generated: journalctl -u $SERVER_SERVICE -n 30"
 }
 
 install_agent() {
-    local server_url="$1"
-    local token="$2"
-    local interval="${3:-3s}"
-
-    if [ -z "$server_url" ] || [ -z "$token" ]; then
-        error "Server URL and Token are required to install Agent. Usage: $0 agent -s <SERVER_URL> -t <TOKEN>"
-    fi
-
-    check_root
+    local server="$1" token="$2" interval="${3:-3s}"
+    [[ "$server" == http://* || "$server" == https://* ]] || error "Server URL must start with http:// or https://."
+    [ -n "$token" ] || error "A node token is required."
+    begin_update "$AGENT_SERVICE"
     download_binary
-
-    info "Configuring VibeMonitor Agent Probe..."
-
-    cat > "/etc/systemd/system/${AGENT_SERVICE}.service" <<EOF
+    cat > "$UNIT_DIR/$AGENT_SERVICE.service" <<EOF
 [Unit]
-Description=VibeMonitor Server Monitor Agent
-After=network.target
-
+Description=VibeMonitor Agent
+After=network-online.target
 [Service]
 Type=simple
-User=root
-ExecStart=${INSTALL_BIN} agent --server ${server_url} --token ${token} --interval ${interval}
+ExecStart=$(unit_arg "$INSTALL_BIN") agent --server $(unit_arg "$server") --token $(unit_arg "$token") --interval $(unit_arg "$interval")
 Restart=always
 RestartSec=5
-KillMode=process
-
 [Install]
 WantedBy=multi-user.target
 EOF
-
-    systemctl daemon-reload
-    systemctl enable "${AGENT_SERVICE}" >/dev/null 2>&1
-    systemctl restart "${AGENT_SERVICE}"
-
-    success "================================================="
-    success "  ✅ VibeMonitor Agent successfully started! "
-    success "  Target Master: ${server_url}"
-    success "  Service Status: systemctl status ${AGENT_SERVICE}"
-    success "================================================="
+    finish_update
 }
 
+backup_data() {
+    check_root; detect_arch
+    local was_active=0 result=0 destination
+    [ -f "$CONFIG_DIR/vibemonitor-data.json" ] || error "No server data exists."
+    mkdir -p "$CONFIG_DIR/backups"
+    chmod 700 "$CONFIG_DIR/backups"
+    systemctl is-active --quiet "$SERVER_SERVICE" && was_active=1
+    if [ "$was_active" = 1 ]; then systemctl stop "$SERVER_SERVICE"; fi
+    destination=$(mktemp "$CONFIG_DIR/backups/data-$(date +%Y%m%d-%H%M%S).XXXXXX") || result=1
+    if [ "$result" = 0 ]; then cp "$CONFIG_DIR/vibemonitor-data.json" "$destination" || result=1; fi
+    if [ "$was_active" = 1 ]; then systemctl start "$SERVER_SERVICE" || result=1; fi
+    [ "$result" = 0 ] || error "Backup failed; check the service status."
+    success "Backup saved: $destination"
+}
+
+restore_data() {
+    check_root; detect_arch
+    local source="$1" was_active=0 staged previous
+    "$INSTALL_BIN" validate-data "$source"
+    backup_data
+    staged=$(mktemp "$CONFIG_DIR/.restore.XXXXXX")
+    previous=$(mktemp "$CONFIG_DIR/.previous.XXXXXX")
+    cp "$source" "$staged"
+    systemctl is-active --quiet "$SERVER_SERVICE" && was_active=1
+    if [ "$was_active" = 1 ]; then systemctl stop "$SERVER_SERVICE"; fi
+    if ! cp "$CONFIG_DIR/vibemonitor-data.json" "$previous" || ! mv -f "$staged" "$CONFIG_DIR/vibemonitor-data.json"; then
+        if [ "$was_active" = 1 ]; then systemctl start "$SERVER_SERVICE"; fi
+        rm -f "$staged" "$previous"
+        error "Restore failed."
+    fi
+    if [ "$was_active" = 1 ]; then
+        if ! systemctl start "$SERVER_SERVICE" || ! sleep 3 || ! systemctl is-active --quiet "$SERVER_SERVICE"; then
+            systemctl stop "$SERVER_SERVICE" || true
+            mv -f "$previous" "$CONFIG_DIR/vibemonitor-data.json"
+            systemctl start "$SERVER_SERVICE" || true
+            error "Restored data could not start; previous data restored."
+        fi
+    fi
+    rm -f "$previous"
+    success "Data restored. Restored passwords and node tokens now apply."
+}
+
+read_input() {
+    local prompt="$1" variable="$2"
+    # Read the controlling terminal, never the piped script source.
+    if ! { read -r -p "$prompt" "$variable" </dev/tty; } 2>/dev/null; then
+        error "No interactive terminal. Use: bash install.sh server, agent, backup, or restore FILE."
+    fi
+}
+
+show_status() { systemctl --no-pager status "$SERVER_SERVICE" "$AGENT_SERVICE" || true; }
 uninstall_all() {
     check_root
-    info "Uninstalling VibeMonitor..."
-
-    for svc in "$SERVER_SERVICE" "$AGENT_SERVICE" "vibemonitor"; do
-        if systemctl is-active --quiet "$svc" 2>/dev/null || systemctl is-enabled --quiet "$svc" 2>/dev/null; then
-            info "Stopping and disabling service: $svc..."
-            systemctl stop "$svc" 2>/dev/null || true
-            systemctl disable "$svc" 2>/dev/null || true
-        fi
-        rm -f "/etc/systemd/system/${svc}.service"
+    for service in "$SERVER_SERVICE" "$AGENT_SERVICE" vibemonitor; do
+        systemctl stop "$service" 2>/dev/null || true
+        systemctl disable "$service" 2>/dev/null || true
+        rm -f "$UNIT_DIR/$service.service"
     done
     systemctl daemon-reload
-
     rm -f "$INSTALL_BIN"
-    read -r -p "Do you want to delete configuration and data directory (${CONFIG_DIR})? [y/N]: " confirm_del
-    if [[ "$confirm_del" =~ ^[yY]$ ]]; then
-        rm -rf "$CONFIG_DIR"
-        info "Deleted ${CONFIG_DIR}."
-    fi
-
-    success "VibeMonitor has been completely removed."
+    info "Programs removed. Server data and backups retained in $CONFIG_DIR."
 }
-
-show_status() {
-    echo -e "${BLUE}=== VibeMonitor Services Status ===${PLAIN}"
-    if systemctl is-active --quiet "$SERVER_SERVICE" 2>/dev/null; then
-        echo -e "Server Service (${SERVER_SERVICE}): ${GREEN}Running${PLAIN}"
-    else
-        echo -e "Server Service (${SERVER_SERVICE}): ${RED}Stopped / Not installed${PLAIN}"
-    fi
-
-    if systemctl is-active --quiet "$AGENT_SERVICE" 2>/dev/null; then
-        echo -e "Agent Service (${AGENT_SERVICE}): ${GREEN}Running${PLAIN}"
-    else
-        echo -e "Agent Service (${AGENT_SERVICE}): ${RED}Stopped / Not installed${PLAIN}"
-    fi
-}
-
 menu() {
-    clear
-    echo -e "${BLUE}=================================================${PLAIN}"
-    echo -e "${GREEN}       ⚡ VibeMonitor VPS Management Script      ${PLAIN}"
-    echo -e "${BLUE}=================================================${PLAIN}"
-    echo -e "  1. 安装 / 更新 Master 服务端 (Server)"
-    echo -e "  2. 安装 / 更新 Agent 客户端探针 (Agent)"
-    echo -e "  3. 查看运行状态 (Status)"
-    echo -e "  4. 重启服务 (Restart)"
-    echo -e "  5. 停止服务 (Stop)"
-    echo -e "  6. 查看运行日志 (Logs)"
-    echo -e "  7. 彻底卸载 (Uninstall)"
-    echo -e "  0. 退出 (Exit)"
-    echo -e "${BLUE}=================================================${PLAIN}"
-    read -r -p "请输入选项 [0-7]: " choice
-
+    echo "1. 安装/更新服务端  2. 安装/更新探针  3. 状态  4. 重启  5. 停止  6. 日志  7. 卸载  8. 备份  9. 恢复  0. 退出"
+    read_input "请选择: " choice
     case "$choice" in
-        1)
-            read -r -p "请输入服务端监听端口 [默认 1314]: " port
-            port=${port:-1314}
-            read -r -p "请输入管理员密码 (回车留空则首次启动自动生成): " pass
-            install_server "$port" "$pass"
-            ;;
-        2)
-            read -r -p "请输入 Master 服务端地址 (例如 http://1.2.3.4:1314): " s_url
-            read -r -p "请输入节点 Token: " s_token
-            read -r -p "请输入上报频率 [默认 3s]: " s_interval
-            s_interval=${s_interval:-3s}
-            install_agent "$s_url" "$s_token" "$s_interval"
-            ;;
-        3)
-            show_status
-            ;;
-        4)
-            systemctl restart "$SERVER_SERVICE" 2>/dev/null || true
-            systemctl restart "$AGENT_SERVICE" 2>/dev/null || true
-            success "Services restarted."
-            show_status
-            ;;
-        5)
-            systemctl stop "$SERVER_SERVICE" 2>/dev/null || true
-            systemctl stop "$AGENT_SERVICE" 2>/dev/null || true
-            info "Services stopped."
-            show_status
-            ;;
-        6)
-            echo "1. Master Server 日志"
-            echo "2. Agent 探针日志"
-            read -r -p "请选择 [1-2]: " log_choice
-            if [ "$log_choice" = "1" ]; then
-                journalctl -u "$SERVER_SERVICE" -f -n 50
-            else
-                journalctl -u "$AGENT_SERVICE" -f -n 50
-            fi
-            ;;
-        7)
-            uninstall_all
-            ;;
-        0)
-            exit 0
-            ;;
-        *)
-            echo -e "${RED}无效选项${PLAIN}"
-            ;;
+        1) read_input "端口 [1314]: " port; read_input "初始密码 [首次自动生成]: " password; install_server "${port:-1314}" "$password" ;;
+        2) read_input "主控 URL: " server; read_input "Token: " token; read_input "间隔 [3s]: " interval; install_agent "$server" "$token" "${interval:-3s}" ;;
+        3) show_status ;;
+        4) systemctl restart "$SERVER_SERVICE" "$AGENT_SERVICE" ;;
+        5) systemctl stop "$SERVER_SERVICE" "$AGENT_SERVICE" ;;
+        6) journalctl -u "$SERVER_SERVICE" -u "$AGENT_SERVICE" -n 50 -f ;;
+        7) uninstall_all ;;
+        8) backup_data ;;
+        9) read_input "备份文件: " source; restore_data "$source" ;;
+        0) return ;;
+        *) error "无效选项" ;;
     esac
 }
 
-# Parse command line arguments
-if [ $# -eq 0 ]; then
-    menu
-    exit 0
-fi
-
-CMD="$1"
-shift
-
+# Sourcing is supported for isolated installer tests.
+if [[ -n "${BASH_SOURCE[0]:-}" && "${BASH_SOURCE[0]}" != "$0" ]]; then return; fi
+CMD="${1:-menu}"
+if [ $# -gt 0 ]; then shift; fi
 case "$CMD" in
     server)
-        PORT="1314"
-        PASSWORD=""
-        while [[ $# -gt 0 ]]; do
+        port=1314; password=""
+        while [ $# -gt 0 ]; do
             case "$1" in
-                -p|--port)
-                    PORT="$2"
-                    shift 2
-                    ;;
-                -w|--password)
-                    PASSWORD="$2"
-                    shift 2
-                    ;;
-                *)
-                    shift
-                    ;;
+                -p|--port) port="${2:?missing port}"; shift 2 ;;
+                -w|--password) password="${2:?missing password}"; shift 2 ;;
+                *) error "Unknown server option: $1" ;;
             esac
         done
-        install_server "$PORT" "$PASSWORD"
-        ;;
+        install_server "$port" "$password" ;;
     agent)
-        SERVER_URL=""
-        TOKEN=""
-        INTERVAL="3s"
-        while [[ $# -gt 0 ]]; do
+        server=""; token=""; interval=3s
+        while [ $# -gt 0 ]; do
             case "$1" in
-                -s|--server)
-                    SERVER_URL="$2"
-                    shift 2
-                    ;;
-                -t|--token)
-                    TOKEN="$2"
-                    shift 2
-                    ;;
-                -i|--interval)
-                    INTERVAL="$2"
-                    shift 2
-                    ;;
-                *)
-                    shift
-                    ;;
+                -s|--server) server="${2:?missing server}"; shift 2 ;;
+                -t|--token) token="${2:?missing token}"; shift 2 ;;
+                -i|--interval) interval="${2:?missing interval}"; shift 2 ;;
+                *) error "Unknown agent option: $1" ;;
             esac
         done
-        install_agent "$SERVER_URL" "$TOKEN" "$INTERVAL"
-        ;;
-    uninstall)
-        uninstall_all
-        ;;
-    status)
-        show_status
-        ;;
-    restart)
-        systemctl restart "$SERVER_SERVICE" 2>/dev/null || true
-        systemctl restart "$AGENT_SERVICE" 2>/dev/null || true
-        show_status
-        ;;
-    help|--help|-h)
-        echo "VibeMonitor VPS Installer"
-        echo "Usage: $0 [command] [options]"
-        echo ""
-        echo "Commands:"
-        echo "  server    Install Master Server:  $0 server [-p port] [-w password]"
-        echo "  agent     Install Agent Probe:    $0 agent -s <server_url> -t <token> [-i interval]"
-        echo "  status    Show service status:    $0 status"
-        echo "  restart   Restart services:       $0 restart"
-        echo "  uninstall Completely uninstall:   $0 uninstall"
-        ;;
-    *)
-        error "Unknown command: $CMD. Use '$0 help' for usage."
-        ;;
+        install_agent "$server" "$token" "$interval" ;;
+    menu) menu ;;
+    backup) backup_data ;;
+    restore) restore_data "${1:?backup file required}" ;;
+    status) show_status ;;
+    restart) systemctl restart "$SERVER_SERVICE" "$AGENT_SERVICE" ;;
+    uninstall) uninstall_all ;;
+    help|--help|-h) echo "Usage: $0 [server [-p PORT] [-w PASSWORD] | agent -s URL -t TOKEN [-i INTERVAL] | backup | restore FILE | status | restart | uninstall]" ;;
+    *) error "Unknown command: $CMD" ;;
 esac

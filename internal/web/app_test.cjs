@@ -18,7 +18,7 @@ function dashboard() {
     createElement: element,
   };
   const context = vm.createContext({
-    document, localStorage: { getItem: () => 'admin-session' }, console,
+    document, localStorage: { getItem: () => 'admin-session', removeItem(key) { this.removed = key; } }, console,
     alert(message) { throw new Error(message); },
   });
   context.window = context;
@@ -69,4 +69,26 @@ test('connection instructions fetch credentials through the admin endpoint', asy
   assert.equal(requested.url,'/api/admin/nodes/node-1/token');
   assert.equal(requested.options.headers.Authorization,'Bearer admin-session');
   assert.equal(app.document.getElementById('guideToken').textContent,'node-secret');
+});
+
+
+test('logout revokes the server session before clearing local state', async () => {
+  const app = dashboard();
+  let request;
+  app.context.fetch = async (url, options) => { request = {url, options}; return {ok:true}; };
+  await app.document.getElementById('logoutBtn').events.click();
+  assert.equal(request.url, '/api/admin/logout');
+  assert.equal(request.options.method, 'POST');
+  assert.equal(request.options.headers.Authorization, 'Bearer admin-session');
+  assert.equal(app.context.localStorage.removed, 'admin_token');
+});
+
+test('failed logout does not pretend that the server session was revoked', async () => {
+  const app = dashboard();
+  let warning;
+  app.context.alert = message => { warning = message; };
+  app.context.fetch = async () => ({ok:false});
+  await app.document.getElementById('logoutBtn').events.click();
+  assert.equal(app.context.localStorage.removed, undefined);
+  assert.ok(warning);
 });

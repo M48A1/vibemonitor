@@ -21,4 +21,5 @@ jobs:
         with:
           node-version: '22'
       - run: node --test internal/web/app_test.cjs
+      - run: python3 -m unittest discover -s tests -v
       - run: make release-all

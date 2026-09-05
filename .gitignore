@@ -6,3 +6,6 @@ vibemonitor-*
 !data/
 *.log
 /dist/
+
+__pycache__/
+*.pyc

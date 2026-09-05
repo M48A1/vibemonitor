@@ -34,8 +34,8 @@ func TestStoreConcurrency(t *testing.T) {
 				return
 			}
 			_, _ = st.IngestReport(node.Token, protocol.Report{
-				CPU: protocol.CPUReport{Usage: float64(idx * 5)},
-				RAM: protocol.RAMReport{Total: 1024, Used: 512},
+				CPU:       protocol.CPUReport{Usage: float64(idx * 5)},
+				RAM:       protocol.RAMReport{Total: 1024, Used: 512},
 				UpdatedAt: time.Now(),
 			}, "127.0.0.1")
 		}(i)
@@ -142,7 +142,7 @@ func TestTrafficAccounting(t *testing.T) {
 	}
 
 	// Simulate cycle rollover (reaching next month's 15th)
-	futureDate := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
+	futureDate := time.Now().AddDate(0, 1, 0)
 	st.mu.Lock()
 	nodeInternal := st.nodes[node.UUID]
 	nodeInternal.checkCycleRollover(futureDate)
