@@ -59,6 +59,22 @@ test('existing node selection retrieves private target addresses for the edit fo
   assert.equal(app.document.getElementById('editNodePrice').value, 5);
 });
 
+test('cards keep alphabetical order across reversed updates and group filtering', () => {
+  const app = dashboard();
+  app.run('nodes = [{uuid:"z",name:"Zulu",group:"A"},{uuid:"b",name:"alpha",group:"A"},{uuid:"a",name:"Alpha",group:"A"},{uuid:"n10",name:"Node10",group:"B"},{uuid:"n2",name:"node2",group:"B"}]; renderNodes();');
+  const first = app.document.getElementById('nodeGrid').innerHTML;
+  assert.ok(first.indexOf('Alpha') < first.indexOf('alpha'));
+  assert.ok(first.indexOf('alpha') < first.indexOf('node2'));
+  assert.ok(first.indexOf('node2') < first.indexOf('Node10'));
+  assert.ok(first.indexOf('Node10') < first.indexOf('Zulu'));
+  app.run('nodes.reverse(); renderNodes();');
+  assert.equal(app.document.getElementById('nodeGrid').innerHTML, first);
+  app.run('currentGroup = "B"; renderNodes();');
+  const grouped = app.document.getElementById('nodeGrid').innerHTML;
+  assert.ok(!grouped.includes('Zulu'));
+  assert.ok(grouped.indexOf('node2') < grouped.indexOf('Node10'));
+});
+
 test('node cards render empty and populated reports without executing node data', () => {
   const app = dashboard();
   const payload = `<img src=x onerror="alert(1)">'quoted`;

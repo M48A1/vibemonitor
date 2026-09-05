@@ -217,7 +217,9 @@ function renderPingPanels(node) {
 // Render Nodes
 function renderNodes() {
   const grid = document.getElementById('nodeGrid');
-  const filtered = nodes.filter(n => currentGroup === null || n.group === currentGroup);
+  const filtered = nodes.filter(n => currentGroup === null || n.group === currentGroup)
+    .sort((a, b) => (a.name || '').trim().localeCompare((b.name || '').trim(), 'en', { sensitivity: 'base', numeric: true })
+      || (a.uuid || '').localeCompare(b.uuid || '', 'en'));
 
   if (filtered.length === 0) {
     grid.innerHTML = `
