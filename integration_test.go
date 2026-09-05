@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -31,9 +32,7 @@ func (m *memoryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func TestFullWorkflow(t *testing.T) {
-	dataFile := "test-vibemonitor-data.json"
-	_ = os.Remove(dataFile)
-	defer os.Remove(dataFile)
+	dataFile := filepath.Join(t.TempDir(), "data.json")
 
 	adminPass := "adminSecret123"
 
@@ -261,8 +260,24 @@ func TestFullWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to read JSON data file from disk: %v", err)
 	}
-	if !strings.Contains(string(diskData), "ping_history") || !strings.Contains(string(diskData), "上海电信") {
-		t.Fatalf("JSON data file on disk missing persistent ping_history: %s", string(diskData))
+	if strings.Contains(string(diskData), "ping_history") {
+		t.Fatal("main file still contains ping history")
+	}
+	pingData, err := os.ReadFile(dataFile + ".ping.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var persisted struct {
+		Nodes map[string]struct {
+			History map[string][]store.PingSample `json:"history"`
+		} `json:"nodes"`
+	}
+	if err := json.Unmarshal(pingData, &persisted); err != nil {
+		t.Fatal(err)
+	}
+	samples := persisted.Nodes[nodeUUID].History["上海电信"]
+	if len(samples) != 1 || samples[0].Latency != 38 {
+		t.Fatal("ping sidecar missing expected sample")
 	}
 	t.Log("[PASS] Ping history verified successfully persisted in JSON file on disk")
 
@@ -313,9 +328,7 @@ func postRPCWithClient(t *testing.T, client *http.Client, baseURL, token string,
 }
 
 func TestGracefulShutdownAndPersistence(t *testing.T) {
-	dataFile := "test-shutdown-data.json"
-	_ = os.Remove(dataFile)
-	defer os.Remove(dataFile)
+	dataFile := filepath.Join(t.TempDir(), "data.json")
 
 	srv, err := server.New(server.Options{
 		ListenAddr:    "127.0.0.1:19876",
