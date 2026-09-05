@@ -62,7 +62,9 @@ window.openModal = function(id) {
   const m = document.getElementById(id);
   m.classList.add('active');
   setTimeout(() => {
-    const focusable = m.querySelector('input:not([style*="display: none"]):not([style*="display:none"])');
+    const focusable = typeof m.querySelector === 'function'
+      ? m.querySelector('input:not([style*="display: none"]):not([style*="display:none"])')
+      : null;
     if (focusable) focusable.focus();
   }, 50);
 };
