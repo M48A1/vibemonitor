@@ -258,6 +258,9 @@ func (s *Store) load(defaultPassword string) error {
 			s.tokenIndex[n.Token] = uuid
 		}
 	}
+	if err := s.loadPingFile(data); err != nil {
+		return err
+	}
 	s.prunePingDataLocked()
 	s.dirty = true // Persist migration of legacy or unconfigured history.
 
@@ -274,7 +277,7 @@ func (s *Store) saveLocked() error {
 
 	df := DataFile{
 		Config: s.config,
-		Nodes:  s.nodes,
+		Nodes:  s.nodesWithoutPing(),
 	}
 	data, err := json.MarshalIndent(df, "", "  ")
 	if err != nil {
@@ -283,6 +286,9 @@ func (s *Store) saveLocked() error {
 
 	tmpFile := s.filePath + ".tmp"
 	if err := os.WriteFile(tmpFile, data, 0600); err != nil {
+		return err
+	}
+	if err := s.savePingFile(data); err != nil {
 		return err
 	}
 	if err := os.Rename(tmpFile, s.filePath); err != nil {

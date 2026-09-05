@@ -196,6 +196,9 @@ backup_data() {
     if [ "$was_active" = 1 ]; then systemctl stop "$SERVER_SERVICE"; fi
     destination=$(mktemp "$CONFIG_DIR/backups/data-$(date +%Y%m%d-%H%M%S).XXXXXX") || result=1
     if [ "$result" = 0 ]; then cp "$CONFIG_DIR/vibemonitor-data.json" "$destination" || result=1; fi
+    if [ "$result" = 0 ] && [ -f "$CONFIG_DIR/vibemonitor-data.json.ping.json" ]; then
+        cp "$CONFIG_DIR/vibemonitor-data.json.ping.json" "$destination.ping.json" || result=1
+    fi
     if [ "$was_active" = 1 ]; then systemctl start "$SERVER_SERVICE" || result=1; fi
     [ "$result" = 0 ] || error "Backup failed; check the service status."
     success "Backup saved: $destination"
@@ -203,28 +206,53 @@ backup_data() {
 
 restore_data() {
     check_root; detect_arch
-    local source="$1" was_active=0 staged previous
+    local source="$1" was_active=0 staged previous ping_path
+    ping_path="$CONFIG_DIR/vibemonitor-data.json.ping.json"
     "$INSTALL_BIN" validate-data "$source"
     backup_data
     staged=$(mktemp "$CONFIG_DIR/.restore.XXXXXX")
     previous=$(mktemp "$CONFIG_DIR/.previous.XXXXXX")
     cp "$source" "$staged"
+    if [ -f "$source.ping.json" ]; then cp "$source.ping.json" "$staged.ping.json"; fi
     systemctl is-active --quiet "$SERVER_SERVICE" && was_active=1
     if [ "$was_active" = 1 ]; then systemctl stop "$SERVER_SERVICE"; fi
+    if [ -f "$ping_path" ]; then
+        if ! cp "$ping_path" "$previous.ping.json"; then
+            if [ "$was_active" = 1 ]; then systemctl start "$SERVER_SERVICE"; fi
+            error "Could not preserve previous ping data."
+        fi
+    fi
     if ! cp "$CONFIG_DIR/vibemonitor-data.json" "$previous" || ! mv -f "$staged" "$CONFIG_DIR/vibemonitor-data.json"; then
         if [ "$was_active" = 1 ]; then systemctl start "$SERVER_SERVICE"; fi
         rm -f "$staged" "$previous"
         error "Restore failed."
     fi
+    local ping_result=0
+    if [ -f "$staged.ping.json" ]; then
+        mv -f "$staged.ping.json" "$ping_path" || ping_result=1
+    else
+        rm -f "$ping_path" || ping_result=1
+    fi
+    if [ "$ping_result" != 0 ]; then
+        mv -f "$previous" "$CONFIG_DIR/vibemonitor-data.json"
+        if [ -f "$previous.ping.json" ]; then mv -f "$previous.ping.json" "$ping_path"; fi
+        if [ "$was_active" = 1 ]; then systemctl start "$SERVER_SERVICE"; fi
+        error "Could not restore ping data; previous data restored."
+    fi
     if [ "$was_active" = 1 ]; then
         if ! systemctl start "$SERVER_SERVICE" || ! sleep 3 || ! systemctl is-active --quiet "$SERVER_SERVICE"; then
             systemctl stop "$SERVER_SERVICE" || true
             mv -f "$previous" "$CONFIG_DIR/vibemonitor-data.json"
+            if [ -f "$previous.ping.json" ]; then
+                mv -f "$previous.ping.json" "$ping_path"
+            else
+                rm -f "$ping_path"
+            fi
             systemctl start "$SERVER_SERVICE" || true
             error "Restored data could not start; previous data restored."
         fi
     fi
-    rm -f "$previous"
+    rm -f "$previous" "$previous.ping.json"
     success "Data restored. Restored passwords and node tokens now apply."
 }
 
