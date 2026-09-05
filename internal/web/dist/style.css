@@ -252,15 +252,15 @@ body {
 /* Node Grid - Solid Modern Cards */
 .node-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
-  gap: 18px;
+  grid-template-columns: 1fr;
+  gap: 24px;
 }
 
 .node-card {
   background: var(--card-bg);
   border: 1px solid var(--border);
   border-radius: 16px;
-  padding: 20px;
+  padding: 24px 28px;
   box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;

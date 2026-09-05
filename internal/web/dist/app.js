@@ -138,13 +138,6 @@ function updateGlobalStats() {
   document.getElementById('statNetUp').textContent = formatSpeed(totalNetUp);
   document.getElementById('statNetDown').textContent = formatSpeed(totalNetDown);
 
-  const offline = total - online;
-  const statusEl = document.getElementById('statStatusText');
-  if (statusEl) {
-    statusEl.textContent = offline > 0 ? `${offline} 台服务器离线` : '全部运行正常';
-    statusEl.style.color = offline > 0 ? 'var(--warning)' : 'var(--muted-foreground)';
-  }
-
   const trafficEl = document.getElementById('statTrafficTotal');
   if (trafficEl) {
     trafficEl.textContent = `实时上下行总和: ${formatSpeed(totalNetUp + totalNetDown)}`;
