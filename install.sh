@@ -149,7 +149,7 @@ finish_update() {
 }
 
 install_server() {
-    local port="${1:-1314}" password="${2:-}"
+    local port="${1:-1314}" password="${2:-}" username="${3:-admin}"
     [[ "$port" =~ ^[0-9]+$ && ${#port} -le 5 ]] || error "Invalid port."
     (( 10#$port >= 1 && 10#$port <= 65535 )) || error "Port must be 1-65535."
     if [ -f "$CONFIG_DIR/vibemonitor-data.json" ]; then backup_data; fi
@@ -157,6 +157,7 @@ install_server() {
     download_binary
     local args
     args="$(unit_arg "$INSTALL_BIN") server --listen $(unit_arg "0.0.0.0:$port") --data $(unit_arg "$CONFIG_DIR/vibemonitor-data.json")"
+    args="$args --admin-username $(unit_arg "$username")"
     if [ -n "$password" ]; then args="$args --admin-password $(unit_arg "$password")"; fi
     cat > "$UNIT_DIR/$SERVER_SERVICE.service" <<EOF
 [Unit]
@@ -335,7 +336,7 @@ manage_services() {
 }
 
 menu() {
-    local choice port password server token interval source confirm pause
+    local choice port password username server token interval source confirm pause
     while true; do
         menu_header
         read_input "请选择 [0-9]: " choice
@@ -343,8 +344,12 @@ menu() {
             # Run installations in a subshell so their EXIT rollback always runs,
             # even when the interactive menu is kept open afterwards.
             1) read_input "监听端口 [1314]: " port
+               if [ -f "$CONFIG_DIR/vibemonitor-data.json" ]; then
+                   info "已有管理员账号和密码将保留；以下设置仅首次安装生效。"
+               fi
+               read_input "管理员账号 [admin，仅一个管理员]: " username
                read_secret "初始密码 [留空自动生成，已有密码不变]: " password
-               ( install_server "${port:-1314}" "$password" ) ;;
+               ( install_server "${port:-1314}" "$password" "${username:-admin}" ) ;;
             2) read_input "主控地址（http:// 或 https://）: " server
                read_secret "节点 Token（输入不显示）: " token
                read_input "上报间隔 [3s]: " interval
@@ -372,15 +377,16 @@ CMD="${1:-menu}"
 if [ $# -gt 0 ]; then shift; fi
 case "$CMD" in
     server)
-        port=1314; password=""
+        port=1314; password=""; username=admin
         while [ $# -gt 0 ]; do
             case "$1" in
                 -p|--port) port="${2:?missing port}"; shift 2 ;;
+                -u|--username) username="${2:?missing username}"; shift 2 ;;
                 -w|--password) password="${2:?missing password}"; shift 2 ;;
                 *) error "Unknown server option: $1" ;;
             esac
         done
-        install_server "$port" "$password" ;;
+        install_server "$port" "$password" "$username" ;;
     agent)
         server=""; token=""; interval=3s
         while [ $# -gt 0 ]; do

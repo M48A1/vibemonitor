@@ -94,6 +94,7 @@ type Node struct {
 }
 
 type Config struct {
+	AdminUsername    string                `json:"admin_username"`
 	AdminPassword    string                `json:"admin_password"`
 	SiteTitle        string                `json:"site_title"`
 	Announcement     string                `json:"announcement"`
@@ -131,7 +132,7 @@ func GenerateUUID() string {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
 
-func New(filePath string, defaultAdminPassword string) (*Store, error) {
+func New(filePath string, defaultAdminPassword string, usernames ...string) (*Store, error) {
 	s := &Store{
 		filePath:   filePath,
 		nodes:      make(map[string]*Node),
@@ -139,7 +140,11 @@ func New(filePath string, defaultAdminPassword string) (*Store, error) {
 		stopFlush:  make(chan struct{}),
 	}
 
-	if err := s.load(defaultAdminPassword); err != nil {
+	username := "admin"
+	if len(usernames) > 0 && usernames[0] != "" {
+		username = usernames[0]
+	}
+	if err := s.load(defaultAdminPassword, username); err != nil {
 		return nil, err
 	}
 	go s.periodicFlusher()
@@ -198,7 +203,7 @@ func (s *Store) notifyUpdate() {
 	}
 }
 
-func (s *Store) load(defaultPassword string) error {
+func (s *Store) load(defaultPassword, username string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -215,6 +220,7 @@ func (s *Store) load(defaultPassword string) error {
 			}
 			s.config = Config{
 				AdminPassword:    defaultPassword,
+				AdminUsername:    username,
 				SiteTitle:        "VibeMonitor",
 				AutoDiscoveryKey: GenerateToken(16),
 				PingTargets:      []protocol.PingTarget{},
@@ -233,6 +239,9 @@ func (s *Store) load(defaultPassword string) error {
 		return fmt.Errorf("invalid saved ping targets: %w", err)
 	}
 	s.config = df.Config
+	if s.config.AdminUsername == "" {
+		s.config.AdminUsername = "admin"
+	}
 	if s.config.SiteTitle == "" {
 		s.config.SiteTitle = "VibeMonitor"
 	}
@@ -842,4 +851,10 @@ func (s *Store) GetPingHistory(uuid, targetName, timeRange string) (*PingHistory
 		Stats:   stats,
 		Samples: filtered,
 	}, nil
+}
+
+func (s *Store) VerifyAdmin(username, password string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return username == s.config.AdminUsername && password != "" && password == s.config.AdminPassword
 }

@@ -153,3 +153,7 @@ python3 -m unittest discover -s tests -v
 | `--interval`, `-i` | `VIBEMONITOR_INTERVAL` | `3s` |
 
 `vibemonitor validate-data FILE` 只检查备份格式，不启动服务或修改文件。
+
+### 管理员账号
+
+系统仅有一个管理员账号。首次安装菜单会提示填写账号和密码，账号默认为 `admin`；留空密码则自动生成。命令行安装可使用 `bash install.sh server -u 用户名 -w 密码`，手动启动可设置 `--admin-username`（环境变量 `VIBEMONITOR_ADMIN_USERNAME`）。已有数据升级后保留密码，旧版未设置账号时使用 `admin`。重复安装不会覆盖已有账号密码。网页登录必须同时填写账号和密码。

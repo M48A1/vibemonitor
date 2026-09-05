@@ -64,6 +64,7 @@ func runServer(args []string) {
 	fs.StringVar(listen, "l", *listen, "Address to listen on (shorthand)")
 	data := fs.String("data", getEnv("VIBEMONITOR_DATA", "vibemonitor-data.json"), "Path to data file")
 	fs.StringVar(data, "d", *data, "Path to data file (shorthand)")
+	adminUser := fs.String("admin-username", getEnv("VIBEMONITOR_ADMIN_USERNAME", "admin"), "Initial admin username (first run only)")
 	adminPass := fs.String("admin-password", getEnv("VIBEMONITOR_ADMIN_PASSWORD", ""), "Initial admin password (first run only)")
 	fs.StringVar(adminPass, "p", *adminPass, "Admin password (shorthand)")
 
@@ -73,6 +74,7 @@ func runServer(args []string) {
 		ListenAddr:    *listen,
 		DataFile:      *data,
 		AdminPassword: *adminPass,
+		AdminUsername: *adminUser,
 	})
 	if err != nil {
 		log.Fatalf("Failed to initialize server: %v", err)

@@ -77,7 +77,7 @@ func TestFullWorkflow(t *testing.T) {
 	t.Log("[PASS] /api/public verified")
 
 	// 3. Test Admin Login with wrong password
-	badLogin, _ := json.Marshal(map[string]string{"password": "wrong"})
+	badLogin, _ := json.Marshal(map[string]string{"username": "admin", "password": "wrong"})
 	resp, _ = client.Post(baseURL+"/api/admin/login", "application/json", bytes.NewReader(badLogin))
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("Expected 401 for wrong password, got %d", resp.StatusCode)
@@ -85,7 +85,7 @@ func TestFullWorkflow(t *testing.T) {
 	resp.Body.Close()
 
 	// 4. Test Admin Login with correct password
-	goodLogin, _ := json.Marshal(map[string]string{"password": adminPass})
+	goodLogin, _ := json.Marshal(map[string]string{"username": "admin", "password": adminPass})
 	resp, err = client.Post(baseURL+"/api/admin/login", "application/json", bytes.NewReader(goodLogin))
 	if err != nil || resp.StatusCode != http.StatusOK {
 		t.Fatalf("Login failed: %v, status: %d", err, resp.StatusCode)
