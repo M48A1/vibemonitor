@@ -30,6 +30,8 @@ type WSHub struct {
 	trigger chan struct{}
 }
 
+const maxWSClients = 1000
+
 func NewWSHub(s *store.Store) *WSHub {
 	hub := &WSHub{
 		clients: make(map[*wsClient]struct{}),
@@ -69,8 +71,15 @@ func (h *WSHub) run() {
 }
 
 func (h *WSHub) HandleWS(w http.ResponseWriter, r *http.Request) {
+	h.mu.RLock()
+	tooMany := len(h.clients) >= maxWSClients
+	h.mu.RUnlock()
+	if tooMany {
+		http.Error(w, "too many connections", http.StatusServiceUnavailable)
+		return
+	}
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true,
+		InsecureSkipVerify: false,
 	})
 	if err != nil {
 		log.Printf("[WS] Accept error: %v", err)

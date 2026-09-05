@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -41,6 +42,12 @@ func (s *Store) UpdateSiteIcon(icon string) error {
 	next.SiteIcon = strings.TrimSpace(icon)
 	if len(next.SiteIcon) > 2048 {
 		return errors.New("site icon URL is too long")
+	}
+	if next.SiteIcon != "" {
+		u, err := url.Parse(next.SiteIcon)
+		if err != nil || (u.Scheme != "" && u.Scheme != "http" && u.Scheme != "https") || strings.HasPrefix(next.SiteIcon, "//") {
+			return errors.New("site icon must be a relative URL or use http/https")
+		}
 	}
 	return s.commitConfigLocked(next)
 }

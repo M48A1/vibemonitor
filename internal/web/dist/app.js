@@ -89,19 +89,12 @@ themeToggle.addEventListener('click', () => {
 
 // Admin Authentication
 function getAdminToken() {
-  return localStorage.getItem('admin_token');
+  return '';
 }
 
 async function checkAdminAuth() {
-  const token = getAdminToken();
-  if (!token) {
-    setAdminState(false);
-    return;
-  }
   try {
-    const res = await fetch('/api/admin/status', {
-      headers: { 'Authorization': 'Bearer ' + token }
-    });
+    const res = await fetch('/api/admin/status', { credentials: 'same-origin' });
     const data = await res.json();
     setAdminState(data.is_admin === true);
   } catch (e) {
@@ -456,7 +449,7 @@ window.showGuide = async function(uuid) {
   let token;
   try {
     const res = await fetch(`/api/admin/nodes/${encodeURIComponent(uuid)}/token`, {
-      headers: { 'Authorization': 'Bearer ' + getAdminToken() }
+      credentials: 'same-origin'
     });
     if (!res.ok) throw new Error('请重新登录后获取接入命令');
     const data = await res.json();
@@ -489,7 +482,7 @@ window.deleteNode = async function(uuid) {
   try {
     const res = await fetch(`/api/admin/nodes/${uuid}`, {
       method: 'DELETE',
-      headers: { 'Authorization': 'Bearer ' + token }
+      credentials: 'same-origin'
     });
     if (res.ok) {
       fetchNodes();
@@ -524,7 +517,6 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
     });
     const data = await res.json();
     if (data.token) {
-      localStorage.setItem('admin_token', data.token);
       setAdminState(true);
       closeModal('loginModal');
     } else {
@@ -539,10 +531,9 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
 document.getElementById('logoutBtn').addEventListener('click', async () => {
   try {
     const res = await fetch('/api/admin/logout', {
-      method: 'POST', headers: { 'Authorization': 'Bearer ' + getAdminToken() }
+      method: 'POST', credentials: 'same-origin'
     });
     if (!res.ok) throw new Error('退出失败，请重试');
-    localStorage.removeItem('admin_token');
     document.getElementById('guideToken').textContent = '';
     document.getElementById('guideInstallCmd').textContent = '';
     document.getElementById('guideRunCmd').textContent = '';
@@ -561,7 +552,7 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
   try {
     const res = await fetch('/api/admin/settings', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin',
       body: JSON.stringify({
         site_title: document.getElementById('settingSiteTitle').value.trim(),
         announcement: document.getElementById('settingAnnouncement').value.trim(),
@@ -572,7 +563,6 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || '保存失败');
     if (newPassword) {
-      localStorage.removeItem('admin_token');
       setAdminState(false);
     }
     closeModal('settingsModal');
@@ -643,8 +633,8 @@ document.getElementById('addNodeForm').addEventListener('submit', async (e) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + token
       },
+      credentials: 'same-origin',
       body: JSON.stringify({
         name,
         group,
@@ -674,7 +664,7 @@ window.openEditModal = async function(uuid) {
   let profile;
   try {
     const res = await fetch(`/api/admin/nodes/${encodeURIComponent(uuid)}/profile`, {
-      headers: { 'Authorization': 'Bearer ' + getAdminToken() },
+      credentials: 'same-origin',
       cache: 'no-store'
     });
     if (!res.ok) throw new Error('无法读取节点配置，请确认登录状态后重试');
@@ -715,8 +705,8 @@ document.getElementById('editNodeForm').addEventListener('submit', async (e) => 
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + token
       },
+      credentials: 'same-origin',
       body: JSON.stringify({
         name,
         group,
@@ -746,9 +736,7 @@ document.getElementById('deleteNodeBtn').addEventListener('click', async () => {
   try {
     const res = await fetch(`/api/admin/nodes/${uuid}`, {
       method: 'DELETE',
-      headers: {
-        'Authorization': 'Bearer ' + token
-      }
+      credentials: 'same-origin'
     });
     if (res.ok) {
       closeModal('editNodeModal');

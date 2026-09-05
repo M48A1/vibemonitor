@@ -2,6 +2,7 @@ package store
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -124,7 +125,9 @@ type Store struct {
 
 func GenerateToken(length int) string {
 	b := make([]byte, length)
-	_, _ = rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		panic("crypto/rand failed: " + err.Error())
+	}
 	return hex.EncodeToString(b)
 }
 
@@ -326,7 +329,7 @@ func (s *Store) saveLocked() error {
 func (s *Store) VerifyAdminPassword(pwd string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return pwd != "" && s.config.AdminPassword == pwd
+	return pwd != "" && subtle.ConstantTimeCompare([]byte(pwd), []byte(s.config.AdminPassword)) == 1
 }
 
 func (s *Store) SetAdminPassword(newPwd string) error {
@@ -471,8 +474,14 @@ func (s *Store) GetNodes() []*Node {
 	list := make([]*Node, 0, len(s.nodes))
 	for _, n := range s.nodes {
 		nodeCopy := *n
-		nodeCopy.Token = ""        // Credentials are only available through authenticated management.
+		nodeCopy.Token = "" // Credentials are only available through authenticated management.
 		nodeCopy.ClientIP = ""
+		if n.BasicInfo != nil {
+			basicInfo := *n.BasicInfo
+			basicInfo.IPv4 = ""
+			basicInfo.IPv6 = ""
+			nodeCopy.BasicInfo = &basicInfo
+		}
 		if n.Profile != nil {
 			profile := *n.Profile
 			profile.Targets = append([]protocol.PingTarget(nil), profile.Targets...)
@@ -909,5 +918,8 @@ func (s *Store) GetPingHistory(uuid, targetName, timeRange string) (*PingHistory
 func (s *Store) VerifyAdmin(username, password string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return username == s.config.AdminUsername && password != "" && password == s.config.AdminPassword
+	if username != s.config.AdminUsername || password == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(password), []byte(s.config.AdminPassword)) == 1
 }

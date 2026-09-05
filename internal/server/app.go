@@ -2,8 +2,6 @@ package server
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log"
@@ -166,9 +164,7 @@ func (s *Server) Handler() http.Handler {
 		}
 
 		// Generate random admin session token
-		h := sha256.New()
-		h.Write([]byte(store.GenerateToken(32)))
-		token := hex.EncodeToString(h.Sum(nil))
+		token := store.GenerateToken(32)
 		s.adminTokens.Store(token, time.Now().Add(7*24*time.Hour))
 
 		http.SetCookie(w, &http.Cookie{
@@ -365,6 +361,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("/", web.Handler())
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBytes)
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' wss: ws:")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
 		mux.ServeHTTP(w, r)
 	})
 }

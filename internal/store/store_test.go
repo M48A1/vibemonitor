@@ -48,6 +48,39 @@ func TestStoreConcurrency(t *testing.T) {
 	}
 }
 
+func TestGetNodesRedactsBasicInfoIPs(t *testing.T) {
+	dataFile := "test-store-redaction.json"
+	_ = os.Remove(dataFile)
+	defer os.Remove(dataFile)
+
+	st, err := New(dataFile, "pass123")
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+	node, err := st.CreateNode("node", "default", "US")
+	if err != nil {
+		t.Fatalf("CreateNode failed: %v", err)
+	}
+	_, err = st.IngestBasicInfo(node.Token, protocol.BasicInfo{
+		IPv4: "203.0.113.10",
+		IPv6: "2001:db8::10",
+	}, "198.51.100.10")
+	if err != nil {
+		t.Fatalf("IngestBasicInfo failed: %v", err)
+	}
+
+	publicNodes := st.GetNodes()
+	if len(publicNodes) != 1 {
+		t.Fatalf("Expected 1 node, got %d", len(publicNodes))
+	}
+	if got := publicNodes[0].BasicInfo.IPv4; got != "" {
+		t.Fatalf("Expected public IPv4 to be redacted, got %q", got)
+	}
+	if got := publicNodes[0].BasicInfo.IPv6; got != "" {
+		t.Fatalf("Expected public IPv6 to be redacted, got %q", got)
+	}
+}
+
 func TestGetBillingCycleRange(t *testing.T) {
 	// Case 1: today is Sep 4, resetDay is 15 -> cycle is Aug 15 to Sep 15
 	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
