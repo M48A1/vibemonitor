@@ -578,7 +578,9 @@ nodeManagementMenu.addEventListener('keydown', (event) => {
   }
 });
 nodeManagementMenu.addEventListener('focusout', (event) => {
-  if (!nodeManagementMenu.contains(event.relatedTarget)) nodeManagementMenu.open = false;
+  // Safari can leave relatedTarget null when a menu button is pressed.
+  // Keep the menu mounted until its click handler has run in that case.
+  if (event.relatedTarget && !nodeManagementMenu.contains(event.relatedTarget)) nodeManagementMenu.open = false;
 });
 document.getElementById('editExistingNodeBtn').addEventListener('click', () => {
   nodeManagementMenu.open = false;
