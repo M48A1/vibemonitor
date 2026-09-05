@@ -136,6 +136,18 @@ body {
   gap: 10px;
 }
 
+.nav-speed {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.nav-speed span:first-child { color: var(--success); }
+.nav-speed span:last-child { color: #3b82f6; }
+
 /* Solid Stats Overview Bar */
 .stats-banner {
   display: grid;
@@ -772,6 +784,7 @@ body {
 .node-metrics .metric-value { font-size: 12px; }
 .node-card { gap: 12px; padding: 16px; }
 .price-badge { margin-left: auto; font-weight: 600; }
+.billing-reset { font-weight: 600; white-space: nowrap; }
 .billing-form { margin: 16px 0; }
 .billing-form label { display: grid; gap: 6px; font-size: 13px; }
 .billing-summary { display:flex; flex-wrap:wrap; gap:8px 16px; background:var(--card-data-bg); border-radius:12px; padding:10px 12px; font-size:12px; }

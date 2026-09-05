@@ -102,6 +102,7 @@ func (s *Server) Handler() http.Handler {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"site_title":   cfg.SiteTitle,
 			"announcement": cfg.Announcement,
+			"site_icon":    cfg.SiteIcon,
 		})
 	})
 
@@ -308,6 +309,7 @@ func (s *Server) Handler() http.Handler {
 		var req struct {
 			SiteTitle    string                 `json:"site_title"`
 			Announcement string                 `json:"announcement"`
+			SiteIcon     string                 `json:"site_icon"`
 			NewPassword  string                 `json:"new_password"`
 			PingTargets  *[]protocol.PingTarget `json:"ping_targets"`
 		}
@@ -329,6 +331,10 @@ func (s *Server) Handler() http.Handler {
 		if err := s.store.UpdateSettings(req.SiteTitle, req.Announcement, pts, req.NewPassword); err != nil {
 			log.Printf("[Store] Settings save failed: %v", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "could not save settings"})
+			return
+		}
+		if err := s.store.UpdateSiteIcon(req.SiteIcon); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 			return
 		}
 		if req.NewPassword != "" {

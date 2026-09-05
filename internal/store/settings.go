@@ -33,6 +33,18 @@ func (s *Store) UpdateSettings(title, announcement string, targets []protocol.Pi
 	return s.commitConfigLocked(next)
 }
 
+// UpdateSiteIcon updates the favicon URL independently of the other settings.
+func (s *Store) UpdateSiteIcon(icon string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	next := s.config
+	next.SiteIcon = strings.TrimSpace(icon)
+	if len(next.SiteIcon) > 2048 {
+		return errors.New("site icon URL is too long")
+	}
+	return s.commitConfigLocked(next)
+}
+
 // ValidateData checks a backup without modifying or starting a store.
 func ValidateData(data []byte) error {
 	var df DataFile
