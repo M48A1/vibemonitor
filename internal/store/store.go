@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
 	"vibemonitor/pkg/protocol"
 )
 
@@ -327,9 +328,41 @@ func (s *Store) saveLocked() error {
 }
 
 func (s *Store) VerifyAdminPassword(pwd string) bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return pwd != "" && subtle.ConstantTimeCompare([]byte(pwd), []byte(s.config.AdminPassword)) == 1
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.verifyAdminPasswordLocked(pwd)
+}
+
+func hashAdminPassword(password string) (string, error) {
+	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	return string(hashed), err
+}
+
+// verifyAdminPasswordLocked also migrates legacy plaintext passwords on the
+// first successful login.
+func (s *Store) verifyAdminPasswordLocked(pwd string) bool {
+	if pwd == "" {
+		return false
+	}
+	if bcrypt.CompareHashAndPassword([]byte(s.config.AdminPassword), []byte(pwd)) == nil {
+		return true
+	}
+	// Backward compatibility for data files created before password hashing.
+	if subtle.ConstantTimeCompare([]byte(pwd), []byte(s.config.AdminPassword)) != 1 {
+		return false
+	}
+	hashed, err := bcrypt.GenerateFromPassword([]byte(pwd), bcrypt.DefaultCost)
+	if err != nil {
+		log.Printf("[Store] Password migration failed: %v", err)
+		return true
+	}
+	previous := s.config.AdminPassword
+	s.config.AdminPassword = string(hashed)
+	if err := s.saveLocked(); err != nil {
+		s.config.AdminPassword = previous
+		log.Printf("[Store] Password migration save failed: %v", err)
+	}
+	return true
 }
 
 func (s *Store) SetAdminPassword(newPwd string) error {
@@ -338,8 +371,12 @@ func (s *Store) SetAdminPassword(newPwd string) error {
 	if newPwd == "" {
 		return errors.New("admin password cannot be empty")
 	}
+	hashed, err := hashAdminPassword(newPwd)
+	if err != nil {
+		return err
+	}
 	previous := s.config
-	s.config.AdminPassword = newPwd
+	s.config.AdminPassword = hashed
 	if err := s.saveLocked(); err != nil {
 		s.config = previous
 		return err
@@ -916,10 +953,10 @@ func (s *Store) GetPingHistory(uuid, targetName, timeRange string) (*PingHistory
 }
 
 func (s *Store) VerifyAdmin(username, password string) bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if username != s.config.AdminUsername || password == "" {
 		return false
 	}
-	return subtle.ConstantTimeCompare([]byte(password), []byte(s.config.AdminPassword)) == 1
+	return s.verifyAdminPasswordLocked(password)
 }

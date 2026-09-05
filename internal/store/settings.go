@@ -29,7 +29,11 @@ func (s *Store) UpdateSettings(title, announcement string, targets []protocol.Pi
 		}
 	}
 	if password != "" {
-		next.AdminPassword = password
+		hashed, err := hashAdminPassword(password)
+		if err != nil {
+			return err
+		}
+		next.AdminPassword = hashed
 	}
 	return s.commitConfigLocked(next)
 }
