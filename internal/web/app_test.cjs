@@ -40,16 +40,22 @@ test('menu focus loss without a new focus target does not swallow submenu clicks
   assert.equal(menu.open, false);
 });
 
-test('existing node selection populates the edit form', () => {
+test('existing node selection retrieves private target addresses for the edit form', async () => {
   const app = dashboard();
   app.run('isAdmin = true; nodes = [{uuid:"node-1", name:"Tokyo", group:"Production", region:"JP", profile:{targets:[{name:"TCP",host:"example.com:443"}],currency:"USD",price:5}}];');
   app.document.getElementById('editExistingNodeBtn').events.click();
   const choice = app.document.getElementById('nodeSelectionList').children[0];
   assert.equal(choice.textContent, 'Tokyo · Production');
-  choice.events.click();
+  app.run('nodes[0].profile.targets[0].host = ""');
+  app.context.fetch = async (url, options) => {
+    assert.equal(url, '/api/admin/nodes/node-1/profile');
+    assert.equal(options.headers.Authorization, 'Bearer admin-session');
+    return {ok:true,json:async()=>({profile:{targets:[{name:'TCP',host:'example.com:443'},{name:'IP',host:'1.1.1.1:443'}],price:5}})};
+  };
+  await choice.events.click();
   assert.equal(app.document.getElementById('editNodeUUID').value, 'node-1');
   assert.equal(app.document.getElementById('editNodeName').value, 'Tokyo');
-  assert.equal(app.document.getElementById('editNodeTargets').value, 'TCP,example.com:443');
+  assert.equal(app.document.getElementById('editNodeTargets').value, 'TCP,example.com:443\nIP,1.1.1.1:443');
   assert.equal(app.document.getElementById('editNodePrice').value, 5);
 });
 

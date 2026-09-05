@@ -595,9 +595,9 @@ document.getElementById('editExistingNodeBtn').addEventListener('click', () => {
     button.type = 'button';
     button.className = 'btn';
     button.textContent = `${node.name || node.uuid}${node.group ? ' · ' + node.group : ''}`;
-    button.addEventListener('click', () => {
+    button.addEventListener('click', async () => {
       closeModal('selectNodeModal');
-      openEditModal(node.uuid);
+      await openEditModal(node.uuid);
     });
     list.appendChild(button);
   });
@@ -657,9 +657,21 @@ document.getElementById('addNodeForm').addEventListener('submit', async (e) => {
   }
 });
 
-window.openEditModal = function(uuid) {
+window.openEditModal = async function(uuid) {
   const node = nodes.find(n => n.uuid === uuid);
-  if (!node) return;
+  if (!node || !isAdmin) return;
+  let profile;
+  try {
+    const res = await fetch(`/api/admin/nodes/${encodeURIComponent(uuid)}/profile`, {
+      headers: { 'Authorization': 'Bearer ' + getAdminToken() },
+      cache: 'no-store'
+    });
+    if (!res.ok) throw new Error('无法读取节点配置，请确认登录状态后重试');
+    profile = (await res.json()).profile;
+  } catch (e) {
+    alert(e.message);
+    return;
+  }
   document.getElementById('editNodeUUID').value = node.uuid;
   document.getElementById('editNodeName').value = node.name || '';
   document.getElementById('editNodeGroup').value = node.group || '';
@@ -667,7 +679,7 @@ window.openEditModal = function(uuid) {
   document.getElementById('editNodeTrafficLimit').value = node.traffic_limit > 0 ? (node.traffic_limit / (1024*1024*1024)).toFixed(1) : '';
   document.getElementById('editNodeResetDay').value = node.reset_day > 0 ? node.reset_day : '';
   document.getElementById('editNodeInitialUsed').value = node.initial_used > 0 ? (node.initial_used / (1024*1024*1024)).toFixed(1) : '';
-  fillNodeProfile('edit', node.profile || {targets: (node.ping_preview || []).map(p => ({name:p.name,host:p.host}))});
+  fillNodeProfile('edit', profile);
   openModal('editNodeModal');
 };
 
