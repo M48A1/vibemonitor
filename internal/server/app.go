@@ -34,7 +34,7 @@ type Options struct {
 
 func New(opts Options) (*Server, error) {
 	if opts.ListenAddr == "" {
-		opts.ListenAddr = "0.0.0.0:1314"
+		opts.ListenAddr = "[::]:1314"
 	}
 	if opts.DataFile == "" {
 		opts.DataFile = "vibemonitor-data.db"

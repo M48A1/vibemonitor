@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -93,7 +94,13 @@ func TestNodeCredentialIsolation(t *testing.T) {
 		}
 	}
 	// Both initial WebSocket messages and broadcasts must use public data.
-	ts := httptest.NewServer(h)
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewUnstartedServer(h)
+	ts.Listener = listener
+	ts.Start()
 	defer ts.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
