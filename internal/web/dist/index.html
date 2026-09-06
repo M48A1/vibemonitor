@@ -75,7 +75,7 @@
     <div class="modal">
       <div class="modal-header">
         <h3 class="modal-title">管理</h3>
-        <button class="modal-close" onclick="closeModal('settingsModal')">&times;</button>
+        <button type="button" class="modal-close" id="closeSettingsModalBtn" data-close-modal="settingsModal" aria-label="关闭">&times;</button>
       </div>
       <form id="settingsForm" autocomplete="off">
         <input style="display:none" type="password" name="fakepasswordremembered2"/>
@@ -83,7 +83,7 @@
         <div class="form-group"><label class="form-label">图表公告</label><input class="form-input" id="settingAnnouncement" maxlength="200"></div>
         <div class="form-group"><label class="form-label">网站图标（图片 URL）</label><input class="form-input" id="settingSiteIcon" type="url" maxlength="2048" placeholder="https://example.com/favicon.png"></div>
         <div class="form-group"><label class="form-label">新管理员密码（留空则不修改）</label><input type="password" class="form-input" id="settingNewPassword" minlength="8" autocomplete="new-password"></div>
-        <div style="display:flex;justify-content:space-between;gap:10px;margin-top:14px;"><button type="button" class="btn btn-danger" id="logoutBtn">退出登录</button><div style="display:flex;gap:10px;"><button type="button" class="btn" onclick="closeModal('settingsModal')">取消</button><button type="submit" class="btn btn-primary">保存</button></div></div>
+        <div style="display:flex;justify-content:space-between;gap:10px;margin-top:14px;"><button type="button" class="btn btn-danger" id="logoutBtn">退出登录</button><div style="display:flex;gap:10px;"><button type="button" class="btn" id="cancelSettingsModalBtn" data-close-modal="settingsModal">取消</button><button type="submit" class="btn btn-primary">保存</button></div></div>
       </form>
     </div>
   </div>
@@ -93,7 +93,7 @@
     <div class="modal">
       <div class="modal-header">
         <h3 class="modal-title">管理员认证</h3>
-        <button class="modal-close" onclick="closeModal('loginModal')">&times;</button>
+        <button type="button" class="modal-close" id="closeLoginModalBtn" data-close-modal="loginModal" aria-label="关闭">&times;</button>
       </div>
       <form id="loginForm" autocomplete="off">
         <input style="display:none" type="text" name="fakeusernameremembered"/>
@@ -108,7 +108,7 @@
         </div>
         <div id="loginError" style="color: var(--destructive); font-size: 13px; display: none;">账号或密码错误</div>
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px;">
-          <button type="button" class="btn" onclick="closeModal('loginModal')">取消</button>
+          <button type="button" class="btn" id="cancelLoginModalBtn" data-close-modal="loginModal">取消</button>
           <button type="submit" class="btn btn-primary">登录</button>
         </div>
       </form>
@@ -119,9 +119,12 @@
     <div class="modal">
       <div class="modal-header">
         <h3 class="modal-title">编辑现有节点</h3>
-        <button class="modal-close" onclick="closeModal('selectNodeModal')">&times;</button>
+        <button type="button" class="modal-close" id="closeSelectNodeModalBtn" data-close-modal="selectNodeModal" aria-label="关闭">&times;</button>
       </div>
       <div class="node-selection-list" id="nodeSelectionList"></div>
+      <div style="display: flex; justify-content: flex-end; margin-top: 14px;">
+        <button type="button" class="btn" id="closeSelectNodeBottomBtn" data-close-modal="selectNodeModal">关闭</button>
+      </div>
     </div>
   </div>
 
@@ -130,7 +133,7 @@
     <div class="modal">
       <div class="modal-header">
         <h3 class="modal-title">添加新监控节点</h3>
-        <button class="modal-close" onclick="closeModal('addNodeModal')">&times;</button>
+        <button type="button" class="modal-close" id="closeAddNodeModalBtn" data-close-modal="addNodeModal" aria-label="关闭">&times;</button>
       </div>
       <form id="addNodeForm">
         <div class="form-group">
@@ -171,7 +174,7 @@
           <label>币种<select class="form-input" id="newNodeCurrency"><option>CNY</option><option>USD</option><option>EUR</option><option>HKD</option><option>JPY</option><option>GBP</option></select></label>
         </div>
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px;">
-          <button type="button" class="btn" onclick="closeModal('addNodeModal')">取消</button>
+          <button type="button" class="btn" id="cancelAddNodeModalBtn" data-close-modal="addNodeModal">取消</button>
           <button type="submit" class="btn btn-primary">创建节点</button>
         </div>
       </form>
@@ -183,7 +186,7 @@
     <div class="modal">
       <div class="modal-header">
         <h3 class="modal-title">编辑监控节点</h3>
-        <button class="modal-close" onclick="closeModal('editNodeModal')">&times;</button>
+        <button type="button" class="modal-close" id="closeEditNodeModalBtn" data-close-modal="editNodeModal" aria-label="关闭">&times;</button>
       </div>
       <form id="editNodeForm">
         <input type="hidden" id="editNodeUUID">
@@ -230,7 +233,7 @@
             <button type="button" class="btn" id="editNodeGuideBtn">显示节点接入命令</button>
           </div>
           <div style="display: flex; gap: 10px;">
-            <button type="button" class="btn" onclick="closeModal('editNodeModal')">取消</button>
+            <button type="button" class="btn" id="cancelEditNodeModalBtn" data-close-modal="editNodeModal">取消</button>
             <button type="submit" class="btn btn-primary">保存修改</button>
           </div>
         </div>
@@ -243,30 +246,30 @@
     <div class="modal">
       <div class="modal-header">
         <h3 class="modal-title">节点接入命令</h3>
-        <button class="modal-close" onclick="closeModal('nodeGuideModal')">&times;</button>
+        <button type="button" class="modal-close" id="closeNodeGuideModalBtn" data-close-modal="nodeGuideModal" aria-label="关闭">&times;</button>
       </div>
       <div style="display: flex; flex-direction: column; gap: 16px;">
         <div>
           <span class="form-label">Linux 一键安装命令 (推荐，自动配置 Systemd)</span>
           <div class="code-box" id="guideInstallCmd">curl -fsSL ... | bash</div>
-          <button type="button" class="btn" onclick="copyGuideCommand('guideInstallCmd')">复制安装命令</button>
+          <button type="button" class="btn" id="copyGuideInstallBtn" data-copy-cmd="guideInstallCmd">复制安装命令</button>
         </div>
         <div>
           <span class="form-label">单二进制运行命令</span>
           <div class="code-box" id="guideRunCmd">./vibemonitor agent --server ... --token ...</div>
-          <button type="button" class="btn" onclick="copyGuideCommand('guideRunCmd')">复制运行命令</button>
+          <button type="button" class="btn" id="copyGuideRunBtn" data-copy-cmd="guideRunCmd">复制运行命令</button>
         </div>
         <div>
           <span class="form-label">卸载探针命令</span>
           <div class="code-box" id="guideUninstallCmd">curl -fsSL ... | bash -s -- agent-uninstall</div>
-          <button type="button" class="btn btn-danger" onclick="copyGuideCommand('guideUninstallCmd')">复制卸载命令</button>
+          <button type="button" class="btn btn-danger" id="copyGuideUninstallBtn" data-copy-cmd="guideUninstallCmd">复制卸载命令</button>
         </div>
         <div>
           <span class="form-label">通信 Token</span>
           <div class="code-box" id="guideToken">...</div>
         </div>
         <div style="display: flex; justify-content: flex-end;">
-          <button type="button" class="btn btn-primary" onclick="closeModal('nodeGuideModal')">完成</button>
+          <button type="button" class="btn btn-primary" id="closeNodeGuideBottomBtn" data-close-modal="nodeGuideModal">完成</button>
         </div>
       </div>
     </div>
@@ -280,7 +283,7 @@
           <h3 class="modal-title" id="pingModalTitle">延迟波动曲线</h3>
           <div style="font-size: 12px; color: var(--muted-foreground); margin-top: 2px;" id="pingModalSubtitle">...</div>
         </div>
-        <button class="modal-close" onclick="closeModal('pingChartModal')">&times;</button>
+        <button type="button" class="modal-close" id="closePingChartModalBtn" data-close-modal="pingChartModal" aria-label="关闭">&times;</button>
       </div>
       <div style="padding: 10px 0 0 0;">
         <!-- Range Tabs & Target Switcher -->
@@ -289,8 +292,8 @@
             <!-- Dynamic target selector buttons -->
           </div>
           <div class="time-range-group">
-            <button type="button" class="range-btn active" id="btnRange1h" onclick="switchPingRange('1h')">1 小时</button>
-            <button type="button" class="range-btn" id="btnRange24h" onclick="switchPingRange('24h')">24 小时</button>
+            <button type="button" class="range-btn active" id="btnRange1h">1 小时</button>
+            <button type="button" class="range-btn" id="btnRange24h">24 小时</button>
           </div>
         </div>
 
@@ -327,6 +330,9 @@
           <span id="chartTimeStart">--</span>
           <span>每 60 秒记录 · 持久化存储</span>
           <span id="chartTimeEnd">现在</span>
+        </div>
+        <div style="display: flex; justify-content: flex-end; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border);">
+          <button type="button" class="btn" id="closePingChartBottomBtn" data-close-modal="pingChartModal">关闭</button>
         </div>
       </div>
     </div>

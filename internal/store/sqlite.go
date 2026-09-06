@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,15 +17,6 @@ import (
 const (
 	pingHistoryRetentionSec = 7 * 86400 // 保留 7 天的 Ping 采样数据
 )
-
-type pingFile struct {
-	DataDigest string              `json:"data_digest"`
-	Nodes      map[string]pingNode `json:"nodes"`
-}
-type pingNode struct {
-	History map[string][]PingSample `json:"history,omitempty"`
-	Results []protocol.PingResult   `json:"results,omitempty"`
-}
 
 type sqliteDB struct {
 	db *sql.DB
@@ -333,57 +323,3 @@ func (s *sqliteDB) pruneOldPingHistory(beforeTimestamp int64) (int64, error) {
 	return res.RowsAffected()
 }
 
-// migrateFromJSON 从旧的 JSON 数据文件中迁移数据到 SQLite
-func (s *sqliteDB) migrateFromJSON(jsonPath string) error {
-	data, err := os.ReadFile(jsonPath)
-	if err != nil {
-		return err
-	}
-
-	var df DataFile
-	if err := json.Unmarshal(data, &df); err != nil {
-		return fmt.Errorf("failed to parse json for migration: %w", err)
-	}
-
-	log.Printf("[Store Migration] Detected legacy json storage: %s. Migrating to SQLite...", jsonPath)
-
-	if err := s.saveConfig(&df.Config); err != nil {
-		return fmt.Errorf("failed to migrate config: %w", err)
-	}
-
-	if err := s.saveAllNodes(df.Nodes); err != nil {
-		return fmt.Errorf("failed to migrate nodes: %w", err)
-	}
-
-	// 检查是否有 sidecar ping 文件
-	pingPath := jsonPath + ".ping.json"
-	if pingData, err := os.ReadFile(pingPath); err == nil {
-		var pf pingFile
-		if json.Unmarshal(pingData, &pf) == nil {
-			tx, err := s.db.Begin()
-			if err == nil {
-				stmt, err := tx.Prepare("INSERT INTO ping_history (node_uuid, target_name, host, method, timestamp, latency) VALUES (?, ?, ?, ?, ?, ?)")
-				if err == nil {
-					count := 0
-					for nodeUUID, entry := range pf.Nodes {
-						for targetName, samples := range entry.History {
-							for _, smp := range samples {
-								_, _ = stmt.Exec(nodeUUID, targetName, smp.Host, smp.Method, smp.Timestamp, smp.Latency)
-								count++
-							}
-						}
-					}
-					_ = stmt.Close()
-					_ = tx.Commit()
-					log.Printf("[Store Migration] Migrated %d ping samples from sidecar %s", count, pingPath)
-				}
-			}
-		}
-	}
-
-	// 迁移完成，重命名旧文件为 .bak
-	_ = os.Rename(jsonPath, jsonPath+".bak")
-	_ = os.Rename(pingPath, pingPath+".bak")
-	log.Printf("[Store Migration] Migration to SQLite completed successfully! Original files backed up as .bak")
-	return nil
-}

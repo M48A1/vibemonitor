@@ -59,21 +59,136 @@ function generateSparkline(history, field, width = 280, height = 28) {
 
 // Modal handling
 window.openModal = function(id) {
-  const m = document.getElementById(id);
+  const m = typeof id === 'string' ? document.getElementById(id) : id;
+  if (!m || !m.classList) return;
   m.classList.add('active');
   if (typeof setTimeout === 'function') {
     setTimeout(() => {
       const focusable = typeof m.querySelector === 'function'
         ? m.querySelector('input:not([style*="display: none"]):not([style*="display:none"])')
         : null;
-      if (focusable) focusable.focus();
+      if (focusable && typeof focusable.focus === 'function') focusable.focus();
     }, 50);
   }
 };
 
 window.closeModal = function(id) {
-  document.getElementById(id).classList.remove('active');
+  if (!id) {
+    const activeModals = typeof document.querySelectorAll === 'function'
+      ? document.querySelectorAll('.modal-overlay.active')
+      : [];
+    for (let i = 0; i < activeModals.length; i++) {
+      if (activeModals[i].classList && typeof activeModals[i].classList.remove === 'function') {
+        activeModals[i].classList.remove('active');
+      }
+    }
+    return;
+  }
+  const m = typeof id === 'string' ? document.getElementById(id) : id;
+  if (m && m.classList && typeof m.classList.remove === 'function') {
+    m.classList.remove('active');
+  }
 };
+
+// Bind modal overlay backdrop click to close
+const modalOverlayIds = [
+  'settingsModal',
+  'loginModal',
+  'selectNodeModal',
+  'addNodeModal',
+  'editNodeModal',
+  'nodeGuideModal',
+  'pingChartModal'
+];
+modalOverlayIds.forEach(id => {
+  const overlay = document.getElementById(id);
+  if (overlay && typeof overlay.addEventListener === 'function') {
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) {
+        closeModal(id);
+      }
+    });
+  }
+});
+
+// Bind all explicit close/cancel buttons
+const modalCloseBtnBindings = [
+  { id: 'closeSettingsModalBtn', modalId: 'settingsModal' },
+  { id: 'cancelSettingsModalBtn', modalId: 'settingsModal' },
+  { id: 'closeLoginModalBtn', modalId: 'loginModal' },
+  { id: 'cancelLoginModalBtn', modalId: 'loginModal' },
+  { id: 'closeSelectNodeModalBtn', modalId: 'selectNodeModal' },
+  { id: 'closeSelectNodeBottomBtn', modalId: 'selectNodeModal' },
+  { id: 'closeAddNodeModalBtn', modalId: 'addNodeModal' },
+  { id: 'cancelAddNodeModalBtn', modalId: 'addNodeModal' },
+  { id: 'closeEditNodeModalBtn', modalId: 'editNodeModal' },
+  { id: 'cancelEditNodeModalBtn', modalId: 'editNodeModal' },
+  { id: 'closeNodeGuideModalBtn', modalId: 'nodeGuideModal' },
+  { id: 'closeNodeGuideBottomBtn', modalId: 'nodeGuideModal' },
+  { id: 'closePingChartModalBtn', modalId: 'pingChartModal' },
+  { id: 'closePingChartBottomBtn', modalId: 'pingChartModal' }
+];
+modalCloseBtnBindings.forEach(binding => {
+  const btn = document.getElementById(binding.id);
+  if (btn && typeof btn.addEventListener === 'function') {
+    btn.addEventListener('click', () => closeModal(binding.modalId));
+  }
+});
+
+// Guide command copy buttons
+const guideCopyBtns = [
+  { id: 'copyGuideInstallBtn', targetId: 'guideInstallCmd' },
+  { id: 'copyGuideRunBtn', targetId: 'guideRunCmd' },
+  { id: 'copyGuideUninstallBtn', targetId: 'guideUninstallCmd' }
+];
+guideCopyBtns.forEach(item => {
+  const btn = document.getElementById(item.id);
+  if (btn && typeof btn.addEventListener === 'function') {
+    btn.addEventListener('click', () => copyGuideCommand(item.targetId));
+  }
+});
+
+// Ping chart range switch buttons
+const btnRange1h = document.getElementById('btnRange1h');
+if (btnRange1h && typeof btnRange1h.addEventListener === 'function') {
+  btnRange1h.addEventListener('click', () => switchPingRange('1h'));
+}
+const btnRange24h = document.getElementById('btnRange24h');
+if (btnRange24h && typeof btnRange24h.addEventListener === 'function') {
+  btnRange24h.addEventListener('click', () => switchPingRange('24h'));
+}
+
+// Global event delegation (backdrop click, Escape key, [data-close-modal])
+if (typeof document.addEventListener === 'function') {
+  document.addEventListener('click', (e) => {
+    const trigger = e.target && typeof e.target.closest === 'function'
+      ? e.target.closest('[data-close-modal], .modal-close')
+      : null;
+    if (trigger) {
+      const modalId = (trigger.dataset && trigger.dataset.closeModal)
+        ? trigger.dataset.closeModal
+        : (trigger.closest && trigger.closest('.modal-overlay') ? trigger.closest('.modal-overlay').id : null);
+      if (modalId) {
+        closeModal(modalId);
+      }
+      return;
+    }
+    if (e.target && e.target.classList && typeof e.target.classList.contains === 'function' && e.target.classList.contains('modal-overlay')) {
+      closeModal(e.target.id);
+    }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' || e.key === 'Esc') {
+      const activeModals = typeof document.querySelectorAll === 'function'
+        ? document.querySelectorAll('.modal-overlay.active')
+        : [];
+      for (let i = 0; i < activeModals.length; i++) {
+        closeModal(activeModals[i].id);
+      }
+    }
+  });
+}
 
 // Theme Toggle
 const themeToggle = document.getElementById('themeToggle');

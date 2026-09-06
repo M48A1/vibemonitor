@@ -252,34 +252,6 @@ func (s *Store) load(defaultPassword, username string) error {
 		return fmt.Errorf("failed to load config from sqlite: %w", err)
 	}
 
-	// 如果数据库中没有配置，自动寻找旧版 JSON 文件（如 vibemonitor-data.json）并触发一次性平滑迁移
-	if cfg == nil {
-		var legacyJSON string
-		if strings.HasSuffix(s.filePath, ".json") {
-			if _, err := os.Stat(s.filePath); err == nil {
-				legacyJSON = s.filePath
-			}
-		} else if strings.HasSuffix(s.filePath, ".db") {
-			candidate := strings.TrimSuffix(s.filePath, ".db") + ".json"
-			if _, err := os.Stat(candidate); err == nil {
-				legacyJSON = candidate
-			}
-		}
-		if legacyJSON == "" {
-			if _, err := os.Stat("vibemonitor-data.json"); err == nil {
-				legacyJSON = "vibemonitor-data.json"
-			}
-		}
-
-		if legacyJSON != "" {
-			if migErr := s.sdb.migrateFromJSON(legacyJSON); migErr == nil {
-				cfg, _ = s.sdb.loadConfig()
-			} else {
-				log.Printf("[Store Migration] Failed to migrate from %s: %v", legacyJSON, migErr)
-			}
-		}
-	}
-
 	if cfg == nil {
 		// 初始配置创建
 		if defaultPassword == "" {
