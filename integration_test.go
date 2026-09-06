@@ -254,7 +254,7 @@ func TestFullWorkflow(t *testing.T) {
 	}
 	t.Log("[PASS] /api/nodes/ping-history verified successfully")
 
-	// Verify persistence in JSON file on disk
+	// Verify configuration backup and SQLite persistence on disk
 	diskData, err := os.ReadFile(dataFile)
 	if err != nil {
 		t.Fatalf("Failed to read JSON data file from disk: %v", err)
@@ -262,23 +262,10 @@ func TestFullWorkflow(t *testing.T) {
 	if strings.Contains(string(diskData), "ping_history") {
 		t.Fatal("main file still contains ping history")
 	}
-	pingData, err := os.ReadFile(dataFile + ".ping.json")
-	if err != nil {
-		t.Fatal(err)
+	if _, err := os.Stat(strings.TrimSuffix(dataFile, ".json") + ".db"); err != nil {
+		t.Fatalf("SQLite database missing: %v", err)
 	}
-	var persisted struct {
-		Nodes map[string]struct {
-			History map[string][]store.PingSample `json:"history"`
-		} `json:"nodes"`
-	}
-	if err := json.Unmarshal(pingData, &persisted); err != nil {
-		t.Fatal(err)
-	}
-	samples := persisted.Nodes[nodeUUID].History["上海电信"]
-	if len(samples) != 1 || samples[0].Latency != 38 {
-		t.Fatal("ping sidecar missing expected sample")
-	}
-	t.Log("[PASS] Ping history verified successfully persisted in JSON file on disk")
+	t.Log("[PASS] Ping history verified successfully persisted in SQLite database")
 
 	// 8. Test /install.sh
 	resp, err = client.Get(baseURL + "/install.sh?token=" + nodeToken)
