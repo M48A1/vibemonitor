@@ -61,6 +61,9 @@ func (s *Store) pruneNodePingLocked(node *Node) {
 		report.PingResults = filterPingResults(report.PingResults, s.targetsLocked(node))
 		node.LastReport = &report
 	}
+	if s.sdb != nil {
+		_ = s.sdb.pruneNodePing(node.UUID, s.targetsLocked(node))
+	}
 }
 
 // Config and the corresponding removal of stale history are one transaction.

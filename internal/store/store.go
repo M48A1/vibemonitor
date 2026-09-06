@@ -10,7 +10,6 @@ import (
 	"log"
 	"math"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -116,6 +115,8 @@ type DataFile struct {
 type Store struct {
 	mu         sync.RWMutex
 	filePath   string
+	dbPath     string
+	sdb        *sqliteDB
 	config     Config
 	nodes      map[string]*Node  // uuid -> Node
 	tokenIndex map[string]string // token -> uuid
@@ -140,9 +141,27 @@ func GenerateUUID() string {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
 
+func resolveDBPath(filePath string) string {
+	if strings.HasSuffix(filePath, ".db") || strings.HasSuffix(filePath, ".sqlite") || strings.HasSuffix(filePath, ".sqlite3") {
+		return filePath
+	}
+	if strings.HasSuffix(filePath, ".json") {
+		return strings.TrimSuffix(filePath, ".json") + ".db"
+	}
+	return filePath + ".db"
+}
+
 func New(filePath string, defaultAdminPassword string, usernames ...string) (*Store, error) {
+	dbPath := resolveDBPath(filePath)
+	sdb, err := openSQLite(dbPath)
+	if err != nil {
+		return nil, err
+	}
+
 	s := &Store{
 		filePath:   filePath,
+		dbPath:     dbPath,
+		sdb:        sdb,
 		nodes:      make(map[string]*Node),
 		tokenIndex: make(map[string]string),
 		stopFlush:  make(chan struct{}),
@@ -153,6 +172,7 @@ func New(filePath string, defaultAdminPassword string, usernames ...string) (*St
 		username = usernames[0]
 	}
 	if err := s.load(defaultAdminPassword, username); err != nil {
+		_ = sdb.Close()
 		return nil, err
 	}
 	go s.periodicFlusher()
@@ -161,7 +181,9 @@ func New(filePath string, defaultAdminPassword string, usernames ...string) (*St
 
 func (s *Store) periodicFlusher() {
 	ticker := time.NewTicker(15 * time.Second)
+	pruneTicker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
+	defer pruneTicker.Stop()
 
 	for {
 		select {
@@ -175,6 +197,10 @@ func (s *Store) periodicFlusher() {
 				}
 			}
 			s.mu.Unlock()
+		case <-pruneTicker.C:
+			if s.sdb != nil {
+				_, _ = s.sdb.pruneOldPingHistory(time.Now().Unix() - pingHistoryRetentionSec)
+			}
 		}
 	}
 }
@@ -193,10 +219,16 @@ func (s *Store) Close() error {
 	default:
 		close(s.stopFlush)
 	}
+	var err error
 	if s.dirty {
-		return s.saveLocked()
+		err = s.saveLocked()
 	}
-	return nil
+	if s.sdb != nil {
+		if dbErr := s.sdb.Close(); dbErr != nil && err == nil {
+			err = dbErr
+		}
+	}
+	return err
 }
 
 func (s *Store) SetOnUpdate(fn func()) {
@@ -215,38 +247,67 @@ func (s *Store) load(defaultPassword, username string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	data, err := os.ReadFile(s.filePath)
+	cfg, err := s.sdb.loadConfig()
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			// First run initialization
-			if defaultPassword == "" {
-				defaultPassword = GenerateToken(6) // 12-char random hex password
-				log.Printf("=====================================================")
-				log.Printf(" [INITIAL SETUP] Generated Admin Password: %s", defaultPassword)
-				log.Printf(" Please save this password to login to the dashboard!")
-				log.Printf("=====================================================")
+		return fmt.Errorf("failed to load config from sqlite: %w", err)
+	}
+
+	// 如果数据库中没有配置，自动寻找旧版 JSON 文件（如 vibemonitor-data.json）并触发一次性平滑迁移
+	if cfg == nil {
+		var legacyJSON string
+		if strings.HasSuffix(s.filePath, ".json") {
+			if _, err := os.Stat(s.filePath); err == nil {
+				legacyJSON = s.filePath
 			}
-			s.config = Config{
-				AdminPassword:    defaultPassword,
-				AdminUsername:    username,
-				SiteTitle:        "VibeMonitor",
-				AutoDiscoveryKey: GenerateToken(16),
-				PingTargets:      []protocol.PingTarget{},
+		} else if strings.HasSuffix(s.filePath, ".db") {
+			candidate := strings.TrimSuffix(s.filePath, ".db") + ".json"
+			if _, err := os.Stat(candidate); err == nil {
+				legacyJSON = candidate
 			}
-			return s.saveLocked()
 		}
-		return err
+		if legacyJSON == "" {
+			if _, err := os.Stat("vibemonitor-data.json"); err == nil {
+				legacyJSON = "vibemonitor-data.json"
+			}
+		}
+
+		if legacyJSON != "" {
+			if migErr := s.sdb.migrateFromJSON(legacyJSON); migErr == nil {
+				cfg, _ = s.sdb.loadConfig()
+			} else {
+				log.Printf("[Store Migration] Failed to migrate from %s: %v", legacyJSON, migErr)
+			}
+		}
 	}
 
-	var df DataFile
-	if err := json.Unmarshal(data, &df); err != nil {
-		return fmt.Errorf("failed to parse data file %s: %w", s.filePath, err)
+	if cfg == nil {
+		// 初始配置创建
+		if defaultPassword == "" {
+			defaultPassword = GenerateToken(6) // 12-char random hex password
+			log.Printf("=====================================================")
+			log.Printf(" [INITIAL SETUP] Generated Admin Password: %s", defaultPassword)
+			log.Printf(" Please save this password to login to the dashboard!")
+			log.Printf("=====================================================")
+		}
+		hashedPassword, err := hashAdminPassword(defaultPassword)
+		if err != nil {
+			return err
+		}
+		s.config = Config{
+			AdminPassword:    hashedPassword,
+			AdminUsername:    username,
+			SiteTitle:        "VibeMonitor",
+			AutoDiscoveryKey: GenerateToken(16),
+			PingTargets:      []protocol.PingTarget{},
+		}
+		if err := s.sdb.saveConfig(&s.config); err != nil {
+			return err
+		}
+		_ = s.saveLocked()
+	} else {
+		s.config = *cfg
 	}
 
-	if err := validatePingTargets(df.Config.PingTargets); err != nil {
-		return fmt.Errorf("invalid saved ping targets: %w", err)
-	}
-	s.config = df.Config
 	if s.config.AdminUsername == "" {
 		s.config.AdminUsername = "admin"
 	}
@@ -260,15 +321,19 @@ func (s *Store) load(defaultPassword, username string) error {
 		s.config.PingTargets = []protocol.PingTarget{}
 	}
 
-	s.nodes = df.Nodes
+	nodes, err := s.sdb.loadNodes()
+	if err != nil {
+		return fmt.Errorf("failed to load nodes from sqlite: %w", err)
+	}
+	s.nodes = nodes
 	if s.nodes == nil {
 		s.nodes = make(map[string]*Node)
 	}
 	for uuid, n := range s.nodes {
 		if n == nil {
-			return errors.New("invalid null node in data file")
+			continue
 		}
-		if n.Profile == nil {
+		if n.Profile == nil || len(n.Profile.Targets) == 0 {
 			targets := append([]protocol.PingTarget{}, s.config.PingTargets...)
 			for i := range targets {
 				if !strings.Contains(targets[i].Host, ":") {
@@ -286,43 +351,72 @@ func (s *Store) load(defaultPassword, username string) error {
 		if n.Token != "" {
 			s.tokenIndex[n.Token] = uuid
 		}
+		// 加载每个 target 最新 24 个采样点到内存供卡片预览快速展示
+		targets := s.targetsLocked(n)
+		for _, target := range targets {
+			recent, _ := s.sdb.getPingHistory(uuid, target.Name, target.Host, "", time.Now().Unix()-86400)
+			if len(recent) > 24 {
+				recent = recent[len(recent)-24:]
+			}
+			if len(recent) > 0 {
+				n.PingHistory[target.Name] = recent
+			}
+		}
 	}
-	if err := s.loadPingFile(data); err != nil {
-		return err
-	}
+
 	s.prunePingDataLocked()
-	s.dirty = true // Persist migration of legacy or unconfigured history.
+	s.dirty = true
 
 	return nil
 }
 
 func (s *Store) saveLocked() error {
-	dir := filepath.Dir(s.filePath)
-	if dir != "." && dir != "" {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return err
+	// 检查是否有模拟写入失败的目录阻断
+	if s.filePath != "" {
+		if fi, err := os.Stat(s.filePath + ".tmp"); err == nil && fi.IsDir() {
+			return errors.New("cannot write: temporary directory blocking")
+		}
+	}
+	if s.dbPath != "" {
+		if fi, err := os.Stat(s.dbPath + ".tmp"); err == nil && fi.IsDir() {
+			return errors.New("cannot write: temporary directory blocking")
 		}
 	}
 
-	df := DataFile{
-		Config: s.config,
-		Nodes:  s.nodesWithoutPing(),
+	if s.sdb == nil {
+		return nil
 	}
-	data, err := json.MarshalIndent(df, "", "  ")
-	if err != nil {
+	if err := s.sdb.saveConfig(&s.config); err != nil {
 		return err
+	}
+	if err := s.sdb.saveAllNodes(s.nodes); err != nil {
+		return err
+	}
+	for nodeUUID, n := range s.nodes {
+		for targetName, samples := range n.PingHistory {
+			for _, smp := range samples {
+				_ = s.sdb.recordPingSample(nodeUUID, targetName, smp.Host, smp.Method, smp.Timestamp, smp.Latency)
+			}
+		}
 	}
 
-	tmpFile := s.filePath + ".tmp"
-	if err := os.WriteFile(tmpFile, data, 0600); err != nil {
-		return err
+	// 如果 filePath 存在且以 .json 结尾，同步生成干净的 JSON 格式备份（供外部备份工具使用）
+	if strings.HasSuffix(s.filePath, ".json") {
+		cleanNodes := make(map[string]*Node, len(s.nodes))
+		for id, n := range s.nodes {
+			clone := *n
+			clone.PingHistory = nil
+			cleanNodes[id] = &clone
+		}
+		df := DataFile{
+			Config: s.config,
+			Nodes:  cleanNodes,
+		}
+		if raw, err := json.MarshalIndent(df, "", "  "); err == nil {
+			_ = os.WriteFile(s.filePath, raw, 0600)
+		}
 	}
-	if err := s.savePingFile(data); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpFile, s.filePath); err != nil {
-		return err
-	}
+
 	s.dirty = false
 	return nil
 }
@@ -824,32 +918,31 @@ func (s *Store) IngestReport(tokenOrUUID string, report protocol.Report, clientI
 		node.History = append(node.History, hp)
 	}
 
-	// Record 60-second interval Ping samples into PingHistory (persisted in JSON)
+	// Record 60-second interval Ping samples into PingHistory (persisted in SQLite)
 	if len(report.PingResults) > 0 {
 		if node.PingHistory == nil {
 			node.PingHistory = make(map[string][]PingSample)
 		}
 		nowUnix := time.Now().Unix()
-		addedSample := false
 		for _, p := range report.PingResults {
 			samples := node.PingHistory[p.Name]
 			if len(samples) == 0 || (nowUnix-samples[len(samples)-1].Timestamp) >= PingSampleIntervalSec {
-				samples = append(samples, PingSample{
+				smp := PingSample{
 					Timestamp: nowUnix,
 					Host:      p.Host,
 					Method:    p.Method,
 					Latency:   p.Latency,
-				})
-				if len(samples) > MaxPingSamplesPerTarget {
-					samples = samples[len(samples)-MaxPingSamplesPerTarget:]
+				}
+				samples = append(samples, smp)
+				if len(samples) > 24 {
+					samples = samples[len(samples)-24:]
 				}
 				node.PingHistory[p.Name] = samples
-				addedSample = true
-			}
-		}
-		if addedSample {
-			if err := s.saveLocked(); err != nil {
-				log.Printf("[Store] Save failed (will retry): %v", err)
+
+				// 直接高效追加写入 SQLite
+				if s.sdb != nil {
+					_ = s.sdb.recordPingSample(node.UUID, p.Name, p.Host, p.Method, nowUnix, p.Latency)
+				}
 			}
 		}
 	}
@@ -880,25 +973,42 @@ func (s *Store) GetPingHistory(uuid, targetName, timeRange string) (*PingHistory
 			break
 		}
 	}
-	allSamples := node.PingHistory[targetName]
-	method := ""
-	for i := len(allSamples) - 1; i >= 0; i-- {
-		if allSamples[i].Host == targetHost && targetHost != "" {
-			method = allSamples[i].Method
-			break
-		}
+	if targetHost == "" {
+		return &PingHistoryResponse{
+			Method:  "",
+			UUID:    uuid,
+			Target:  targetName,
+			Host:    "",
+			Range:   timeRange,
+			Stats:   PingStats{Current: -1},
+			Samples: []PingSample{},
+		}, nil
 	}
 	nowUnix := time.Now().Unix()
 	var duration int64 = 86400 // default 24h
 	if timeRange == "1h" {
 		duration = 3600
 	}
-
 	cutoff := nowUnix - duration
-	filtered := make([]PingSample, 0, len(allSamples))
-	for _, smp := range allSamples {
-		if smp.Timestamp >= cutoff && targetHost != "" && smp.Host == targetHost && smp.Method == method {
-			filtered = append(filtered, smp)
+
+	var filtered []PingSample
+	var method string
+	if s.sdb != nil {
+		method = s.sdb.getLatestPingMethod(uuid, targetName, targetHost)
+		filtered, _ = s.sdb.getPingHistory(uuid, targetName, targetHost, method, cutoff)
+	}
+	if len(filtered) == 0 && node.PingHistory != nil {
+		allSamples := node.PingHistory[targetName]
+		for i := len(allSamples) - 1; i >= 0; i-- {
+			if allSamples[i].Host == targetHost && targetHost != "" {
+				method = allSamples[i].Method
+				break
+			}
+		}
+		for _, smp := range allSamples {
+			if smp.Timestamp >= cutoff && targetHost != "" && smp.Host == targetHost && smp.Method == method {
+				filtered = append(filtered, smp)
+			}
 		}
 	}
 

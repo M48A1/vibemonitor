@@ -212,7 +212,7 @@ function renderPingPanels(node) {
       const cls = !sample ? 'empty' : sample.l<0 ? 'lost' : column ? 'received' : sample.l>250 ? 'slow' : 'fast';
       return `<i class="sample-bar ${cls}" title="${!sample ? '暂无采样' : sample.l<0 ? '超时' : sample.l+' ms'}"></i>`;
     }).join('');
-    return `<button class="ping-sample-row" data-action="ping" data-uuid="${escapeHtml(node.uuid)}" data-target="${escapeHtml(p.name)}" title="24 小时采样统计"><span class="ping-row-heading"><span><b class="target-dot target-${i%3}"></b>${escapeHtml(p.name)}</span><strong>${value}</strong></span><span class="sample-bars">${bars}</span></button>`;
+    return `<button class="ping-sample-row" data-action="ping" data-uuid="${escapeHtml(node.uuid)}" data-target="${escapeHtml(p.name)}" title="点击查看延迟与丢包波动曲线"><span class="ping-row-heading"><span><b class="target-dot target-${i%3}"></b>${escapeHtml(p.name)}</span><strong>${value}</strong></span><span class="sample-bars">${bars}</span></button>`;
   }).join('')}</div>`).join('')+'</div>';
 }
 
@@ -851,24 +851,42 @@ async function loadPingHistory() {
 
     cachedPingSamples = data.samples || [];
 
-    // Time indicators
-    if (cachedPingSamples.length > 0) {
-      const firstT = new Date(cachedPingSamples[0].t * 1000);
-      document.getElementById('chartTimeStart').textContent = firstT.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const lastT = new Date(cachedPingSamples[cachedPingSamples.length - 1].t * 1000);
-      document.getElementById('chartTimeEnd').textContent = lastT.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } else {
-      document.getElementById('chartTimeStart').textContent = currentPingRange === '1h' ? '1小时前' : '24小时前';
-      document.getElementById('chartTimeEnd').textContent = '现在';
-    }
+    const nowSec = Math.floor(Date.now() / 1000);
+    const duration = currentPingRange === '1h' ? 3600 : 86400;
+    const startSec = nowSec - duration;
 
-    renderPingSvgChart(cachedPingSamples, currentPingRange);
+    // Time indicators
+    const is24h = currentPingRange === '24h';
+    document.getElementById('chartTimeStart').textContent = formatChartTime(startSec, is24h);
+    document.getElementById('chartTimeEnd').textContent = `现在 (${formatChartTime(nowSec, is24h)})`;
+
+    renderPingSvgChart(cachedPingSamples, currentPingRange, null, startSec, nowSec);
   } catch (e) {
     renderPingSvgChart([], currentPingRange, e.message);
   }
 }
 
-function renderPingSvgChart(samples, range, errorMsg) {
+function formatChartTime(tSec, showDate) {
+  const d = new Date(tSec * 1000);
+  const h = String(d.getHours()).padStart(2, '0');
+  const m = String(d.getMinutes()).padStart(2, '0');
+  if (showDate) {
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${month}-${day} ${h}:${m}`;
+  }
+  return `${h}:${m}`;
+}
+
+function formatTooltipTime(tSec) {
+  const d = new Date(tSec * 1000);
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return `${month}-${day} ${timeStr}`;
+}
+
+function renderPingSvgChart(samples, range, errorMsg, startSec, nowSec) {
   const svg = document.getElementById('pingChartSvg');
   const tooltip = document.getElementById('chartTooltip');
   if (tooltip) tooltip.style.display = 'none';
@@ -891,6 +909,9 @@ function renderPingSvgChart(samples, range, errorMsg) {
     return;
   }
 
+  const duration = (nowSec && startSec && nowSec > startSec) ? (nowSec - startSec) : (range === '1h' ? 3600 : 86400);
+  const baseStart = startSec || (Math.floor(Date.now() / 1000) - duration);
+
   // Find max latency for Y scale
   let maxLat = 50;
   samples.forEach(s => {
@@ -911,38 +932,51 @@ function renderPingSvgChart(samples, range, errorMsg) {
     `;
   }
 
-  // Calculate coordinates for points
-  const points = samples.map((s, idx) => {
-    const x = samples.length === 1 ? (padL + plotW / 2) : (padL + (idx / (samples.length - 1)) * plotW);
+  // Calculate coordinates based on true time offset from start
+  const points = samples.map(s => {
+    const timeOffset = Math.max(0, Math.min(duration, s.t - baseStart));
+    const x = padL + (timeOffset / duration) * plotW;
     const isLoss = s.l < 0;
     const y = isLoss ? (padT + plotH) : (padT + plotH - (s.l / maxLat) * plotH);
     return { x, y, l: s.l, t: s.t, isLoss };
-  });
+  }).sort((a, b) => a.x - b.x);
 
-  // Build SVG path
+  // Build SVG path (遇丢包分段断开，避免直插底部尖刺)
   let pathD = '';
   let areaD = '';
   let lossDots = '';
   let hasValid = false;
 
-  points.forEach((pt, i) => {
-    if (i === 0) {
-      pathD += `M ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`;
-      areaD += `M ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`;
-    } else {
-      pathD += ` L ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`;
-      areaD += ` L ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`;
-    }
+  let inSegment = false;
+  let segStart = null;
+  let prevPt = null;
+
+  points.forEach(pt => {
     if (pt.isLoss) {
-      lossDots += `<circle cx="${pt.x.toFixed(1)}" cy="${pt.y.toFixed(1)}" r="4" fill="#f43f5e" />`;
+      lossDots += `<circle cx="${pt.x.toFixed(1)}" cy="${padT + plotH - 3}" r="3.5" fill="#f43f5e" opacity="0.85" />`;
+      if (inSegment && prevPt && segStart) {
+        areaD += ` L ${prevPt.x.toFixed(1)} ${padT + plotH} L ${segStart.x.toFixed(1)} ${padT + plotH} Z`;
+      }
+      inSegment = false;
+      segStart = null;
+      prevPt = null;
     } else {
       hasValid = true;
+      if (!inSegment) {
+        pathD += ` M ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`;
+        areaD += ` M ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`;
+        segStart = pt;
+        inSegment = true;
+      } else {
+        pathD += ` L ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`;
+        areaD += ` L ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`;
+      }
+      prevPt = pt;
     }
   });
-
-  const lastPt = points[points.length - 1];
-  const firstPt = points[0];
-  areaD += ` L ${lastPt.x.toFixed(1)} ${padT + plotH} L ${firstPt.x.toFixed(1)} ${padT + plotH} Z`;
+  if (inSegment && prevPt && segStart) {
+    areaD += ` L ${prevPt.x.toFixed(1)} ${padT + plotH} L ${segStart.x.toFixed(1)} ${padT + plotH} Z`;
+  }
 
   const lineColor = hasValid ? '#06b6d4' : '#f43f5e';
   const gradId = 'pingGrad_' + Math.random().toString(36).substr(2, 6);
@@ -955,13 +989,25 @@ function renderPingSvgChart(samples, range, errorMsg) {
       </linearGradient>
     </defs>
     ${gridSvg}
-    <path d="${areaD}" fill="url(#${gradId})" />
-    <path d="${pathD}" fill="none" stroke="${lineColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+    ${areaD ? `<path d="${areaD}" fill="url(#${gradId})" />` : ''}
+    ${pathD ? `<path d="${pathD}" fill="none" stroke="${lineColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />` : ''}
     ${lossDots}
     <line id="hoverLine" x1="0" y1="${padT}" x2="0" y2="${padT + plotH}" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="2,2" style="display: none;" />
     <circle id="hoverPoint" cx="0" cy="0" r="4.5" fill="#38bdf8" stroke="#ffffff" stroke-width="2" style="display: none;" />
     <rect x="${padL}" y="${padT}" width="${plotW}" height="${plotH}" fill="transparent" id="chartHitBox" style="cursor: crosshair;" />
   `;
+
+  // 二分查找最近的采样点
+  function findClosestPoint(pts, xVal) {
+    if (pts.length === 1) return pts[0];
+    let low = 0, high = pts.length - 1;
+    while (low < high - 1) {
+      const mid = (low + high) >> 1;
+      if (pts[mid].x < xVal) low = mid;
+      else high = mid;
+    }
+    return Math.abs(pts[low].x - xVal) <= Math.abs(pts[high].x - xVal) ? pts[low] : pts[high];
+  }
 
   // Interactive mouse tracking
   const hitBox = svg.querySelector('#chartHitBox');
@@ -978,28 +1024,19 @@ function renderPingSvgChart(samples, range, errorMsg) {
       return;
     }
 
-    let closest = points[0];
-    let minDiff = Infinity;
-    points.forEach(pt => {
-      const diff = Math.abs(pt.x - mouseX);
-      if (diff < minDiff) {
-        minDiff = diff;
-        closest = pt;
-      }
-    });
+    const closest = findClosestPoint(points, mouseX);
 
     hoverLine.setAttribute('x1', closest.x);
     hoverLine.setAttribute('x2', closest.x);
     hoverLine.style.display = 'block';
 
     hoverPoint.setAttribute('cx', closest.x);
-    hoverPoint.setAttribute('cy', closest.y);
+    hoverPoint.setAttribute('cy', closest.isLoss ? (padT + plotH - 3) : closest.y);
     hoverPoint.setAttribute('fill', closest.isLoss ? '#f43f5e' : '#38bdf8');
     hoverPoint.style.display = 'block';
 
     if (tooltip) {
-      const tDate = new Date(closest.t * 1000);
-      const timeStr = tDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const timeStr = formatTooltipTime(closest.t);
       const valStr = closest.isLoss ? `<strong style="color: #f43f5e;">丢包 (超时)</strong>` : `延迟: <strong>${closest.l} ms</strong>`;
       tooltip.innerHTML = `<div>${timeStr}</div><div>${valStr}</div>`;
       tooltip.style.display = 'block';
