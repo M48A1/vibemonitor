@@ -245,6 +245,7 @@ Description=VibeMonitor Agent
 After=network-online.target
 [Service]
 Type=simple
+Environment=GOMEMLIMIT=25MiB
 ExecStart=$(unit_arg "$INSTALL_BIN") agent --server $(unit_arg "$server") --token $(unit_arg "$token") --interval $(unit_arg "$interval")
 Restart=always
 RestartSec=5

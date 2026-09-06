@@ -146,8 +146,37 @@ func readCPUStats() (total, idle uint64, err error) {
 	if err != nil {
 		return 0, 0, err
 	}
-	lines := strings.Split(string(data), "\n")
-	for _, line := range lines {
+
+	// Fast-path: The aggregated "cpu " metric is always on the first line
+	var firstLine string
+	if idx := bytes.IndexByte(data, '\n'); idx != -1 {
+		firstLine = string(data[:idx])
+	} else {
+		firstLine = string(data)
+	}
+
+	if strings.HasPrefix(firstLine, "cpu ") {
+		fields := strings.Fields(firstLine)
+		if len(fields) < 5 {
+			return 0, 0, fmt.Errorf("invalid cpu format")
+		}
+		var sum uint64
+		for i := 1; i < len(fields); i++ {
+			v, _ := strconv.ParseUint(fields[i], 10, 64)
+			sum += v
+		}
+		idleVal, _ := strconv.ParseUint(fields[4], 10, 64)
+		var iowaitVal uint64
+		if len(fields) >= 6 {
+			iowaitVal, _ = strconv.ParseUint(fields[5], 10, 64)
+		}
+		return sum, idleVal + iowaitVal, nil
+	}
+
+	// Fallback in case "cpu " is not the very first line
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	for scanner.Scan() {
+		line := scanner.Text()
 		if strings.HasPrefix(line, "cpu ") {
 			fields := strings.Fields(line)
 			if len(fields) < 5 {
@@ -275,31 +304,75 @@ func readNetDev() (totalDown, totalUp int64, err error) {
 }
 
 func countLinesInFile(path string) int {
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return 0
 	}
-	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-	if len(lines) <= 1 {
+	defer f.Close()
+
+	buf := make([]byte, 8192)
+	lineCount := 0
+	hasData := false
+	lastByteWasLF := false
+
+	for {
+		n, err := f.Read(buf)
+		if n > 0 {
+			hasData = true
+			for i := 0; i < n; i++ {
+				if buf[i] == '\n' {
+					lineCount++
+				}
+			}
+			lastByteWasLF = (buf[n-1] == '\n')
+		}
+		if err != nil {
+			break
+		}
+	}
+
+	if !hasData {
 		return 0
 	}
-	return len(lines) - 1 // subtract header
+	if !lastByteWasLF {
+		lineCount++
+	}
+	if lineCount <= 1 {
+		return 0
+	}
+	return lineCount - 1 // subtract header
 }
 
 func countProcesses() int {
-	entries, err := os.ReadDir("/proc")
+	f, err := os.Open("/proc")
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+
+	names, err := f.Readdirnames(-1)
 	if err != nil {
 		return 0
 	}
 	count := 0
-	for _, entry := range entries {
-		if entry.IsDir() {
-			if _, err := strconv.Atoi(entry.Name()); err == nil {
-				count++
-			}
+	for _, name := range names {
+		if isAllDigits(name) {
+			count++
 		}
 	}
 	return count
+}
+
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func readUptime() int64 {

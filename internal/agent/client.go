@@ -44,6 +44,8 @@ type Client struct {
 	pingTrigger chan struct{}
 }
 
+const maxPingConcurrency = 8
+
 func New(opts Options) *Client {
 	if opts.Interval <= 0 {
 		opts.Interval = 3 * time.Second
@@ -57,6 +59,19 @@ func New(opts Options) *Client {
 		collector: monitor.NewCollector(),
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
+			Transport: &http.Transport{
+				Proxy: http.ProxyFromEnvironment,
+				DialContext: (&net.Dialer{
+					Timeout:   5 * time.Second,
+					KeepAlive: 30 * time.Second,
+				}).DialContext,
+				ForceAttemptHTTP2:     true,
+				MaxIdleConns:          10,
+				MaxIdleConnsPerHost:   5,
+				IdleConnTimeout:       90 * time.Second,
+				TLSHandshakeTimeout:   5 * time.Second,
+				ExpectContinueTimeout: 1 * time.Second,
+			},
 		},
 		pingTrigger: make(chan struct{}, 1),
 	}
@@ -92,7 +107,10 @@ func (c *Client) postRPC(method string, params any) (*protocol.Response, error) 
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -255,10 +273,13 @@ func (c *Client) measurePings() {
 
 	var wg sync.WaitGroup
 	results := make([]protocol.PingResult, len(targets))
+	sem := make(chan struct{}, maxPingConcurrency)
 	for i, t := range targets {
 		wg.Add(1)
+		sem <- struct{}{}
 		go func(idx int, target protocol.PingTarget) {
 			defer wg.Done()
+			defer func() { <-sem }()
 			latency, method := pingHost(target.Host, 2*time.Second)
 			results[idx] = protocol.PingResult{
 				Name:    target.Name,
