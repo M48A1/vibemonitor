@@ -37,7 +37,7 @@ func New(opts Options) (*Server, error) {
 		opts.ListenAddr = "0.0.0.0:1314"
 	}
 	if opts.DataFile == "" {
-		opts.DataFile = "vibemonitor-data.json"
+		opts.DataFile = "vibemonitor-data.db"
 	}
 
 	st, err := store.New(opts.DataFile, opts.AdminPassword, opts.AdminUsername)

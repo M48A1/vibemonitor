@@ -9,15 +9,24 @@ import (
 	"vibemonitor/pkg/protocol"
 )
 
+func cleanTestDataFile(dataFile string) {
+	_ = os.Remove(dataFile)
+	dbPath := resolveDBPath(dataFile)
+	_ = os.Remove(dbPath)
+	_ = os.Remove(dbPath + "-wal")
+	_ = os.Remove(dbPath + "-shm")
+}
+
 func TestStoreConcurrency(t *testing.T) {
 	dataFile := "test-store-concurrency.json"
-	_ = os.Remove(dataFile)
-	defer os.Remove(dataFile)
+	cleanTestDataFile(dataFile)
+	defer cleanTestDataFile(dataFile)
 
 	st, err := New(dataFile, "pass123")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
+	defer st.Close()
 
 	if !st.VerifyAdminPassword("pass123") {
 		t.Fatalf("Password verification failed")
@@ -50,13 +59,14 @@ func TestStoreConcurrency(t *testing.T) {
 
 func TestGetNodesRedactsBasicInfoIPs(t *testing.T) {
 	dataFile := "test-store-redaction.json"
-	_ = os.Remove(dataFile)
-	defer os.Remove(dataFile)
+	cleanTestDataFile(dataFile)
+	defer cleanTestDataFile(dataFile)
 
 	st, err := New(dataFile, "pass123")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
+	defer st.Close()
 	node, err := st.CreateNode("node", "default", "US")
 	if err != nil {
 		t.Fatalf("CreateNode failed: %v", err)
@@ -105,13 +115,14 @@ func TestGetBillingCycleRange(t *testing.T) {
 
 func TestTrafficAccounting(t *testing.T) {
 	dataFile := "test-store-traffic.json"
-	_ = os.Remove(dataFile)
-	defer os.Remove(dataFile)
+	cleanTestDataFile(dataFile)
+	defer cleanTestDataFile(dataFile)
 
 	st, err := New(dataFile, "pass123")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
+	defer st.Close()
 
 	// Create node: 1000GB limit, 15th reset day, 250GB initial used
 	node, err := st.CreateNodeWithOptions(NodeOptions{
@@ -195,13 +206,14 @@ func TestTrafficAccounting(t *testing.T) {
 
 func TestPingMonitoring(t *testing.T) {
 	dataFile := "test-store-ping.json"
-	_ = os.Remove(dataFile)
-	defer os.Remove(dataFile)
+	cleanTestDataFile(dataFile)
+	defer cleanTestDataFile(dataFile)
 
 	st, err := New(dataFile, "pass123")
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
+	defer st.Close()
 
 	targets := []protocol.PingTarget{
 		{Name: "上海电信", Host: "180.153.28.1:80"},

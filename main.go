@@ -41,7 +41,7 @@ Commands:
 
 Server Options:
   --listen, -l            Address to listen on (default: 0.0.0.0:1314, env: VIBEMONITOR_LISTEN)
-  --data, -d              Path to data storage file (default: vibemonitor-data.json, env: VIBEMONITOR_DATA)
+  --data, -d              Path to data storage file (default: vibemonitor-data.db, env: VIBEMONITOR_DATA)
   --admin-password, -p    Initial admin password (first run only, env: VIBEMONITOR_ADMIN_PASSWORD)
 
 Agent Options:
@@ -62,7 +62,7 @@ func runServer(args []string) {
 	fs := flag.NewFlagSet("server", flag.ExitOnError)
 	listen := fs.String("listen", getEnv("VIBEMONITOR_LISTEN", "0.0.0.0:1314"), "Address to listen on")
 	fs.StringVar(listen, "l", *listen, "Address to listen on (shorthand)")
-	data := fs.String("data", getEnv("VIBEMONITOR_DATA", "vibemonitor-data.json"), "Path to data file")
+	data := fs.String("data", getEnv("VIBEMONITOR_DATA", "vibemonitor-data.db"), "Path to data file")
 	fs.StringVar(data, "d", *data, "Path to data file (shorthand)")
 	adminUser := fs.String("admin-username", getEnv("VIBEMONITOR_ADMIN_USERNAME", "admin"), "Initial admin username (first run only)")
 	adminPass := fs.String("admin-password", getEnv("VIBEMONITOR_ADMIN_PASSWORD", ""), "Initial admin password (first run only)")
