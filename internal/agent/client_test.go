@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"vibemonitor/pkg/protocol"
 )
 
 func TestTokenOnlyInHeader(t *testing.T) {
@@ -37,5 +39,38 @@ func TestTCPMeasurementLabelsProtocol(t *testing.T) {
 	latency, method := pingHost(listener.Addr().String(), time.Second)
 	if latency < 0 || method != "tcp" {
 		t.Fatalf("measurement: %d %s", latency, method)
+	}
+}
+
+func TestMeasurePingsConcurrency(t *testing.T) {
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	c := New(Options{ServerURL: "http://127.0.0.1", Token: "test"})
+
+	// Create 12 targets, exceeding maxPingConcurrency (8) to exercise semaphore
+	targets := make([]protocol.PingTarget, 12)
+	for i := 0; i < 12; i++ {
+		targets[i] = protocol.PingTarget{
+			Name: "target",
+			Host: listener.Addr().String(),
+		}
+	}
+	c.pingTargets = targets
+
+	c.measurePings()
+
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if len(c.pingResults) != 12 {
+		t.Fatalf("expected 12 ping results, got %d", len(c.pingResults))
+	}
+	for i, res := range c.pingResults {
+		if res.Latency < 0 || res.Method != "tcp" {
+			t.Errorf("result %d unexpected: %+v", i, res)
+		}
 	}
 }
