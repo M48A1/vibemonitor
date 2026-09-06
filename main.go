@@ -40,7 +40,7 @@ Commands:
   help      Show this help message
 
 Server Options:
-  --listen, -l            Address to listen on (default: 0.0.0.0:1314, env: VIBEMONITOR_LISTEN)
+  --listen, -l            Address to listen on (default: [::]:1314, env: VIBEMONITOR_LISTEN)
   --data, -d              Path to data storage file (default: vibemonitor-data.db, env: VIBEMONITOR_DATA)
   --admin-password, -p    Initial admin password (first run only, env: VIBEMONITOR_ADMIN_PASSWORD)
 
@@ -60,7 +60,7 @@ Examples:
 
 func runServer(args []string) {
 	fs := flag.NewFlagSet("server", flag.ExitOnError)
-	listen := fs.String("listen", getEnv("VIBEMONITOR_LISTEN", "0.0.0.0:1314"), "Address to listen on")
+	listen := fs.String("listen", getEnv("VIBEMONITOR_LISTEN", "[::]:1314"), "Address to listen on")
 	fs.StringVar(listen, "l", *listen, "Address to listen on (shorthand)")
 	data := fs.String("data", getEnv("VIBEMONITOR_DATA", "vibemonitor-data.db"), "Path to data file")
 	fs.StringVar(data, "d", *data, "Path to data file (shorthand)")
