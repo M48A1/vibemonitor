@@ -88,12 +88,16 @@ window.closeModal = function(id) {
   if (m && m.classList && typeof m.classList.remove === 'function') {
     m.classList.remove('active');
   }
-  // Reset login password field to plain text so browsers won't detect it
+  // Reset password fields to plain text so browsers won't detect them
   if (id === 'loginModal') {
     const pwInput = document.getElementById('loginPassword');
     if (pwInput) { pwInput.type = 'text'; pwInput.value = ''; pwInput.autocomplete = 'off'; }
     const unInput = document.getElementById('loginUsername');
     if (unInput) { unInput.autocomplete = 'off'; }
+  }
+  if (id === 'settingsModal') {
+    const spInput = document.getElementById('settingNewPassword');
+    if (spInput) { spInput.type = 'text'; spInput.value = ''; spInput.autocomplete = 'off'; }
   }
 };
 
@@ -619,6 +623,9 @@ window.deleteNode = async function(uuid) {
 // Event Listeners
 document.getElementById('adminBtn').addEventListener('click', () => {
   if (isAdmin) {
+    const spInput = document.getElementById('settingNewPassword');
+    spInput.type = 'password';
+    spInput.autocomplete = 'new-password';
     openModal('settingsModal');
     fetchSettingsForAdmin();
   } else {

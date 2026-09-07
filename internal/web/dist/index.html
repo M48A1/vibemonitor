@@ -31,7 +31,7 @@
       </div>
       <div class="nav-actions">
         <div class="nav-speed" aria-label="实时网络速率"><span id="statNetUp">↑ 0 B/s</span><span id="statNetDown">↓ 0 B/s</span></div>
-        <button class="btn" id="themeToggle" title="切换深色/浅色主题">🌓 主题</button>
+        <button class="btn" id="themeToggle" title="切换深色/浅色主题">🌓</button>
         <button class="btn btn-primary" id="adminBtn">⚙️ 管理</button>
       </div>
     </header>
@@ -81,7 +81,7 @@
         <div class="form-group"><label class="form-label">网站名称</label><input class="form-input" id="settingSiteTitle" maxlength="80"></div>
         <div class="form-group"><label class="form-label">图表公告</label><input class="form-input" id="settingAnnouncement" maxlength="200"></div>
         <div class="form-group"><label class="form-label">网站图标（图片 URL）</label><input class="form-input" id="settingSiteIcon" type="url" maxlength="2048" placeholder="https://example.com/favicon.png"></div>
-        <div class="form-group"><label class="form-label">新管理员密码（留空则不修改）</label><input type="password" class="form-input" id="settingNewPassword" minlength="8" autocomplete="new-password"></div>
+        <div class="form-group"><label class="form-label">新管理员密码（留空则不修改）</label><input type="text" class="form-input" id="settingNewPassword" minlength="8" autocomplete="off"></div>
         <div style="display:flex;justify-content:space-between;gap:10px;margin-top:14px;"><button type="button" class="btn btn-danger" id="logoutBtn">退出登录</button><div style="display:flex;gap:10px;"><button type="button" class="btn" id="cancelSettingsModalBtn" data-close-modal="settingsModal">取消</button><button type="submit" class="btn btn-primary">保存</button></div></div>
       </form>
     </div>
