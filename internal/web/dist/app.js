@@ -88,6 +88,13 @@ window.closeModal = function(id) {
   if (m && m.classList && typeof m.classList.remove === 'function') {
     m.classList.remove('active');
   }
+  // Reset login password field to plain text so browsers won't detect it
+  if (id === 'loginModal') {
+    const pwInput = document.getElementById('loginPassword');
+    if (pwInput) { pwInput.type = 'text'; pwInput.value = ''; pwInput.autocomplete = 'off'; }
+    const unInput = document.getElementById('loginUsername');
+    if (unInput) { unInput.autocomplete = 'off'; }
+  }
 };
 
 // Bind modal overlay backdrop click to close
@@ -616,7 +623,11 @@ document.getElementById('adminBtn').addEventListener('click', () => {
     fetchSettingsForAdmin();
   } else {
     document.getElementById('loginError').style.display = 'none';
-    document.getElementById('loginPassword').value = '';
+    const pwInput = document.getElementById('loginPassword');
+    pwInput.value = '';
+    pwInput.type = 'password';
+    pwInput.autocomplete = 'current-password';
+    document.getElementById('loginUsername').autocomplete = 'username';
     openModal('loginModal');
   }
 });
