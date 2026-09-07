@@ -43,13 +43,19 @@ type PingStats struct {
 }
 
 type PingHistoryResponse struct {
-	Method  string       `json:"method,omitempty"`
-	UUID    string       `json:"uuid"`
-	Target  string       `json:"target"`
-	Host    string       `json:"host,omitempty"`
-	Range   string       `json:"range"` // "1h" or "24h"
-	Stats   PingStats    `json:"stats"`
-	Samples []PingSample `json:"samples"`
+	Method           string            `json:"method,omitempty"`
+	UUID             string            `json:"uuid"`
+	Target           string            `json:"target"`
+	Host             string            `json:"host,omitempty"`
+	Range            string            `json:"range"` // "1h" or "24h"
+	Stats            PingStats         `json:"stats"`
+	Samples          []PingSample      `json:"samples"`
+	OfflineIntervals []OfflineInterval `json:"offline_intervals,omitempty"`
+}
+
+type OfflineInterval struct {
+	Start int64 `json:"start"`
+	End   int64 `json:"end"`
 }
 
 type HistoryPoint struct {
@@ -963,6 +969,7 @@ func (s *Store) GetPingHistory(uuid, targetName, timeRange string) (*PingHistory
 	}
 	cutoff := nowUnix - duration
 
+
 	var filtered []PingSample
 	var method string
 	if s.sdb != nil {
@@ -981,6 +988,58 @@ func (s *Store) GetPingHistory(uuid, targetName, timeRange string) (*PingHistory
 			if smp.Timestamp >= cutoff && targetHost != "" && smp.Host == targetHost && smp.Method == method {
 				filtered = append(filtered, smp)
 			}
+		}
+	}
+
+	// Detect offline intervals from gaps in persistent ping samples.
+	// Ping samples are recorded every PingSampleIntervalSec (60s).
+	// A gap significantly larger than this indicates the probe was offline.
+	sampleGapThreshold := int64(PingSampleIntervalSec * 3) // 180s
+	offlineIntervals := make([]OfflineInterval, 0)
+	if len(filtered) > 0 {
+		// Leading edge: node existed before window but first sample arrives much later
+		nodeCreated := node.CreatedAt.Unix()
+		effectiveStart := cutoff
+		if nodeCreated > effectiveStart {
+			effectiveStart = nodeCreated
+		}
+		if filtered[0].Timestamp-effectiveStart > sampleGapThreshold {
+			offlineIntervals = append(offlineIntervals, OfflineInterval{
+				Start: effectiveStart,
+				End:   filtered[0].Timestamp,
+			})
+		}
+
+		// Gaps between consecutive samples
+		for i := 1; i < len(filtered); i++ {
+			gap := filtered[i].Timestamp - filtered[i-1].Timestamp
+			if gap > sampleGapThreshold {
+				start := filtered[i-1].Timestamp + int64(PingSampleIntervalSec)
+				end := filtered[i].Timestamp
+				if end > start {
+					offlineIntervals = append(offlineIntervals, OfflineInterval{Start: start, End: end})
+				}
+			}
+		}
+
+		// Trailing edge: last sample is old — node currently offline or not reporting
+		lastSampleTime := filtered[len(filtered)-1].Timestamp
+		if nowUnix-lastSampleTime > sampleGapThreshold {
+			start := lastSampleTime + int64(PingSampleIntervalSec)
+			if start < nowUnix {
+				offlineIntervals = append(offlineIntervals, OfflineInterval{Start: start, End: nowUnix})
+			}
+		}
+	} else if !node.Online && node.LastSeen.Unix() > 0 {
+		// No samples in the window at all. If the node is offline,
+		// mark the relevant portion as an offline interval.
+		nodeCreated := node.CreatedAt.Unix()
+		effectiveStart := cutoff
+		if nodeCreated > effectiveStart {
+			effectiveStart = nodeCreated
+		}
+		if nowUnix > effectiveStart {
+			offlineIntervals = append(offlineIntervals, OfflineInterval{Start: effectiveStart, End: nowUnix})
 		}
 	}
 
@@ -1022,15 +1081,31 @@ func (s *Store) GetPingHistory(uuid, targetName, timeRange string) (*PingHistory
 		}
 		stats.PacketLoss = math.Round(float64(lostCount)/float64(len(filtered))*1000.0) / 10.0
 	}
+	// Missing reports during probe outages represent missed expected samples.
+	// Count them in packet loss, while keeping the outage intervals separate in the response.
+	offlineSamples := 0
+	for _, interval := range offlineIntervals {
+		d := interval.End - interval.Start
+		if d > 0 {
+			offlineSamples += int((d + int64(PingSampleIntervalSec) - 1) / int64(PingSampleIntervalSec))
+		}
+	}
+	if offlineSamples > 0 {
+		observed := stats.TotalCount
+		stats.TotalCount += offlineSamples
+		lost := math.Round((stats.PacketLoss / 100.0) * float64(observed))
+		stats.PacketLoss = math.Round((lost+float64(offlineSamples))/float64(stats.TotalCount)*1000.0) / 10.0
+	}
 
 	return &PingHistoryResponse{
-		Method:  method,
-		UUID:    uuid,
-		Target:  targetName,
-		Host:    targetHost,
-		Range:   timeRange,
-		Stats:   stats,
-		Samples: filtered,
+		Method:           method,
+		UUID:             uuid,
+		Target:           targetName,
+		Host:             targetHost,
+		Range:            timeRange,
+		Stats:            stats,
+		Samples:          filtered,
+		OfflineIntervals: offlineIntervals,
 	}, nil
 }
 
