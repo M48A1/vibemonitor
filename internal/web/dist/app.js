@@ -975,7 +975,7 @@ async function loadPingHistory() {
     document.getElementById('chartTimeStart').textContent = formatChartTime(startSec, is24h);
     document.getElementById('chartTimeEnd').textContent = `现在 (${formatChartTime(nowSec, is24h)})`;
 
-    renderPingSvgChart(cachedPingSamples, currentPingRange, null, startSec, nowSec);
+    renderPingSvgChart(cachedPingSamples, currentPingRange, null, startSec, nowSec, data.offline_intervals || []);
   } catch (e) {
     renderPingSvgChart([], currentPingRange, e.message);
   }
@@ -1001,7 +1001,7 @@ function formatTooltipTime(tSec) {
   return `${month}-${day} ${timeStr}`;
 }
 
-function renderPingSvgChart(samples, range, errorMsg, startSec, nowSec) {
+function renderPingSvgChart(samples, range, errorMsg, startSec, nowSec, offlineIntervals = []) {
   const svg = document.getElementById('pingChartSvg');
   const tooltip = document.getElementById('chartTooltip');
   if (tooltip) tooltip.style.display = 'none';
@@ -1015,7 +1015,7 @@ function renderPingSvgChart(samples, range, errorMsg, startSec, nowSec) {
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
 
-  if (errorMsg || !samples || samples.length === 0) {
+  if (errorMsg || ((!samples || samples.length === 0) && (!offlineIntervals || offlineIntervals.length === 0))) {
     svg.innerHTML = `
       <text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="#94a3b8" font-size="13" font-family="system-ui">
         ${errorMsg ? '获取数据失败: ' + errorMsg : '暂无历史时序数据，探针正在每 60 秒记录持久化中...'}
@@ -1026,6 +1026,13 @@ function renderPingSvgChart(samples, range, errorMsg, startSec, nowSec) {
 
   const duration = (nowSec && startSec && nowSec > startSec) ? (nowSec - startSec) : (range === '1h' ? 3600 : 86400);
   const baseStart = startSec || (Math.floor(Date.now() / 1000) - duration);
+
+  const offlineSvg = offlineIntervals.map(iv => {
+    const left = padL + (Math.max(0, iv.start - baseStart) / duration) * plotW;
+    const right = padL + (Math.min(duration, iv.end - baseStart) / duration) * plotW;
+    if (right <= left) return '';
+    return `<rect x="${left.toFixed(1)}" y="${padT}" width="${(right-left).toFixed(1)}" height="${plotH}" fill="#64748b" opacity="0.22"><title>探针离线：${formatTooltipTime(iv.start)} - ${formatTooltipTime(iv.end)}</title></rect>`;
+  }).join('');
 
   // Find max latency for Y scale
   let maxLat = 50;
@@ -1104,6 +1111,7 @@ function renderPingSvgChart(samples, range, errorMsg, startSec, nowSec) {
       </linearGradient>
     </defs>
     ${gridSvg}
+    ${offlineSvg}
     ${areaD ? `<path d="${areaD}" fill="url(#${gradId})" />` : ''}
     ${pathD ? `<path d="${pathD}" fill="none" stroke="${lineColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />` : ''}
     ${lossDots}
