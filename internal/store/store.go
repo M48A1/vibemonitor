@@ -10,6 +10,7 @@ import (
 	"log"
 	"math"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -107,7 +108,6 @@ type Config struct {
 	AdminUsername    string                `json:"admin_username"`
 	AdminPassword    string                `json:"admin_password"`
 	SiteTitle        string                `json:"site_title"`
-	Announcement     string                `json:"announcement"`
 	SiteIcon         string                `json:"site_icon,omitempty"`
 	AutoDiscoveryKey string                `json:"auto_discovery_key"`
 	PingTargets      []protocol.PingTarget `json:"ping_targets"`
@@ -183,6 +183,19 @@ func New(filePath string, defaultAdminPassword string, usernames ...string) (*St
 	}
 	go s.periodicFlusher()
 	return s, nil
+}
+
+// DataDir returns the directory containing the database and local data files.
+func (s *Store) DataDir() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.dbPath != "" {
+		return filepath.Dir(s.dbPath)
+	}
+	if s.filePath != "" {
+		return filepath.Dir(s.filePath)
+	}
+	return "."
 }
 
 func (s *Store) periodicFlusher() {
@@ -462,7 +475,7 @@ func (s *Store) GetConfig() Config {
 	return s.config
 }
 
-func (s *Store) UpdateConfig(title, announcement, autoKey string, pingTargets []protocol.PingTarget) error {
+func (s *Store) UpdateConfig(title, autoKey string, pingTargets []protocol.PingTarget) error {
 	if err := validatePingTargets(pingTargets); err != nil {
 		return err
 	}
@@ -472,7 +485,6 @@ func (s *Store) UpdateConfig(title, announcement, autoKey string, pingTargets []
 	if title != "" {
 		next.SiteTitle = title
 	}
-	next.Announcement = announcement
 	if autoKey != "" {
 		next.AutoDiscoveryKey = autoKey
 	}

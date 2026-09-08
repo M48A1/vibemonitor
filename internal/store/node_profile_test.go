@@ -76,7 +76,7 @@ func TestLegacyTargetsBecomeIndependent(t *testing.T) {
 	if reopened.GetNode(node.UUID).Profile == nil {
 		t.Fatal("legacy targets not migrated")
 	}
-	if err := reopened.UpdateSettings("", "", []protocol.PingTarget{{Name: "changed", Host: "example.com:443"}}, ""); err != nil {
+	if err := reopened.UpdateSettings("", []protocol.PingTarget{{Name: "changed", Host: "example.com:443"}}, ""); err != nil {
 		t.Fatal(err)
 	}
 	targets := reopened.NodeTargets(node.UUID)

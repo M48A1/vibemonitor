@@ -220,7 +220,7 @@ func TestPingMonitoring(t *testing.T) {
 		{Name: "广州移动", Host: "120.196.165.2:80"},
 	}
 
-	if err := st.UpdateConfig("", "", "", targets); err != nil {
+	if err := st.UpdateConfig("", "", targets); err != nil {
 		t.Fatalf("UpdateConfig with targets failed: %v", err)
 	}
 

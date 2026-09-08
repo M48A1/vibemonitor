@@ -509,6 +509,42 @@ async function fetchNodes() {
   }
 }
 
+const DEFAULT_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22">
+  <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/>
+  <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"/>
+  <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 10.04 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
+  <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+</svg>`;
+
+function updateLogoDisplay(iconUrl) {
+  const brandIcon = document.getElementById('brandIcon');
+  const preview = document.getElementById('logoPreviewContent');
+  const siteIcon = document.getElementById('siteIcon');
+  if (iconUrl) {
+    const escapedUrl = escapeHtml(iconUrl);
+    const imgHtml = `<img src="${escapedUrl}" alt="Logo" width="28" height="28">`;
+    if (brandIcon) {
+      brandIcon.innerHTML = imgHtml;
+      const img = brandIcon.querySelector('img');
+      if (img) {
+        img.onerror = () => { brandIcon.innerHTML = DEFAULT_LOGO_SVG; };
+      }
+    }
+    if (preview) {
+      preview.innerHTML = `<img src="${escapedUrl}" alt="Preview" width="28" height="28">`;
+      const pImg = preview.querySelector('img');
+      if (pImg) {
+        pImg.onerror = () => { preview.innerHTML = DEFAULT_LOGO_SVG; };
+      }
+    }
+    if (siteIcon) siteIcon.href = iconUrl;
+  } else {
+    if (brandIcon) brandIcon.innerHTML = DEFAULT_LOGO_SVG;
+    if (preview) preview.innerHTML = DEFAULT_LOGO_SVG;
+    if (siteIcon) siteIcon.href = "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='10' fill='%230d9488'/></svg>";
+  }
+}
+
 async function fetchPublicSettings() {
   try {
     const res = await fetch('/api/public');
@@ -517,10 +553,7 @@ async function fetchPublicSettings() {
       document.getElementById('siteTitle').textContent = data.site_title;
       document.title = data.site_title;
     }
-    if (data.announcement !== undefined) {
-      document.getElementById('siteAnnouncement').textContent = data.announcement || '实时服务器探针与性能监控 · 极简纯净版';
-    }
-    if (data.site_icon) document.getElementById('siteIcon').href = data.site_icon;
+    updateLogoDisplay(data.site_icon || '');
   } catch (e) {
     console.error('Failed to fetch public settings:', e);
   }
@@ -530,10 +563,13 @@ async function fetchSettingsForAdmin() {
   try {
     const res = await fetch('/api/public');
     const data = await res.json();
-    document.getElementById('settingSiteTitle').value = data.site_title || '';
-    document.getElementById('settingAnnouncement').value = data.announcement || '';
-    document.getElementById('settingSiteIcon').value = data.site_icon || '';
-    document.getElementById('settingNewPassword').value = '';
+    const titleInput = document.getElementById('settingSiteTitle');
+    if (titleInput) titleInput.value = data.site_title || '';
+    const pwInput = document.getElementById('settingNewPassword');
+    if (pwInput) pwInput.value = '';
+    updateLogoDisplay(data.site_icon || '');
+    const status = document.getElementById('logoUploadStatus');
+    if (status) status.textContent = '';
   } catch (e) { console.error('Failed to fetch admin settings:', e); }
 }
 
@@ -661,37 +697,110 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
   }
 });
 
-document.getElementById('logoutBtn').addEventListener('click', async () => {
+async function handleLogout() {
   try {
     const res = await fetch('/api/admin/logout', {
       method: 'POST', credentials: 'same-origin'
     });
     if (!res.ok) throw new Error('退出失败，请重试');
-    document.getElementById('guideToken').textContent = '';
-    document.getElementById('guideInstallCmd').textContent = '';
-    document.getElementById('guideRunCmd').textContent = '';
+    const guideToken = document.getElementById('guideToken');
+    if (guideToken) guideToken.textContent = '';
+    const guideInstallCmd = document.getElementById('guideInstallCmd');
+    if (guideInstallCmd) guideInstallCmd.textContent = '';
+    const guideRunCmd = document.getElementById('guideRunCmd');
+    if (guideRunCmd) guideRunCmd.textContent = '';
     setAdminState(false);
   } catch (error) { alert(error.message); }
-});
+}
+
+const logoutBtn = document.getElementById('logoutBtn');
+if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
+const settingsLogoutBtn = document.getElementById('settingsLogoutBtn');
+if (settingsLogoutBtn) settingsLogoutBtn.addEventListener('click', handleLogout);
+
+// Logo upload & reset button handling
+const btnSelectLogo = document.getElementById('btnSelectLogo');
+const fileInput = document.getElementById('settingSiteIconFile');
+const btnResetLogo = document.getElementById('btnResetLogo');
+const uploadStatus = document.getElementById('logoUploadStatus');
+
+if (btnSelectLogo && fileInput) {
+  btnSelectLogo.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      alert('图片大小不能超过 2MB');
+      fileInput.value = '';
+      return;
+    }
+    if (uploadStatus) {
+      uploadStatus.textContent = '正在上传...';
+      uploadStatus.style.color = 'var(--muted-foreground)';
+    }
+    const formData = new FormData();
+    formData.append('icon', file);
+    try {
+      const res = await fetch('/api/admin/upload-icon', {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: formData
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '上传失败');
+      updateLogoDisplay(data.url);
+      if (uploadStatus) {
+        uploadStatus.textContent = 'Logo 已成功保存并更新';
+        uploadStatus.style.color = 'var(--success)';
+      }
+    } catch (err) {
+      if (uploadStatus) {
+        uploadStatus.textContent = '上传失败: ' + err.message;
+        uploadStatus.style.color = 'var(--destructive)';
+      }
+      alert('Logo 上传失败: ' + err.message);
+    } finally {
+      fileInput.value = '';
+    }
+  });
+}
+
+if (btnResetLogo) {
+  btnResetLogo.addEventListener('click', async () => {
+    if (!confirm('确定要恢复默认 Logo 图标吗？')) return;
+    try {
+      const res = await fetch('/api/admin/delete-icon', {
+        method: 'POST',
+        credentials: 'same-origin'
+      });
+      if (!res.ok) throw new Error('操作失败');
+      updateLogoDisplay('');
+      if (uploadStatus) {
+        uploadStatus.textContent = '已恢复默认图标';
+        uploadStatus.style.color = 'var(--success)';
+      }
+    } catch (err) {
+      alert('恢复默认图标失败: ' + err.message);
+    }
+  });
+}
 
 document.getElementById('settingsForm').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const token = getAdminToken();
   const newPassword = document.getElementById('settingNewPassword').value;
   if (newPassword && newPassword.length < 8) {
     alert('管理员密码至少需要 8 位');
     return;
   }
   try {
+    const bodyPayload = {
+      site_title: document.getElementById('settingSiteTitle').value.trim(),
+      new_password: newPassword
+    };
     const res = await fetch('/api/admin/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin',
-      body: JSON.stringify({
-        site_title: document.getElementById('settingSiteTitle').value.trim(),
-        announcement: document.getElementById('settingAnnouncement').value.trim(),
-        site_icon: document.getElementById('settingSiteIcon').value.trim(),
-        new_password: newPassword
-      })
+      body: JSON.stringify(bodyPayload)
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || '保存失败');
@@ -1049,7 +1158,10 @@ function renderPingSvgChart(samples, range, errorMsg, startSec, nowSec, offlineI
     const left = padL + (Math.max(0, iv.start - baseStart) / duration) * plotW;
     const right = padL + (Math.min(duration, iv.end - baseStart) / duration) * plotW;
     if (right <= left) return '';
-    return `<rect x="${left.toFixed(1)}" y="${padT}" width="${(right-left).toFixed(1)}" height="${plotH}" fill="#64748b" opacity="0.22"><title>探针离线：${formatTooltipTime(iv.start)} - ${formatTooltipTime(iv.end)}</title></rect>`;
+    const width = (right - left).toFixed(1);
+    return `<rect x="${left.toFixed(1)}" y="${padT}" width="${width}" height="${plotH}" fill="#ef4444" opacity="0.26"><title>探针掉线：${formatTooltipTime(iv.start)} - ${formatTooltipTime(iv.end)}</title></rect>
+      <line x1="${left.toFixed(1)}" y1="${padT}" x2="${left.toFixed(1)}" y2="${padT + plotH}" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="2,2" opacity="0.7" />
+      <line x1="${right.toFixed(1)}" y1="${padT}" x2="${right.toFixed(1)}" y2="${padT + plotH}" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="2,2" opacity="0.7" />`;
   }).join('');
 
   // Find max latency for Y scale
@@ -1159,6 +1271,30 @@ function renderPingSvgChart(samples, range, errorMsg, startSec, nowSec, offlineI
     const rect = svg.getBoundingClientRect();
     const mouseX = (e.clientX - rect.left) / rect.width * W;
     if (mouseX < padL || mouseX > W - padR) {
+      hoverLine.style.display = 'none';
+      hoverPoint.style.display = 'none';
+      if (tooltip) tooltip.style.display = 'none';
+      return;
+    }
+
+    const hoverSec = baseStart + ((mouseX - padL) / plotW) * duration;
+    const offlineIv = offlineIntervals.find(iv => hoverSec >= iv.start && hoverSec <= iv.end);
+    if (offlineIv) {
+      hoverLine.setAttribute('x1', mouseX);
+      hoverLine.setAttribute('x2', mouseX);
+      hoverLine.setAttribute('stroke', '#ef4444');
+      hoverLine.style.display = 'block';
+      hoverPoint.style.display = 'none';
+      if (tooltip) {
+        const timeStr = formatTooltipTime(Math.round(hoverSec));
+        tooltip.innerHTML = `<div>${timeStr}</div><div style="color: #ef4444; font-weight: bold;">探针掉线 (离线)</div><div style="font-size: 11px; color: #94a3b8;">${formatTooltipTime(offlineIv.start)} ~ ${formatTooltipTime(offlineIv.end)}</div>`;
+        tooltip.style.display = 'block';
+      }
+      return;
+    }
+    hoverLine.setAttribute('stroke', '#94a3b8');
+
+    if (points.length === 0) {
       hoverLine.style.display = 'none';
       hoverPoint.style.display = 'none';
       if (tooltip) tooltip.style.display = 'none';
