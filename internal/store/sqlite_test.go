@@ -22,7 +22,7 @@ func TestSQLitePingHistoryRecordAndQuery(t *testing.T) {
 		t.Fatalf("failed to add node: %v", err)
 	}
 
-	err = s.UpdateSettings("", "", []protocol.PingTarget{
+	err = s.UpdateSettings("", []protocol.PingTarget{
 		{Name: "Google", Host: "8.8.8.8:53"},
 	}, "")
 	if err != nil {

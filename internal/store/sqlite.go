@@ -60,7 +60,6 @@ func (s *sqliteDB) initSchema() error {
 		admin_username TEXT NOT NULL DEFAULT 'admin',
 		admin_password TEXT NOT NULL,
 		site_title TEXT NOT NULL DEFAULT 'VibeMonitor',
-		announcement TEXT NOT NULL DEFAULT '',
 		site_icon TEXT NOT NULL DEFAULT '',
 		auto_discovery_key TEXT NOT NULL DEFAULT '',
 		ping_targets_json TEXT NOT NULL DEFAULT '[]'
@@ -118,10 +117,10 @@ func (s *sqliteDB) pruneNodePing(nodeUUID string, allowedTargets []protocol.Ping
 }
 
 func (s *sqliteDB) loadConfig() (*Config, error) {
-	row := s.db.QueryRow("SELECT admin_username, admin_password, site_title, announcement, site_icon, auto_discovery_key, ping_targets_json FROM config WHERE id = 1")
+	row := s.db.QueryRow("SELECT admin_username, admin_password, site_title, site_icon, auto_discovery_key, ping_targets_json FROM config WHERE id = 1")
 	var c Config
 	var targetsJSON string
-	err := row.Scan(&c.AdminUsername, &c.AdminPassword, &c.SiteTitle, &c.Announcement, &c.SiteIcon, &c.AutoDiscoveryKey, &targetsJSON)
+	err := row.Scan(&c.AdminUsername, &c.AdminPassword, &c.SiteTitle, &c.SiteIcon, &c.AutoDiscoveryKey, &targetsJSON)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil // 未初始化
@@ -143,18 +142,17 @@ func (s *sqliteDB) saveConfig(c *Config) error {
 		return err
 	}
 	query := `
-	INSERT INTO config (id, admin_username, admin_password, site_title, announcement, site_icon, auto_discovery_key, ping_targets_json)
-	VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+	INSERT INTO config (id, admin_username, admin_password, site_title, site_icon, auto_discovery_key, ping_targets_json)
+	VALUES (1, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT(id) DO UPDATE SET
 		admin_username = excluded.admin_username,
 		admin_password = excluded.admin_password,
 		site_title = excluded.site_title,
-		announcement = excluded.announcement,
 		site_icon = excluded.site_icon,
 		auto_discovery_key = excluded.auto_discovery_key,
 		ping_targets_json = excluded.ping_targets_json;
 	`
-	_, err = s.db.Exec(query, c.AdminUsername, c.AdminPassword, c.SiteTitle, c.Announcement, c.SiteIcon, c.AutoDiscoveryKey, string(targetsJSON))
+	_, err = s.db.Exec(query, c.AdminUsername, c.AdminPassword, c.SiteTitle, c.SiteIcon, c.AutoDiscoveryKey, string(targetsJSON))
 	return err
 }
 

@@ -22,7 +22,7 @@ func pingStore(t *testing.T) (*Store, *Node, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.UpdateSettings("", "", []protocol.PingTarget{{Name: "target", Host: "192.0.2.1:80"}}, ""); err != nil {
+	if err := s.UpdateSettings("", []protocol.PingTarget{{Name: "target", Host: "192.0.2.1:80"}}, ""); err != nil {
 		t.Fatal(err)
 	}
 	return s, n, path
@@ -59,17 +59,17 @@ func TestTargetChangesPruneHistoryAndRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	duplicate := []protocol.PingTarget{{Name: "target", Host: "192.0.2.1:80"}, {Name: "target", Host: "192.0.2.2:443"}}
-	if err := s.UpdateSettings("", "", duplicate, ""); err == nil {
+	if err := s.UpdateSettings("", duplicate, ""); err == nil {
 		t.Fatal("duplicate names accepted")
 	}
-	if err := s.UpdateConfig("", "", "", duplicate); err == nil {
+	if err := s.UpdateConfig("", "", duplicate); err == nil {
 		t.Fatal("alternate config API accepted duplicates")
 	}
 	changed := []protocol.PingTarget{{Name: "target", Host: "192.0.2.2:443"}}
 	if err := os.Mkdir(path+".tmp", 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.UpdateSettings("", "", changed, ""); err == nil {
+	if err := s.UpdateSettings("", changed, ""); err == nil {
 		t.Fatal("write unexpectedly succeeded")
 	}
 	h, _ := s.GetPingHistory(n.UUID, "target", "1h")
@@ -79,7 +79,7 @@ func TestTargetChangesPruneHistoryAndRollback(t *testing.T) {
 	if err := os.Remove(path + ".tmp"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.UpdateSettings("", "", changed, ""); err != nil {
+	if err := s.UpdateSettings("", changed, ""); err != nil {
 		t.Fatal(err)
 	}
 	// A delayed old probe report must not reintroduce old-host observations.

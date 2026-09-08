@@ -13,7 +13,7 @@
     <!-- Navbar -->
     <header class="navbar">
       <div class="brand">
-        <div class="brand-icon">
+        <div class="brand-icon" id="brandIcon">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22">
             <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/>
             <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"/>
@@ -26,7 +26,6 @@
             <span class="brand-title" id="siteTitle">VibeMonitor</span>
             <span class="brand-badge">Probe</span>
           </div>
-          <p style="font-size: 12px; color: var(--muted-foreground);" id="siteAnnouncement">实时服务器探针与性能监控 · 极简纯净版</p>
         </div>
       </div>
       <div class="nav-actions">
@@ -79,10 +78,23 @@
       </div>
       <form id="settingsForm" autocomplete="off">
         <div class="form-group"><label class="form-label">网站名称</label><input class="form-input" id="settingSiteTitle" maxlength="80"></div>
-        <div class="form-group"><label class="form-label">图表公告</label><input class="form-input" id="settingAnnouncement" maxlength="200"></div>
-        <div class="form-group"><label class="form-label">网站图标（图片 URL）</label><input class="form-input" id="settingSiteIcon" type="url" maxlength="2048" placeholder="https://example.com/favicon.png"></div>
+        <div class="form-group">
+          <label class="form-label">网站 Logo 图标（本地上传）</label>
+          <div class="logo-upload-row">
+            <div class="logo-preview-box" id="logoPreviewBox" title="当前 Logo 预览（标准大小）">
+              <div id="logoPreviewContent" class="brand-icon"></div>
+            </div>
+            <div class="logo-upload-actions">
+              <input type="file" id="settingSiteIconFile" accept="image/png,image/jpeg,image/svg+xml,image/webp,image/x-icon,image/gif" style="display: none;">
+              <button type="button" class="btn btn-primary" id="btnSelectLogo">上传图片</button>
+              <button type="button" class="btn" id="btnResetLogo">恢复默认</button>
+              <span id="logoUploadStatus" class="logo-status-text"></span>
+            </div>
+          </div>
+          <div class="logo-upload-hint">支持 PNG、JPG、SVG、WebP、ICO 格式（最大 2MB），保存于服务器本地</div>
+        </div>
         <div class="form-group"><label class="form-label">新管理员密码（留空则不修改）</label><input type="text" class="form-input" id="settingNewPassword" minlength="8" autocomplete="off"></div>
-        <div style="display:flex;justify-content:space-between;gap:10px;margin-top:14px;"><button type="button" class="btn btn-danger" id="logoutBtn">退出登录</button><div style="display:flex;gap:10px;"><button type="button" class="btn" id="cancelSettingsModalBtn" data-close-modal="settingsModal">取消</button><button type="submit" class="btn btn-primary">保存</button></div></div>
+        <div style="display:flex;justify-content:space-between;gap:10px;margin-top:14px;"><button type="button" class="btn btn-danger" id="settingsLogoutBtn">退出登录</button><div style="display:flex;gap:10px;"><button type="button" class="btn" id="cancelSettingsModalBtn" data-close-modal="settingsModal">取消</button><button type="submit" class="btn btn-primary">保存</button></div></div>
       </form>
     </div>
   </div>
@@ -323,9 +335,12 @@
           <svg id="pingChartSvg" viewBox="0 0 700 240" preserveAspectRatio="none"></svg>
           <div class="chart-tooltip" id="chartTooltip" style="display: none;"></div>
         </div>
-        <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--muted-foreground); margin-top: 8px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--muted-foreground); margin-top: 8px;">
           <span id="chartTimeStart">--</span>
-          <span>每 60 秒记录 · 持久化存储</span>
+          <span style="display: flex; align-items: center; gap: 8px;">
+            <span>每 60 秒记录 · 持久化存储</span>
+            <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="display: inline-block; width: 10px; height: 10px; background: rgba(239, 68, 68, 0.35); border: 1px solid #ef4444; border-radius: 2px;"></span><span style="color: var(--destructive); font-weight: 500;">掉线时段</span></span>
+          </span>
           <span id="chartTimeEnd">现在</span>
         </div>
         <div style="display: flex; justify-content: flex-end; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border);">

@@ -12,18 +12,17 @@ import (
 )
 
 // UpdateSettings commits the complete settings change or leaves memory unchanged.
-func (s *Store) UpdateSettings(title, announcement string, targets []protocol.PingTarget, password string) error {
+func (s *Store) UpdateSettings(title string, targets []protocol.PingTarget, password string) error {
 	if err := validatePingTargets(targets); err != nil {
 		return err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	next := s.config
-	if title != "" || announcement != "" || targets != nil {
+	if title != "" || targets != nil {
 		if title != "" {
 			next.SiteTitle = title
 		}
-		next.Announcement = announcement
 		if targets != nil {
 			next.PingTargets = targets
 		}
