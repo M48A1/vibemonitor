@@ -25,10 +25,11 @@ import (
 )
 
 type Options struct {
-	ServerURL string
-	Token     string
-	Interval  time.Duration
-	Name      string
+	ServerURL  string
+	Token      string
+	Interval   time.Duration
+	Name       string
+	Interfaces []string
 }
 
 type Client struct {
@@ -56,7 +57,7 @@ func New(opts Options) *Client {
 		serverURL: serverURL,
 		token:     opts.Token,
 		interval:  opts.Interval,
-		collector: monitor.NewCollector(),
+		collector: monitor.NewCollector(opts.Interfaces...),
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
 			Transport: &http.Transport{
@@ -78,6 +79,10 @@ func New(opts Options) *Client {
 }
 
 func (c *Client) postRPC(method string, params any) (*protocol.Response, error) {
+	return c.postRPCContext(context.Background(), method, params)
+}
+
+func (c *Client) postRPCContext(ctx context.Context, method string, params any) (*protocol.Response, error) {
 	paramsRaw, err := json.Marshal(params)
 	if err != nil {
 		return nil, err
@@ -96,7 +101,7 @@ func (c *Client) postRPC(method string, params any) (*protocol.Response, error) 
 	}
 
 	endpoint := c.serverURL + "/api/clients/v2/rpc"
-	httpReq, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -129,28 +134,33 @@ func (c *Client) postRPC(method string, params any) (*protocol.Response, error) 
 }
 
 func (c *Client) Run(ctx context.Context) error {
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	log.Printf("[Agent] Starting VibeMonitor agent probe...")
 	log.Printf("[Agent] Target server: %s", c.serverURL)
 
-	// 1. Initial Basic Info report
-	basicInfo, err := c.collector.GetBasicInfo()
-	basicInfo.ReportIntervalSeconds = c.interval.Seconds()
-	if err != nil {
-		log.Printf("[Agent] Warning: failed to gather basic info: %v", err)
-	} else {
-		for retries := 0; retries < 5; retries++ {
-			resp, err := c.postRPC(protocol.MethodAgentBasicInfo, protocol.BasicInfoParams{Info: basicInfo})
+	// Retry pending info after every successful metrics report; refresh periodically
+	// even if the master was replaced without a visible connection failure.
+	var lastBasicInfo time.Time
+	reportBasicInfo := func() {
+		info, err := c.collector.GetBasicInfo()
+		if err == nil {
+			info.ReportIntervalSeconds = c.interval.Seconds()
+			var resp *protocol.Response
+			resp, err = c.postRPCContext(ctx, protocol.MethodAgentBasicInfo, protocol.BasicInfoParams{Info: info})
 			if err == nil {
-				log.Printf("[Agent] Reported BasicInfo successfully: %s (%s)", basicInfo.OS, basicInfo.CPUName)
+				lastBasicInfo = time.Now()
 				if resp != nil {
 					c.handleRPCResult(resp.Result)
 				}
-				break
+				log.Printf("[Agent] Reported BasicInfo successfully: %s (%s)", info.OS, info.CPUName)
 			}
-			log.Printf("[Agent] Failed to upload basic info (attempt %d/5): %v. Retrying in 2s...", retries+1, err)
-			time.Sleep(2 * time.Second)
+		}
+		if err != nil {
+			log.Printf("[Agent] BasicInfo pending, will retry after reconnect: %v", err)
 		}
 	}
+	reportBasicInfo()
 
 	// 2. Start Ping monitoring worker
 	go c.runPingWorker(ctx)
@@ -158,19 +168,16 @@ func (c *Client) Run(ctx context.Context) error {
 	// 3. Metrics Reporting loop
 	ticker := time.NewTicker(c.interval)
 	defer ticker.Stop()
-
-	// Capture interrupt signals
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	basicTicker := time.NewTicker(15 * time.Minute)
+	defer basicTicker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			log.Printf("[Agent] Stopped by context.")
 			return nil
-		case <-sigCh:
-			log.Printf("[Agent] Exiting cleanly on interrupt signal.")
-			return nil
+		case <-basicTicker.C:
+			reportBasicInfo()
 		case <-ticker.C:
 			report, err := c.collector.GetReport()
 			if err != nil {
@@ -187,11 +194,17 @@ func (c *Client) Run(ctx context.Context) error {
 			}
 			c.mu.RUnlock()
 
-			resp, err := c.postRPC(protocol.MethodAgentReport, protocol.ReportParams{Report: report})
+			resp, err := c.postRPCContext(ctx, protocol.MethodAgentReport, protocol.ReportParams{Report: report})
 			if err != nil {
+				lastBasicInfo = time.Time{}
 				log.Printf("[Agent] Report failed: %v", err)
-			} else if resp != nil {
-				c.handleRPCResult(resp.Result)
+			} else {
+				if resp != nil {
+					c.handleRPCResult(resp.Result)
+				}
+				if lastBasicInfo.IsZero() || time.Since(lastBasicInfo) >= 15*time.Minute {
+					reportBasicInfo()
+				}
 			}
 		}
 	}

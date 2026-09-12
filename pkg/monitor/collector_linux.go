@@ -21,11 +21,20 @@ type LinuxCollector struct {
 	cpuTracker CPUTracker
 	netTracker NetTracker
 	startTime  time.Time
+	interfaces map[string]bool
+	netSource  string
 }
 
-func NewCollector() Collector {
+func NewCollector(interfaces ...string) Collector {
+	selected := make(map[string]bool)
+	for _, name := range interfaces {
+		if name = strings.TrimSpace(name); name != "" {
+			selected[name] = true
+		}
+	}
 	return &LinuxCollector{
-		startTime: time.Now(),
+		startTime:  time.Now(),
+		interfaces: selected,
 	}
 }
 
@@ -121,14 +130,20 @@ func (c *LinuxCollector) GetReport() (protocol.Report, error) {
 	}
 
 	// 5. Network
-	totalDown, totalUp, err := readNetDev()
-	if err == nil {
-		upSpeed, downSpeed := c.netTracker.CalculateSpeed(totalUp, totalDown)
-		report.Network.Up = upSpeed
-		report.Network.Down = downSpeed
-		report.Network.TotalUp = totalUp
-		report.Network.TotalDown = totalDown
+	totalDown, totalUp, source, err := c.readNetDev()
+	if err != nil {
+		return protocol.Report{}, fmt.Errorf("network counters: %w", err)
 	}
+	if source != c.netSource {
+		c.netTracker = NetTracker{}
+		c.netSource = source
+	}
+	upSpeed, downSpeed := c.netTracker.CalculateSpeed(totalUp, totalDown)
+	report.Network.Up = upSpeed
+	report.Network.Down = downSpeed
+	report.Network.TotalUp = totalUp
+	report.Network.TotalDown = totalDown
+	report.Network.Source = source
 
 	// 6. Connections & Process
 	report.Connections.TCP = countLinesInFile("/proc/net/tcp") + countLinesInFile("/proc/net/tcp6")
@@ -276,31 +291,46 @@ func readLoadAvg() protocol.LoadReport {
 	}
 }
 
-func readNetDev() (totalDown, totalUp int64, err error) {
+func (c *LinuxCollector) readNetDev() (totalDown, totalUp int64, source string, err error) {
 	data, err := os.ReadFile("/proc/net/dev")
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, "", err
 	}
-	scanner := bufio.NewScanner(bytes.NewReader(data))
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if !strings.Contains(line, ":") {
-			continue
+	seen := make(map[string]bool)
+	totalDown, totalUp, source, err = parseNetworkCounters(data, func(name string) bool {
+		if len(c.interfaces) > 0 {
+			if c.interfaces[name] {
+				seen[name] = true
+			}
+			return c.interfaces[name]
 		}
-		parts := strings.SplitN(line, ":", 2)
-		iface := strings.TrimSpace(parts[0])
-		if iface == "lo" || strings.HasPrefix(iface, "docker") || strings.HasPrefix(iface, "veth") {
-			continue
+		if !defaultTrafficInterface(name) {
+			return false
 		}
-		fields := strings.Fields(parts[1])
-		if len(fields) >= 9 {
-			rx, _ := strconv.ParseInt(fields[0], 10, 64)
-			tx, _ := strconv.ParseInt(fields[8], 10, 64)
-			totalDown += rx
-			totalUp += tx
+		// Exclude renamed L3 tunnels and bridges as well as common interface names.
+		if kind, err := os.ReadFile("/sys/class/net/" + name + "/type"); err == nil && strings.TrimSpace(string(kind)) != "1" {
+			return false
+		}
+		if _, err := os.Stat("/sys/class/net/" + name + "/bridge"); err == nil {
+			return false
+		}
+		if _, err := os.Stat("/sys/class/net/" + name + "/master/bonding"); err == nil {
+			return false
+		}
+		if _, err := os.Stat("/proc/net/vlan/" + name); err == nil {
+			return false
+		}
+		return true
+	})
+	if err != nil {
+		return 0, 0, "", err
+	}
+	for name := range c.interfaces {
+		if !seen[name] {
+			return 0, 0, "", fmt.Errorf("traffic interface %q not found", name)
 		}
 	}
-	return totalDown, totalUp, nil
+	return totalDown, totalUp, source, nil
 }
 
 func countLinesInFile(path string) int {

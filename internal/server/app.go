@@ -3,14 +3,12 @@ package server
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -110,33 +108,18 @@ func (s *Server) Handler() http.Handler {
 	})
 
 	mux.HandleFunc("GET /api/site-icon", func(w http.ResponseWriter, r *http.Request) {
-		dataDir := s.store.DataDir()
-		if dataDir == "" {
-			dataDir = "."
-		}
-		matches, err := filepath.Glob(filepath.Join(dataDir, "site-icon.*"))
-		if err != nil || len(matches) == 0 {
+		data, contentType, err := s.store.SiteIconData()
+		if errors.Is(err, sql.ErrNoRows) {
 			http.NotFound(w, r)
 			return
 		}
-		iconPath := matches[0]
-		ext := strings.ToLower(filepath.Ext(iconPath))
-		contentType := "image/png"
-		switch ext {
-		case ".svg":
-			contentType = "image/svg+xml"
-		case ".jpg", ".jpeg":
-			contentType = "image/jpeg"
-		case ".gif":
-			contentType = "image/gif"
-		case ".webp":
-			contentType = "image/webp"
-		case ".ico":
-			contentType = "image/x-icon"
+		if err != nil {
+			http.Error(w, "could not load icon", http.StatusInternalServerError)
+			return
 		}
 		w.Header().Set("Content-Type", contentType)
-		w.Header().Set("Cache-Control", "public, max-age=86400")
-		http.ServeFile(w, r, iconPath)
+		w.Header().Set("Cache-Control", "no-cache")
+		http.ServeContent(w, r, "site-icon", time.Time{}, bytes.NewReader(data))
 	})
 
 	// 2. Public Nodes Info & Ping History
@@ -351,11 +334,11 @@ func (s *Server) Handler() http.Handler {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
 			return
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, 2<<20) // 2MB max
-		if err := r.ParseMultipartForm(2 << 20); err != nil {
+		if err := r.ParseMultipartForm(store.MaxIconBytes + (64 << 10)); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "文件过大或格式无效（最大 2MB）"})
 			return
 		}
+		defer r.MultipartForm.RemoveAll()
 		file, header, err := r.FormFile("icon")
 		if err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "缺少图片文件"})
@@ -363,60 +346,41 @@ func (s *Server) Handler() http.Handler {
 		}
 		defer file.Close()
 
-		data, err := io.ReadAll(file)
+		data, err := io.ReadAll(io.LimitReader(file, store.MaxIconBytes+1))
+		if len(data) > store.MaxIconBytes {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "图片最大 2MB"})
+			return
+		}
 		if err != nil || len(data) == 0 {
 			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "读取图片失败"})
 			return
 		}
 
 		contentType := http.DetectContentType(data)
-		ext := ".png"
 		nameLower := ""
 		if header != nil {
 			nameLower = strings.ToLower(header.Filename)
 		}
 		switch {
 		case strings.HasPrefix(contentType, "image/png") || strings.HasSuffix(nameLower, ".png"):
-			ext = ".png"
+			contentType = "image/png"
 		case strings.HasPrefix(contentType, "image/jpeg") || strings.HasSuffix(nameLower, ".jpg") || strings.HasSuffix(nameLower, ".jpeg"):
-			ext = ".jpg"
+			contentType = "image/jpeg"
 		case strings.HasPrefix(contentType, "image/gif") || strings.HasSuffix(nameLower, ".gif"):
-			ext = ".gif"
+			contentType = "image/gif"
 		case strings.HasPrefix(contentType, "image/webp") || strings.HasSuffix(nameLower, ".webp"):
-			ext = ".webp"
+			contentType = "image/webp"
 		case strings.HasSuffix(nameLower, ".ico") || contentType == "image/x-icon" || contentType == "image/vnd.microsoft.icon":
-			ext = ".ico"
+			contentType = "image/x-icon"
 		case strings.Contains(contentType, "xml") || strings.HasSuffix(nameLower, ".svg") || bytes.Contains(data[:min(len(data), 512)], []byte("<svg")):
-			ext = ".svg"
+			contentType = "image/svg+xml"
 		default:
 			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "只支持 PNG、JPG、SVG、WebP、ICO、GIF 图片"})
 			return
 		}
 
-		dataDir := s.store.DataDir()
-		if dataDir == "" {
-			dataDir = "."
-		}
-		if err := os.MkdirAll(dataDir, 0755); err != nil && dataDir != "." {
-			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "无法创建存储目录"})
-			return
-		}
-
-		// Remove existing site-icon.* files
-		if existing, err := filepath.Glob(filepath.Join(dataDir, "site-icon.*")); err == nil {
-			for _, p := range existing {
-				_ = os.Remove(p)
-			}
-		}
-
-		destPath := filepath.Join(dataDir, "site-icon"+ext)
-		if err := os.WriteFile(destPath, data, 0644); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "保存图标文件失败"})
-			return
-		}
-
-		iconURL := fmt.Sprintf("/api/site-icon?t=%d", time.Now().Unix())
-		if err := s.store.UpdateSiteIcon(iconURL); err != nil {
+		iconURL, err := s.store.SaveSiteIcon(data, contentType)
+		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 			return
 		}
@@ -432,16 +396,7 @@ func (s *Server) Handler() http.Handler {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
 			return
 		}
-		dataDir := s.store.DataDir()
-		if dataDir == "" {
-			dataDir = "."
-		}
-		if existing, err := filepath.Glob(filepath.Join(dataDir, "site-icon.*")); err == nil {
-			for _, p := range existing {
-				_ = os.Remove(p)
-			}
-		}
-		if err := s.store.UpdateSiteIcon(""); err != nil {
+		if _, err := s.store.SaveSiteIcon(nil, ""); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 			return
 		}
@@ -474,16 +429,14 @@ func (s *Server) Handler() http.Handler {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "session expired"})
 			return
 		}
-		if err := s.store.UpdateSettings(req.SiteTitle, pts, req.NewPassword); err != nil {
-			log.Printf("[Store] Settings save failed: %v", err)
-			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "could not save settings"})
-			return
-		}
-		if req.SiteIcon != nil {
-			if err := s.store.UpdateSiteIcon(*req.SiteIcon); err != nil {
+		if err := s.store.UpdateSettingsWithIcon(req.SiteTitle, pts, req.NewPassword, req.SiteIcon); err != nil {
+			if errors.Is(err, store.ErrInvalidSettings) {
 				writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 				return
 			}
+			log.Printf("[Store] Settings save failed: %v", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "could not save settings"})
+			return
 		}
 		if req.NewPassword != "" {
 			s.adminTokens.Clear()
@@ -498,7 +451,11 @@ func (s *Server) Handler() http.Handler {
 	// 7. Embedded Web UI (Catch-all for SPA)
 	mux.Handle("/", web.Handler())
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBytes)
+		limit := int64(maxRequestBytes)
+		if r.Method == http.MethodPost && r.URL.Path == "/api/admin/upload-icon" {
+			limit = store.MaxIconBytes + (64 << 10) // Allow multipart headers, not larger files.
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, limit)
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' wss: ws:")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
