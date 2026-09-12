@@ -734,6 +734,8 @@ body {
 
 .time-range-group {
   display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
   background: var(--control-bg);
   padding: 3px;
   border-radius: 8px;

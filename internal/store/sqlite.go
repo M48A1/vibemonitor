@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	pingHistoryRetentionSec = 7 * 86400 // 保留 7 天的 Ping 采样数据
+	pingHistoryRetentionSec = 90 * 86400 // 保留 90 天的 Ping 采样数据
 )
 
 type sqliteDB struct {
