@@ -8,7 +8,7 @@ function dashboard() {
   const elements = new Map();
   const element = () => ({
     innerHTML: '', textContent: '', style: {}, dataset: {}, events: {}, children: [],
-    classList: { add() {}, remove() {} },
+    classList: { add() {}, remove() {}, toggle(c, force) { if (force) this.add(c); else this.remove(c); } },
     addEventListener(name, callback) { this.events[name] = callback; },
     setAttribute() {}, appendChild(child) { this.children.push(child); }
   });
@@ -102,6 +102,17 @@ test('ping actions preserve quoted names as data and open the target selector', 
   app.document.getElementById('nodeGrid').events.click({target:{closest:()=>({dataset:{action:'ping',uuid:'node-1',target}})}});
   assert.equal(app.run('currentPingTarget'),target);
   assert.equal(app.document.getElementById('pingTargetSelector').children[0].textContent,target);
+});
+
+test('ping range switching supports 1h, 24h, 7d, and all', () => {
+  const app = dashboard();
+  app.run('loadPingHistory = () => {};');
+  app.run('switchPingRange("7d");');
+  assert.equal(app.run('currentPingRange'), '7d');
+  app.run('switchPingRange("all");');
+  assert.equal(app.run('currentPingRange'), 'all');
+  app.run('switchPingRange("1h");');
+  assert.equal(app.run('currentPingRange'), '1h');
 });
 
 test('connection instructions fetch credentials through the admin endpoint', async () => {
