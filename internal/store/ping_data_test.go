@@ -120,3 +120,51 @@ func TestPingMethodsNeverMixAndMigrationIsBounded(t *testing.T) {
 		t.Fatal("legacy or unconfigured series survived migration")
 	}
 }
+
+func TestDownsamplePingSamples(t *testing.T) {
+	// 1. Small slice below threshold returns original
+	small := []PingSample{
+		{Timestamp: 100, Latency: 20},
+		{Timestamp: 200, Latency: 30},
+	}
+	downSmall := downsamplePingSamples(small, 720)
+	if len(downSmall) != len(small) {
+		t.Fatalf("expected len %d, got %d", len(small), len(downSmall))
+	}
+
+	// 2. Large slice with 5,000 samples downsampled to <= 720
+	large := make([]PingSample, 5000)
+	now := time.Now().Unix()
+	for i := 0; i < 5000; i++ {
+		large[i] = PingSample{
+			Timestamp: now + int64(i)*60,
+			Latency:   25,
+		}
+	}
+	// Inject a timeout / packet loss
+	large[1000] = PingSample{Timestamp: now + 1000*60, Latency: -1}
+	// Inject a high latency spike
+	large[2500] = PingSample{Timestamp: now + 2500*60, Latency: 450}
+
+	downsampled := downsamplePingSamples(large, 720)
+	if len(downsampled) > 720 || len(downsampled) < 700 {
+		t.Fatalf("expected approximately 720 points, got %d", len(downsampled))
+	}
+
+	hasLoss := false
+	hasSpike := false
+	for _, s := range downsampled {
+		if s.Latency < 0 {
+			hasLoss = true
+		}
+		if s.Latency >= 400 {
+			hasSpike = true
+		}
+	}
+	if !hasLoss {
+		t.Errorf("downsampling failed to preserve packet loss")
+	}
+	if !hasSpike {
+		t.Errorf("downsampling failed to preserve latency spike")
+	}
+}

@@ -56,7 +56,7 @@ func openSQLite(dbPath string) (*sqliteDB, error) {
 		return nil, err
 	}
 	uri := url.URL{Scheme: "file", Path: absPath}
-	dsn := uri.String() + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(FULL)"
+	dsn := uri.String() + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sqlite database %s: %w", dbPath, err)

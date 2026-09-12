@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"log"
@@ -13,21 +14,17 @@ import (
 )
 
 type wsClient struct {
-	conn    *websocket.Conn
-	writeMu sync.Mutex
-}
-
-func (c *wsClient) writeMessage(ctx context.Context, msgType websocket.MessageType, p []byte) error {
-	c.writeMu.Lock()
-	defer c.writeMu.Unlock()
-	return c.conn.Write(ctx, msgType, p)
+	conn   *websocket.Conn
+	sendCh chan []byte
 }
 
 type WSHub struct {
-	mu      sync.RWMutex
-	clients map[*wsClient]struct{}
-	store   *store.Store
-	trigger chan struct{}
+	mu          sync.RWMutex
+	clients     map[*wsClient]struct{}
+	store       *store.Store
+	trigger     chan struct{}
+	lastPayload []byte
+	payloadMu   sync.Mutex
 }
 
 const maxWSClients = 1000
@@ -49,23 +46,30 @@ func NewWSHub(s *store.Store) *WSHub {
 }
 
 func (h *WSHub) run() {
-	ticker := time.NewTicker(2 * time.Second)
+	// Periodic check every 3s to detect offline state transitions and keep alive
+	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 
-	lastBroadcast := time.Now()
 	minInterval := 1 * time.Second
+	lastBroadcast := time.Now()
+	var pendingTrigger bool
 
 	for {
 		select {
 		case <-h.trigger:
-			// Throttled broadcast on update
 			if time.Since(lastBroadcast) >= minInterval {
 				lastBroadcast = time.Now()
-				h.broadcastNodes()
+				pendingTrigger = false
+				h.broadcastNodes(false)
+			} else {
+				pendingTrigger = true
 			}
 		case <-ticker.C:
-			lastBroadcast = time.Now()
-			h.broadcastNodes()
+			if pendingTrigger || time.Since(lastBroadcast) >= minInterval {
+				lastBroadcast = time.Now()
+				pendingTrigger = false
+				h.broadcastNodes(false)
+			}
 		}
 	}
 }
@@ -87,7 +91,13 @@ func (h *WSHub) HandleWS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "")
 
-	client := &wsClient{conn: conn}
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	client := &wsClient{
+		conn:   conn,
+		sendCh: make(chan []byte, 4),
+	}
 
 	h.mu.Lock()
 	h.clients[client] = struct{}{}
@@ -99,10 +109,30 @@ func (h *WSHub) HandleWS(w http.ResponseWriter, r *http.Request) {
 		h.mu.Unlock()
 	}()
 
+	// Dedicated single writer goroutine for this client
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case msg, ok := <-client.sendCh:
+				if !ok {
+					return
+				}
+				writeCtx, writeCancel := context.WithTimeout(ctx, 3*time.Second)
+				err := conn.Write(writeCtx, websocket.MessageText, msg)
+				writeCancel()
+				if err != nil {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+
 	// Send initial data immediately
 	_ = h.sendNodesTo(client)
 
-	ctx := r.Context()
 	for {
 		typ, msg, err := conn.Read(ctx)
 		if err != nil {
@@ -125,12 +155,27 @@ func (h *WSHub) sendNodesTo(client *wsClient) error {
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	return client.writeMessage(ctx, websocket.MessageText, payload)
+	select {
+	case client.sendCh <- payload:
+	default:
+		select {
+		case <-client.sendCh:
+		default:
+		}
+		select {
+		case client.sendCh <- payload:
+		default:
+		}
+	}
+	return nil
 }
 
-func (h *WSHub) broadcastNodes() {
+func (h *WSHub) broadcastNodes(force ...bool) {
+	shouldForce := true
+	if len(force) > 0 {
+		shouldForce = force[0]
+	}
+
 	h.mu.RLock()
 	clients := make([]*wsClient, 0, len(h.clients))
 	for c := range h.clients {
@@ -151,11 +196,26 @@ func (h *WSHub) broadcastNodes() {
 		return
 	}
 
+	h.payloadMu.Lock()
+	if !shouldForce && bytes.Equal(h.lastPayload, payload) {
+		h.payloadMu.Unlock()
+		return
+	}
+	h.lastPayload = payload
+	h.payloadMu.Unlock()
+
 	for _, client := range clients {
-		go func(c *wsClient) {
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
-			_ = c.writeMessage(ctx, websocket.MessageText, payload)
-		}(client)
+		select {
+		case client.sendCh <- payload:
+		default:
+			select {
+			case <-client.sendCh:
+			default:
+			}
+			select {
+			case client.sendCh <- payload:
+			default:
+			}
+		}
 	}
 }
