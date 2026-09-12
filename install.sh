@@ -183,6 +183,39 @@ clear_server_data() {
     success "全部配置、账号、监控数据和备份已删除。"
 }
 
+# One-time correction of the old installer argument; never reads legacy data files.
+switch_server_to_sqlite() {
+    local unit="$UNIT_DIR/$SERVER_SERVICE.service" override
+    local legacy_arg_pattern='(--data| -d)[ =]+("[^"]*[.]json"|[^[:space:]]*[.]json)([[:space:]]|$)'
+    for override in "$UNIT_DIR/$SERVER_SERVICE.service.d/"*.conf; do
+        [ -f "$override" ] || continue
+        if awk -v pattern="$legacy_arg_pattern" '/^ExecStart=/ && $0 ~ pattern {found=1} END {exit !found}' "$override"; then
+            error "Update --data in $override to the existing .db path before upgrading."
+        fi
+    done
+    if ! awk -v pattern="$legacy_arg_pattern" '/^ExecStart=/ && $0 ~ pattern {found=1} END {exit !found}' "$unit"; then return 0; fi
+    [ -f "$CONFIG_DIR/vibemonitor-data.db" ] || error "Existing SQLite database missing; complete migration with v1.0.40 before upgrading."
+    "$INSTALL_BIN" validate-data "$CONFIG_DIR/vibemonitor-data.db" || error "Existing SQLite database is invalid."
+    if ! VIBEMONITOR_OLD_DATA_ARG="--data $(unit_arg "$CONFIG_DIR/vibemonitor-data.json")" \
+         VIBEMONITOR_NEW_DATA_ARG="--data $(unit_arg "$CONFIG_DIR/vibemonitor-data.db")" \
+         awk '
+            /^ExecStart=/ {
+                pos=index($0, ENVIRON["VIBEMONITOR_OLD_DATA_ARG"])
+                if (pos) {
+                    $0=substr($0,1,pos-1) ENVIRON["VIBEMONITOR_NEW_DATA_ARG"] substr($0,pos+length(ENVIRON["VIBEMONITOR_OLD_DATA_ARG"]))
+                    changed=1
+                }
+            }
+            {print}
+            END {if (!changed) exit 1}
+         ' "$unit" > "$UPDATE_DIR/sqlite-unit"; then
+        error "Custom data argument detected; update --data in $unit to the existing .db path."
+    fi
+    chmod 600 "$UPDATE_DIR/sqlite-unit"
+    mv -f "$UPDATE_DIR/sqlite-unit" "$unit"
+    info "启动参数已切换到现有 SQLite 数据库。"
+}
+
 update_server() {
     local port="${1:-1314}"
     [[ "$port" =~ ^[0-9]+$ && ${#port} -le 5 ]] || error "Invalid port."
@@ -192,6 +225,7 @@ update_server() {
     info "更新主控程序，保留现有账号、节点、配置、历史、备份及服务设置。"
     begin_update "$SERVER_SERVICE"
     download_binary
+    switch_server_to_sqlite
     finish_update "$port"
 }
 
@@ -210,7 +244,7 @@ install_server() {
     mkdir -p "$CONFIG_DIR"
     rm -rf -- "$UNIT_DIR/$SERVER_SERVICE.service.d"
     local args
-    args="$(unit_arg "$INSTALL_BIN") server --listen $(unit_arg "0.0.0.0:$port") --data $(unit_arg "$CONFIG_DIR/vibemonitor-data.json")"
+    args="$(unit_arg "$INSTALL_BIN") server --listen $(unit_arg "0.0.0.0:$port") --data $(unit_arg "$CONFIG_DIR/vibemonitor-data.db")"
     args="$args --admin-username $(unit_arg "$username")"
     if [ -n "$password" ]; then args="$args --admin-password $(unit_arg "$password")"; fi
     cat > "$UNIT_DIR/$SERVER_SERVICE.service" <<EOF
@@ -264,7 +298,11 @@ backup_data() {
     if [ "$was_active" = 1 ]; then systemctl stop "$SERVER_SERVICE" || error "Could not stop server."; fi
     destination=$(mktemp "$CONFIG_DIR/backups/data-$(date +%Y%m%d-%H%M%S).XXXXXX") || result=1
     if [ "$result" = 0 ]; then
-        "$INSTALL_BIN" export-data "$CONFIG_DIR/vibemonitor-data.json" "$destination" || result=1
+        mv "$destination" "$destination.db" || result=1
+        destination="$destination.db"
+    fi
+    if [ "$result" = 0 ]; then
+        "$INSTALL_BIN" export-data "$CONFIG_DIR/vibemonitor-data.db" "$destination" || result=1
     fi
     if [ "$was_active" = 1 ]; then systemctl start "$SERVER_SERVICE" || result=1; fi
     [ "$result" = 0 ] || error "Backup failed; check service status. Any partial output is at $destination."
@@ -281,20 +319,24 @@ restore_data() {
     if [ "$was_active" = 1 ]; then systemctl stop "$SERVER_SERVICE" || error "Could not stop server."; fi
     previous=$(mktemp "$CONFIG_DIR/backups/before-restore-XXXXXX") || result=1
     if [ "$result" = 0 ]; then
-        "$INSTALL_BIN" export-data "$CONFIG_DIR/vibemonitor-data.json" "$previous" || result=1
+        mv "$previous" "$previous.db" || result=1
+        previous="$previous.db"
+    fi
+    if [ "$result" = 0 ]; then
+        "$INSTALL_BIN" export-data "$CONFIG_DIR/vibemonitor-data.db" "$previous" || result=1
     fi
     if [ "$result" != 0 ]; then
         if [ "$was_active" = 1 ]; then systemctl start "$SERVER_SERVICE" || true; fi
         error "Could not back up current database; restore cancelled."
     fi
-    if ! "$INSTALL_BIN" restore-data "$source" "$CONFIG_DIR/vibemonitor-data.json"; then
+    if ! "$INSTALL_BIN" restore-data "$source" "$CONFIG_DIR/vibemonitor-data.db"; then
         if [ "$was_active" = 1 ]; then systemctl start "$SERVER_SERVICE" || true; fi
         error "Restore transaction failed; previous database retained. Backup: $previous"
     fi
     if [ "$was_active" = 1 ]; then
         if ! systemctl start "$SERVER_SERVICE" || ! sleep 3 || ! systemctl is-active --quiet "$SERVER_SERVICE"; then
             systemctl stop "$SERVER_SERVICE" || error "Cannot stop failed service; recovery backup: $previous"
-            if ! "$INSTALL_BIN" restore-data "$previous" "$CONFIG_DIR/vibemonitor-data.json"; then
+            if ! "$INSTALL_BIN" restore-data "$previous" "$CONFIG_DIR/vibemonitor-data.db"; then
                 error "Rollback failed; recovery backup retained: $previous"
             fi
             systemctl start "$SERVER_SERVICE" || error "Previous database restored but service failed; backup: $previous"
@@ -400,7 +442,7 @@ menu() {
             # Run installations in a subshell so their EXIT rollback always runs,
             # even when the interactive menu is kept open afterwards.
             1) read_input "监听端口 [1314]: " port
-               if [ -f "$CONFIG_DIR/vibemonitor-data.json" ]; then
+               if [ -f "$CONFIG_DIR/vibemonitor-data.db" ]; then
                    info "重装会删除旧账号和全部数据，使用下面的新账号密码。"
                fi
                while true; do

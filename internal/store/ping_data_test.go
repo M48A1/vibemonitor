@@ -2,7 +2,6 @@ package store
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -12,7 +11,7 @@ import (
 
 func pingStore(t *testing.T) (*Store, *Node, string) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "data.json")
+	path := filepath.Join(t.TempDir(), "data.db")
 	s, err := New(path, "pass")
 	if err != nil {
 		t.Fatal(err)
@@ -53,7 +52,7 @@ func TestPingReportsAreBoundedAndConfigured(t *testing.T) {
 }
 
 func TestTargetChangesPruneHistoryAndRollback(t *testing.T) {
-	s, n, path := pingStore(t)
+	s, n, _ := pingStore(t)
 	report := protocol.Report{PingResults: []protocol.PingResult{{Name: "target", Host: "192.0.2.1:80", Method: "tcp", Latency: 20}}}
 	if _, err := s.IngestReport(n.Token, report, ""); err != nil {
 		t.Fatal(err)
@@ -66,9 +65,7 @@ func TestTargetChangesPruneHistoryAndRollback(t *testing.T) {
 		t.Fatal("alternate config API accepted duplicates")
 	}
 	changed := []protocol.PingTarget{{Name: "target", Host: "192.0.2.2:443"}}
-	if err := os.Mkdir(path+".tmp", 0700); err != nil {
-		t.Fatal(err)
-	}
+	unblock := blockStoreWrites(t, s)
 	if err := s.UpdateSettings("", changed, ""); err == nil {
 		t.Fatal("write unexpectedly succeeded")
 	}
@@ -76,9 +73,7 @@ func TestTargetChangesPruneHistoryAndRollback(t *testing.T) {
 	if h.Host != "192.0.2.1:80" || len(h.Samples) != 1 {
 		t.Fatal("failed config write damaged history")
 	}
-	if err := os.Remove(path + ".tmp"); err != nil {
-		t.Fatal(err)
-	}
+	unblock()
 	if err := s.UpdateSettings("", changed, ""); err != nil {
 		t.Fatal(err)
 	}

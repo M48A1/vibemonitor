@@ -7,22 +7,13 @@ import (
 
 // saveSnapshot commits configuration, changed nodes and history together.
 // Caches are advanced only after commit, so failed writes can be retried.
-func (s *sqliteDB) saveSnapshot(config Config, nodes map[string]*Node, replace bool) error {
+func (s *sqliteDB) saveSnapshot(config Config, nodes map[string]*Node) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 	w := &sqliteDB{db: s.db, tx: tx, nodeCache: s.nodeCache}
-	if replace {
-		w.nodeCache = nil
-		if _, err = tx.Exec("DELETE FROM ping_history"); err != nil {
-			return err
-		}
-		if _, err = tx.Exec("DELETE FROM nodes"); err != nil {
-			return err
-		}
-	}
 	if err = w.saveConfig(&config); err != nil {
 		return err
 	}
@@ -70,7 +61,7 @@ func (s *sqliteDB) saveSnapshot(config Config, nodes map[string]*Node, replace b
 		}
 		targetJSON, _ := json.Marshal(targets)
 		nextTargets[id] = string(targetJSON)
-		if replace || s.targetCache[id] != string(targetJSON) {
+		if s.targetCache[id] != string(targetJSON) {
 			if _, err = tx.Exec(`DELETE FROM ping_history WHERE node_uuid=? AND NOT EXISTS
 				(SELECT 1 FROM json_each(?) WHERE json_extract(value,'$.name')=target_name AND json_extract(value,'$.host')=host)`, id, string(targetJSON)); err != nil {
 				return err
@@ -83,7 +74,7 @@ func (s *sqliteDB) saveSnapshot(config Config, nodes map[string]*Node, replace b
 				}
 				key := fmt.Sprintf("%s/%s/%d", id, name, sample.Timestamp)
 				nextPings[key] = sample
-				if prior, ok := s.pingCache[key]; !replace && ok && prior == sample {
+				if prior, ok := s.pingCache[key]; ok && prior == sample {
 					continue
 				}
 				if _, err = stmt.Exec(id, name, sample.Host, sample.Method, sample.Timestamp, sample.Latency); err != nil {

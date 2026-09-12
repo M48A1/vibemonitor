@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -33,7 +32,7 @@ func (m *memoryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func TestFullWorkflow(t *testing.T) {
-	dataFile := filepath.Join(t.TempDir(), "data.json")
+	dataFile := filepath.Join(t.TempDir(), "data.db")
 
 	adminPass := "adminSecret123"
 
@@ -255,11 +254,7 @@ func TestFullWorkflow(t *testing.T) {
 	}
 	t.Log("[PASS] /api/nodes/ping-history verified successfully")
 
-	// SQLite is authoritative; startup must not create a misleading JSON mirror.
-	if _, err := os.Stat(dataFile); !os.IsNotExist(err) {
-		t.Fatalf("unexpected JSON mirror: %v", err)
-	}
-	if _, err := os.Stat(strings.TrimSuffix(dataFile, ".json") + ".db"); err != nil {
+	if _, err := os.Stat(dataFile); err != nil {
 		t.Fatalf("SQLite database missing: %v", err)
 	}
 	t.Log("[PASS] Ping history verified successfully persisted in SQLite database")
@@ -311,7 +306,7 @@ func postRPCWithClient(t *testing.T, client *http.Client, baseURL, token string,
 }
 
 func TestGracefulShutdownAndPersistence(t *testing.T) {
-	dataFile := filepath.Join(t.TempDir(), "data.json")
+	dataFile := filepath.Join(t.TempDir(), "data.db")
 
 	srv, err := server.New(server.Options{
 		ListenAddr:    "127.0.0.1:19876",
@@ -344,7 +339,7 @@ func TestGracefulShutdownAndPersistence(t *testing.T) {
 	}
 
 	// Verify data file exists on disk
-	if _, err := os.Stat(strings.TrimSuffix(dataFile, ".json") + ".db"); err != nil {
+	if _, err := os.Stat(dataFile); err != nil {
 		t.Fatalf("Expected data file to exist after shutdown: %v", err)
 	}
 	t.Log("[PASS] Graceful shutdown and persistence verified")
@@ -366,7 +361,7 @@ func TestBackupCLIHelper(t *testing.T) {
 
 func TestBackupCLIRoundTrip(t *testing.T) {
 	dir := t.TempDir()
-	path, backup := filepath.Join(dir, "source.db"), filepath.Join(dir, "backup.json")
+	path, backup := filepath.Join(dir, "source.db"), filepath.Join(dir, "backup.db")
 	s, err := store.New(path, "original")
 	if err != nil {
 		t.Fatal(err)

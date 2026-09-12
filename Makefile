@@ -16,7 +16,6 @@ test:
 
 clean:
 	rm -f $(BINARY_NAME)
-	rm -f *.json.tmp test-*.json
 	rm -rf dist
 
 release-all:

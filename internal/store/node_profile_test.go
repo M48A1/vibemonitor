@@ -1,7 +1,6 @@
 package store
 
 import (
-	"os"
 	"testing"
 	"vibemonitor/pkg/protocol"
 )
@@ -24,18 +23,14 @@ func TestIndependentNodeTargetsAndBilling(t *testing.T) {
 	if err != nil || len(h.Samples) != 1 || h.Stats.PacketLoss != 100 {
 		t.Fatal("incorrect node history", h, err)
 	}
-	if err := os.Mkdir(path+".tmp", 0700); err != nil {
-		t.Fatal(err)
-	}
+	unblock := blockStoreWrites(t, s)
 	if err := s.UpdateNodeWithOptions(second.UUID, NodeOptions{Profile: &NodeProfile{Targets: []protocol.PingTarget{}}}); err == nil {
 		t.Fatal("expected write failure")
 	}
 	if s.GetNode(second.UUID).Profile.DueDate != "2027-01-31" {
 		t.Fatal("failed write changed billing")
 	}
-	if err := os.Remove(path + ".tmp"); err != nil {
-		t.Fatal(err)
-	}
+	unblock()
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}

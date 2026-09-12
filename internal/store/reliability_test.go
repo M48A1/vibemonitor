@@ -10,7 +10,7 @@ import (
 )
 
 func TestTrafficZeroBaselineAndRestart(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "data.json")
+	path := filepath.Join(t.TempDir(), "data.db")
 	s, err := New(path, "pass")
 	if err != nil {
 		t.Fatal(err)
@@ -63,7 +63,7 @@ func TestAdaptiveOfflineThreshold(t *testing.T) {
 }
 
 func TestFailedNodeChangesRollback(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "data.json")
+	path := filepath.Join(t.TempDir(), "data.db")
 	s, err := New(path, "pass")
 	if err != nil {
 		t.Fatal(err)
@@ -73,9 +73,8 @@ func TestFailedNodeChangesRollback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(path+".tmp", 0700); err != nil {
-		t.Fatal(err)
-	}
+	unblock := blockStoreWrites(t, s)
+	defer unblock()
 	if _, err := s.CreateNode("lost", "", ""); err == nil {
 		t.Fatal("create unexpectedly succeeded")
 	}
@@ -91,25 +90,35 @@ func TestFailedNodeChangesRollback(t *testing.T) {
 }
 
 func TestBackupValidation(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "data.json")
+	path := filepath.Join(t.TempDir(), "data.db")
 	s, err := New(path, "pass")
 	if err != nil {
 		t.Fatal(err)
 	}
 	s.Close()
-	if err := ExportData(path, path); err != nil {
+	if err := ValidateBackup(path); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := ValidateData(data); err != nil {
-		t.Fatal(err)
-	}
-	for _, invalid := range []string{`{}`, `{"config":{"admin_password":"x"},"nodes":{"x":null}}`, `not json`} {
-		if ValidateData([]byte(invalid)) == nil {
+	invalidPath := filepath.Join(t.TempDir(), "invalid.db")
+	for _, invalid := range []string{`{}`, `{"config":{"admin_password":"x"},"nodes":{"x":null}}`, `not sqlite`} {
+		if err := os.WriteFile(invalidPath, []byte(invalid), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if ValidateBackup(invalidPath) == nil {
 			t.Fatal("invalid backup accepted")
+		}
+	}
+}
+
+func blockStoreWrites(t *testing.T, s *Store) func() {
+	t.Helper()
+	if _, err := s.sdb.db.Exec("PRAGMA query_only=ON"); err != nil {
+		t.Fatal(err)
+	}
+	return func() {
+		t.Helper()
+		if _, err := s.sdb.db.Exec("PRAGMA query_only=OFF"); err != nil {
+			t.Fatal(err)
 		}
 	}
 }

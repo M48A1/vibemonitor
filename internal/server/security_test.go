@@ -19,7 +19,7 @@ import (
 )
 
 func TestNodeCredentialIsolation(t *testing.T) {
-	dataPath := filepath.Join(t.TempDir(), "data.json")
+	dataPath := filepath.Join(t.TempDir(), "data.db")
 	s, err := New(Options{DataFile: dataPath, AdminPassword: "test-password"})
 	if err != nil {
 		t.Fatal(err)
@@ -134,7 +134,7 @@ func TestNodeCredentialIsolation(t *testing.T) {
 }
 
 func TestInstallerValidation(t *testing.T) {
-	st, err := store.New(filepath.Join(t.TempDir(), "data.json"), "test-password")
+	st, err := store.New(filepath.Join(t.TempDir(), "data.db"), "test-password")
 	if err != nil {
 		t.Fatal(err)
 	}

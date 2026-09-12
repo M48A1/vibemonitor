@@ -1,230 +1,250 @@
 package store
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
+	"database/sql"
 	"errors"
 	"fmt"
-	"log"
+	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"vibemonitor/pkg/protocol"
+	"golang.org/x/crypto/bcrypt"
 )
 
-// ReadBackup supports complete exports and legacy JSON with a matching sidecar.
-func ReadBackup(path string) (*DataFile, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	if err = ValidateData(raw); err != nil {
-		return nil, err
-	}
-	var data DataFile
-	if err = json.Unmarshal(raw, &data); err != nil {
-		return nil, err
-	}
-	var sidecar struct {
-		Digest string `json:"data_digest"`
-		Nodes  map[string]struct {
-			History map[string][]PingSample `json:"history"`
-			Results []protocol.PingResult   `json:"results"`
-		} `json:"nodes"`
-	}
-	ping, err := os.ReadFile(path + ".ping.json")
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, err
-	}
-	if err == nil {
-		if err = json.Unmarshal(ping, &sidecar); err != nil {
-			return nil, fmt.Errorf("invalid ping sidecar: %w", err)
-		}
-		digest := sha256.Sum256(raw)
-		if sidecar.Digest == hex.EncodeToString(digest[:]) {
-			for id, entry := range sidecar.Nodes {
-				if n := data.Nodes[id]; n != nil {
-					n.PingHistory = entry.History
-					if n.LastReport != nil {
-						n.LastReport.PingResults = entry.Results
-					}
-				}
-			}
-		}
-	}
-	return &data, nil
+// These explicit columns are the supported on-disk backup format.
+var backupTables = []struct{ name, columns string }{
+	{"config", "id,admin_username,admin_password,site_title,site_icon,auto_discovery_key,ping_targets_json"},
+	{"nodes", "uuid,name,token,group_name,region,online,last_seen,created_at,data_json"},
+	{"ping_history", "id,node_uuid,target_name,host,method,timestamp,latency"},
 }
 
-func prepareImport(data *DataFile) error {
-	if !strings.HasPrefix(data.Config.AdminPassword, "$2") {
-		hash, err := hashAdminPassword(data.Config.AdminPassword)
-		if err != nil {
-			return err
-		}
-		data.Config.AdminPassword = hash
-	}
-	for _, n := range data.Nodes {
-		if n.Profile == nil {
-			targets := append([]protocol.PingTarget{}, data.Config.PingTargets...)
-			for i := range targets {
-				if !strings.Contains(targets[i].Host, ":") {
-					targets[i].Host += ":80"
-				}
-			}
-			n.Profile = &NodeProfile{Targets: targets}
-		}
-		if err := validateProfile(n.Profile); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (s *sqliteDB) migrateLegacy(path string) error {
-	if strings.HasSuffix(path, ".db") {
-		path = strings.TrimSuffix(path, ".db") + ".json"
-	}
-	if !strings.HasSuffix(path, ".json") {
+func validateDatabasePath(path string) error {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".db", ".sqlite", ".sqlite3":
 		return nil
+	default:
+		return errors.New("data path must end in .db, .sqlite or .sqlite3; update the service --data argument to the existing SQLite database")
 	}
-	config, err := s.loadConfig()
-	if err != nil || config != nil {
-		return err
-	}
-	if _, err = os.Stat(path); errors.Is(err, os.ErrNotExist) {
-		return nil
-	} else if err != nil {
-		return err
-	}
-	cleanup, err := migrationCleanupTargets(path)
-	if err != nil {
-		return fmt.Errorf("migration cleanup preflight: %w", err)
-	}
-	data, err := ReadBackup(path)
-	if err != nil {
-		return fmt.Errorf("legacy migration refused; original files retained: %w", err)
-	}
-	if err = prepareImport(data); err != nil {
-		return err
-	}
-	if err = s.saveSnapshot(data.Config, data.Nodes, true); err != nil {
-		return err
-	}
-	if err = s.verifyMigration(data); err != nil {
-		return fmt.Errorf("migration verification failed; original files and backups retained: %w", err)
-	}
-	if err = cleanup.remove(); err != nil {
-		// The committed database remains usable even if filesystem cleanup fails.
-		log.Printf("[Store] Migration verified, but cleanup incomplete (manual cleanup required): %v", err)
-	}
-	return nil
 }
 
-// ExportData must be called with the server stopped. It includes all retained history.
-func ExportData(dataPath, destination string) error {
-	dbPath := resolveDBPath(dataPath)
-	outputPath, err := filepath.Abs(destination)
+func sqliteReadURI(path string) (string, error) {
+	absolute, err := filepath.Abs(path)
 	if err != nil {
-		return err
+		return "", err
 	}
-	absoluteDB, err := filepath.Abs(dbPath)
-	if err != nil {
-		return err
-	}
-	if outputPath == absoluteDB || outputPath == absoluteDB+"-wal" || outputPath == absoluteDB+"-shm" {
-		return errors.New("backup output cannot replace database files")
-	}
-	var data *DataFile
-	if _, err := os.Stat(dbPath); errors.Is(err, os.ErrNotExist) {
-		data, err = ReadBackup(dataPath)
-		if err != nil {
-			return err
-		}
-	} else {
-		if err != nil {
-			return err
-		}
-		db, err := openSQLite(dbPath)
-		if err != nil {
-			return err
-		}
-		defer db.Close()
-		config, err := db.loadConfig()
-		if err != nil {
-			return err
-		}
-		if config == nil {
-			return errors.New("database has no configuration")
-		}
-		nodes, err := db.loadNodes()
-		if err != nil {
-			return err
-		}
-		rows, err := db.db.Query("SELECT node_uuid,target_name,host,method,timestamp,latency FROM ping_history ORDER BY timestamp")
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var id, target string
-			var sample PingSample
-			if err = rows.Scan(&id, &target, &sample.Host, &sample.Method, &sample.Timestamp, &sample.Latency); err != nil {
-				return err
-			}
-			if n := nodes[id]; n != nil {
-				n.PingHistory[target] = append(n.PingHistory[target], sample)
-			}
-		}
-		if err = rows.Err(); err != nil {
-			return err
-		}
-		data = &DataFile{Config: *config, Nodes: nodes}
-	}
-	raw, err := json.Marshal(data)
-	if err != nil {
-		return err
-	}
-	if err = ValidateData(raw); err != nil {
-		return err
-	}
-	return writeAtomic(destination, raw)
+	uri := url.URL{Scheme: "file", Path: absolute, RawQuery: "mode=ro"}
+	return uri.String(), nil
 }
 
-// RestoreData replaces the complete database in one transaction. Stop the server first.
-func RestoreData(source, dataPath string) error {
-	data, err := ReadBackup(source)
+func openBackup(path string) (*sqliteDB, error) {
+	f, err := os.Open(path)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if err = prepareImport(data); err != nil {
-		return err
+	var header [16]byte
+	_, readErr := io.ReadFull(f, header[:])
+	closeErr := f.Close()
+	if readErr != nil || string(header[:]) != "SQLite format 3\x00" {
+		return nil, errors.New("backup must be a SQLite database")
 	}
-	db, err := openSQLite(resolveDBPath(dataPath))
+	if closeErr != nil {
+		return nil, closeErr
+	}
+	uri, err := sqliteReadURI(path)
+	if err != nil {
+		return nil, err
+	}
+	db, err := sql.Open("sqlite", uri+"&_pragma=busy_timeout(5000)&_pragma=synchronous(FULL)")
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
+	return &sqliteDB{db: db}, nil
+}
+
+// ValidateBackup reads a SQLite backup without creating or migrating any schema.
+func ValidateBackup(path string) error {
+	db, err := openBackup(path)
 	if err != nil {
 		return err
 	}
 	defer db.Close()
-	return db.saveSnapshot(data.Config, data.Nodes, true)
-}
-
-func writeAtomic(path string, data []byte) error {
-	f, err := os.CreateTemp(filepath.Dir(path), ".backup-*")
+	var integrity string
+	if err := db.db.QueryRow("PRAGMA integrity_check").Scan(&integrity); err != nil {
+		return err
+	}
+	if integrity != "ok" {
+		return fmt.Errorf("SQLite integrity check: %s", integrity)
+	}
+	for _, table := range backupTables {
+		var kind string
+		if err := db.db.QueryRow("SELECT type FROM sqlite_schema WHERE name=?", table.name).Scan(&kind); err != nil {
+			return err
+		}
+		if kind != "table" {
+			return fmt.Errorf("%s is not a backup table", table.name)
+		}
+		rows, err := db.db.Query("SELECT " + table.columns + " FROM " + table.name + " LIMIT 0")
+		if err != nil {
+			return err
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+	}
+	config, err := db.loadConfig()
 	if err != nil {
 		return err
 	}
-	defer os.Remove(f.Name())
-	if _, err = f.Write(data); err != nil {
-		f.Close()
+	if config == nil || config.AdminUsername == "" {
+		return errors.New("backup has no administrator configuration")
+	}
+	if _, err := bcrypt.Cost([]byte(config.AdminPassword)); err != nil {
+		return errors.New("backup has no valid password hash")
+	}
+	if err := validatePingTargets(config.PingTargets); err != nil {
 		return err
 	}
-	if err = f.Sync(); err != nil {
-		f.Close()
+	nodes, err := db.loadNodes()
+	if err != nil {
 		return err
 	}
-	if err = f.Close(); err != nil {
+	var count int
+	if err := db.db.QueryRow("SELECT count(*) FROM nodes").Scan(&count); err != nil {
 		return err
 	}
-	return os.Rename(f.Name(), path)
+	if count != len(nodes) {
+		return errors.New("backup has duplicate node identities")
+	}
+	tokens := make(map[string]bool, len(nodes))
+	for id, node := range nodes {
+		if id == "" || node.Token == "" || tokens[node.Token] {
+			return errors.New("invalid node identity in backup")
+		}
+		tokens[node.Token] = true
+		if err := validateProfile(node.Profile); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func rejectSameDatabase(source, destination string) error {
+	output, err := filepath.Abs(destination)
+	if err != nil {
+		return err
+	}
+	outputInfo, statErr := os.Stat(output)
+	if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+		return statErr
+	}
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		input, err := filepath.Abs(source + suffix)
+		if err != nil {
+			return err
+		}
+		if input == output {
+			return errors.New("source and destination database files must differ")
+		}
+		if inputInfo, err := os.Stat(input); err == nil && outputInfo != nil && os.SameFile(inputInfo, outputInfo) {
+			return errors.New("source and destination refer to the same database file")
+		}
+	}
+	return nil
+}
+
+// ExportData uses SQLite's consistent snapshot, including committed WAL data.
+// Stop the server first if its pending in-memory metrics must also be included.
+func ExportData(source, destination string) error {
+	if err := rejectSameDatabase(source, destination); err != nil {
+		return err
+	}
+	if err := ValidateBackup(source); err != nil {
+		return err
+	}
+	if info, err := os.Lstat(destination); err == nil {
+		if !info.Mode().IsRegular() || info.Size() != 0 {
+			return errors.New("backup output must be absent or an empty regular file")
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	f, err := os.CreateTemp(filepath.Dir(destination), ".sqlite-backup-*")
+	if err != nil {
+		return err
+	}
+	temp := f.Name()
+	defer os.Remove(temp)
+	if err := f.Close(); err != nil {
+		return err
+	}
+	db, err := openBackup(source)
+	if err != nil {
+		return err
+	}
+	_, vacuumErr := db.db.Exec("VACUUM INTO ?", temp)
+	closeErr := db.Close()
+	if vacuumErr != nil {
+		return vacuumErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if err := ValidateBackup(temp); err != nil {
+		return err
+	}
+	return os.Rename(temp, destination)
+}
+
+// RestoreData copies supported tables directly in one SQLite transaction.
+// The server must be stopped so its in-memory state cannot overwrite the restore.
+func RestoreData(source, destination string) error {
+	if err := validateDatabasePath(destination); err != nil {
+		return err
+	}
+	if err := rejectSameDatabase(source, destination); err != nil {
+		return err
+	}
+	// Freeze the source, including any WAL, before touching the destination.
+	tempDir, err := os.MkdirTemp("", "vibemonitor-restore-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tempDir)
+	snapshot := filepath.Join(tempDir, "snapshot.db")
+	if err := ExportData(source, snapshot); err != nil {
+		return err
+	}
+	db, err := openSQLite(destination)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	uri, err := sqliteReadURI(snapshot)
+	if err != nil {
+		return err
+	}
+	if _, err := db.db.Exec("ATTACH DATABASE ? AS restore_source", uri); err != nil {
+		return err
+	}
+	defer db.db.Exec("DETACH DATABASE restore_source")
+	tx, err := db.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for i := len(backupTables) - 1; i >= 0; i-- {
+		if _, err := tx.Exec("DELETE FROM " + backupTables[i].name); err != nil {
+			return err
+		}
+	}
+	for _, table := range backupTables {
+		query := "INSERT INTO main." + table.name + " (" + table.columns + ") SELECT " + table.columns + " FROM restore_source." + table.name
+		if _, err := tx.Exec(query); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
