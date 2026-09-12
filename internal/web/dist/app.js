@@ -1004,7 +1004,13 @@ window.openPingChart = function(uuid, nodeName, targetName) {
 
   ['btnRange1h', 'btnRange24h', 'btnRange7d', 'btnRangeAll'].forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.classList.toggle('active', id === 'btnRange1h');
+    if (el && el.classList) {
+      if (id === 'btnRange1h') {
+        el.classList.add('active');
+      } else {
+        el.classList.remove('active');
+      }
+    }
   });
 
   // Render Target selector buttons
@@ -1057,7 +1063,13 @@ window.switchPingRange = function(range) {
   };
   Object.entries(rangeBtnMap).forEach(([r, btnId]) => {
     const el = document.getElementById(btnId);
-    if (el) el.classList.toggle('active', r === range);
+    if (el && el.classList) {
+      if (r === range) {
+        el.classList.add('active');
+      } else {
+        el.classList.remove('active');
+      }
+    }
   });
   loadPingHistory();
 };
