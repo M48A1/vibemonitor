@@ -160,14 +160,13 @@ guideCopyBtns.forEach(item => {
 });
 
 // Ping chart range switch buttons
-const btnRange1h = document.getElementById('btnRange1h');
-if (btnRange1h && typeof btnRange1h.addEventListener === 'function') {
-  btnRange1h.addEventListener('click', () => switchPingRange('1h'));
-}
-const btnRange24h = document.getElementById('btnRange24h');
-if (btnRange24h && typeof btnRange24h.addEventListener === 'function') {
-  btnRange24h.addEventListener('click', () => switchPingRange('24h'));
-}
+['btnRange1h', 'btnRange24h', 'btnRange7d', 'btnRangeAll'].forEach(id => {
+  const btn = document.getElementById(id);
+  if (btn && typeof btn.addEventListener === 'function') {
+    const range = id === 'btnRange1h' ? '1h' : (id === 'btnRange24h' ? '24h' : (id === 'btnRange7d' ? '7d' : 'all'));
+    btn.addEventListener('click', () => switchPingRange(range));
+  }
+});
 
 // Global event delegation (backdrop click, Escape key, [data-close-modal])
 if (typeof document.addEventListener === 'function') {
@@ -1003,8 +1002,10 @@ window.openPingChart = function(uuid, nodeName, targetName) {
   currentPingTarget = targetName || '';
   currentPingRange = '1h';
 
-  document.getElementById('btnRange1h').classList.add('active');
-  document.getElementById('btnRange24h').classList.remove('active');
+  ['btnRange1h', 'btnRange24h', 'btnRange7d', 'btnRangeAll'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('active', id === 'btnRange1h');
+  });
 
   // Render Target selector buttons
   const node = nodes.find(n => n.uuid === uuid);
@@ -1048,13 +1049,16 @@ window.switchPingTarget = function(targetName) {
 
 window.switchPingRange = function(range) {
   currentPingRange = range;
-  if (range === '1h') {
-    document.getElementById('btnRange1h').classList.add('active');
-    document.getElementById('btnRange24h').classList.remove('active');
-  } else {
-    document.getElementById('btnRange1h').classList.remove('active');
-    document.getElementById('btnRange24h').classList.add('active');
-  }
+  const rangeBtnMap = {
+    '1h': 'btnRange1h',
+    '24h': 'btnRange24h',
+    '7d': 'btnRange7d',
+    'all': 'btnRangeAll'
+  };
+  Object.entries(rangeBtnMap).forEach(([r, btnId]) => {
+    const el = document.getElementById(btnId);
+    if (el) el.classList.toggle('active', r === range);
+  });
   loadPingHistory();
 };
 
@@ -1094,15 +1098,21 @@ async function loadPingHistory() {
     cachedPingSamples = data.samples || [];
 
     const nowSec = Math.floor(Date.now() / 1000);
-    const duration = currentPingRange === '1h' ? 3600 : 86400;
-    const startSec = nowSec - duration;
+    let startSec = data.start_time;
+    let endSec = data.end_time || nowSec;
+    if (!startSec) {
+      const duration = currentPingRange === '1h' ? 3600 :
+                       currentPingRange === '7d' ? 7 * 86400 :
+                       currentPingRange === 'all' ? (cachedPingSamples[0]?.t || (nowSec - 86400)) : 86400;
+      startSec = nowSec - duration;
+    }
 
     // Time indicators
-    const is24h = currentPingRange === '24h';
-    document.getElementById('chartTimeStart').textContent = formatChartTime(startSec, is24h);
-    document.getElementById('chartTimeEnd').textContent = `现在 (${formatChartTime(nowSec, is24h)})`;
+    const showDate = currentPingRange !== '1h';
+    document.getElementById('chartTimeStart').textContent = formatChartTime(startSec, showDate);
+    document.getElementById('chartTimeEnd').textContent = `现在 (${formatChartTime(endSec, showDate)})`;
 
-    renderPingSvgChart(cachedPingSamples, currentPingRange, null, startSec, nowSec, data.offline_intervals || []);
+    renderPingSvgChart(cachedPingSamples, currentPingRange, null, startSec, endSec, data.offline_intervals || []);
   } catch (e) {
     renderPingSvgChart([], currentPingRange, e.message);
   }
@@ -1113,8 +1123,13 @@ function formatChartTime(tSec, showDate) {
   const h = String(d.getHours()).padStart(2, '0');
   const m = String(d.getMinutes()).padStart(2, '0');
   if (showDate) {
+    const year = d.getFullYear();
+    const currentYear = new Date().getFullYear();
     const month = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
+    if (year !== currentYear) {
+      return `${year}-${month}-${day} ${h}:${m}`;
+    }
     return `${month}-${day} ${h}:${m}`;
   }
   return `${h}:${m}`;
@@ -1122,9 +1137,14 @@ function formatChartTime(tSec, showDate) {
 
 function formatTooltipTime(tSec) {
   const d = new Date(tSec * 1000);
+  const year = d.getFullYear();
+  const currentYear = new Date().getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  if (year !== currentYear) {
+    return `${year}-${month}-${day} ${timeStr}`;
+  }
   return `${month}-${day} ${timeStr}`;
 }
 
@@ -1151,7 +1171,9 @@ function renderPingSvgChart(samples, range, errorMsg, startSec, nowSec, offlineI
     return;
   }
 
-  const duration = (nowSec && startSec && nowSec > startSec) ? (nowSec - startSec) : (range === '1h' ? 3600 : 86400);
+  const duration = (nowSec && startSec && nowSec > startSec)
+    ? (nowSec - startSec)
+    : (range === '1h' ? 3600 : (range === '7d' ? 7 * 86400 : 86400));
   const baseStart = startSec || (Math.floor(Date.now() / 1000) - duration);
 
   const offlineSvg = offlineIntervals.map(iv => {
@@ -1202,10 +1224,14 @@ function renderPingSvgChart(samples, range, errorMsg, startSec, nowSec, offlineI
   let inSegment = false;
   let segStart = null;
   let prevPt = null;
+  let lastLossX = null;
 
   points.forEach(pt => {
     if (pt.isLoss) {
-      lossDots += `<circle cx="${pt.x.toFixed(1)}" cy="${padT + plotH - 3}" r="3.5" fill="#f43f5e" opacity="0.85" />`;
+      if (lastLossX === null || Math.abs(pt.x - lastLossX) >= 2) {
+        lossDots += `<circle cx="${pt.x.toFixed(1)}" cy="${padT + plotH - 3}" r="3.5" fill="#f43f5e" opacity="0.85" />`;
+        lastLossX = pt.x;
+      }
       if (inSegment && prevPt && segStart) {
         areaD += ` L ${prevPt.x.toFixed(1)} ${padT + plotH} L ${segStart.x.toFixed(1)} ${padT + plotH} Z`;
       }

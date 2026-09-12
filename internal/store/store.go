@@ -48,7 +48,9 @@ type PingHistoryResponse struct {
 	UUID             string            `json:"uuid"`
 	Target           string            `json:"target"`
 	Host             string            `json:"host,omitempty"`
-	Range            string            `json:"range"` // "1h" or "24h"
+	Range            string            `json:"range"` // "1h", "24h", "7d", "all"
+	StartTime        int64             `json:"start_time,omitempty"`
+	EndTime          int64             `json:"end_time,omitempty"`
 	Stats            PingStats         `json:"stats"`
 	Samples          []PingSample      `json:"samples"`
 	OfflineIntervals []OfflineInterval `json:"offline_intervals,omitempty"`
@@ -965,22 +967,35 @@ func (s *Store) GetPingHistory(uuid, targetName, timeRange string) (*PingHistory
 	}
 	if targetHost == "" {
 		return &PingHistoryResponse{
-			Method:  "",
-			UUID:    uuid,
-			Target:  targetName,
-			Host:    "",
-			Range:   timeRange,
-			Stats:   PingStats{Current: -1},
-			Samples: []PingSample{},
+			Method:    "",
+			UUID:      uuid,
+			Target:    targetName,
+			Host:      "",
+			Range:     timeRange,
+			StartTime: time.Now().Unix() - 3600,
+			EndTime:   time.Now().Unix(),
+			Stats:     PingStats{Current: -1},
+			Samples:   []PingSample{},
 		}, nil
 	}
 	nowUnix := time.Now().Unix()
 	var duration int64 = 86400 // default 24h
-	if timeRange == "1h" {
+	var cutoff int64
+	switch timeRange {
+	case "1h":
 		duration = 3600
+		cutoff = nowUnix - duration
+	case "7d":
+		duration = 7 * 86400
+		cutoff = nowUnix - duration
+	case "all":
+		duration = 0
+		cutoff = 0
+	default: // "24h"
+		timeRange = "24h"
+		duration = 86400
+		cutoff = nowUnix - duration
 	}
-	cutoff := nowUnix - duration
-
 
 	var filtered []PingSample
 	var method string
@@ -1008,13 +1023,22 @@ func (s *Store) GetPingHistory(uuid, targetName, timeRange string) (*PingHistory
 	// A gap significantly larger than this indicates the probe was offline.
 	sampleGapThreshold := int64(PingSampleIntervalSec * 3) // 180s
 	offlineIntervals := make([]OfflineInterval, 0)
+	nodeCreated := node.CreatedAt.Unix()
+	effectiveStart := cutoff
+	if timeRange == "all" || cutoff == 0 {
+		if nodeCreated > 0 {
+			effectiveStart = nodeCreated
+		} else if len(filtered) > 0 {
+			effectiveStart = filtered[0].Timestamp
+		} else {
+			effectiveStart = nowUnix - 86400
+		}
+	} else if nodeCreated > effectiveStart {
+		effectiveStart = nodeCreated
+	}
+
 	if len(filtered) > 0 {
 		// Leading edge: node existed before window but first sample arrives much later
-		nodeCreated := node.CreatedAt.Unix()
-		effectiveStart := cutoff
-		if nodeCreated > effectiveStart {
-			effectiveStart = nodeCreated
-		}
 		if filtered[0].Timestamp-effectiveStart > sampleGapThreshold {
 			offlineIntervals = append(offlineIntervals, OfflineInterval{
 				Start: effectiveStart,
@@ -1045,11 +1069,6 @@ func (s *Store) GetPingHistory(uuid, targetName, timeRange string) (*PingHistory
 	} else if !node.Online && node.LastSeen.Unix() > 0 {
 		// No samples in the window at all. If the node is offline,
 		// mark the relevant portion as an offline interval.
-		nodeCreated := node.CreatedAt.Unix()
-		effectiveStart := cutoff
-		if nodeCreated > effectiveStart {
-			effectiveStart = nodeCreated
-		}
 		if nowUnix > effectiveStart {
 			offlineIntervals = append(offlineIntervals, OfflineInterval{Start: effectiveStart, End: nowUnix})
 		}
@@ -1109,12 +1128,20 @@ func (s *Store) GetPingHistory(uuid, targetName, timeRange string) (*PingHistory
 		stats.PacketLoss = math.Round((lost+float64(offlineSamples))/float64(stats.TotalCount)*1000.0) / 10.0
 	}
 
+	startTime := effectiveStart
+	endTime := nowUnix
+	if startTime >= endTime {
+		startTime = endTime - 3600
+	}
+
 	return &PingHistoryResponse{
 		Method:           method,
 		UUID:             uuid,
 		Target:           targetName,
 		Host:             targetHost,
 		Range:            timeRange,
+		StartTime:        startTime,
+		EndTime:          endTime,
 		Stats:            stats,
 		Samples:          filtered,
 		OfflineIntervals: offlineIntervals,
