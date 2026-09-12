@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"net/url"
 	"strconv"
@@ -10,14 +11,29 @@ import (
 	"vibemonitor/pkg/protocol"
 )
 
+var ErrInvalidSettings = errors.New("invalid settings")
+
 // UpdateSettings commits the complete settings change or leaves memory unchanged.
 func (s *Store) UpdateSettings(title string, targets []protocol.PingTarget, password string) error {
+	return s.UpdateSettingsWithIcon(title, targets, password, nil)
+}
+
+// UpdateSettingsWithIcon validates and commits all submitted settings atomically.
+func (s *Store) UpdateSettingsWithIcon(title string, targets []protocol.PingTarget, password string, icon *string) error {
 	if err := validatePingTargets(targets); err != nil {
-		return err
+		return fmt.Errorf("%w: %v", ErrInvalidSettings, err)
+	}
+	if icon != nil {
+		if err := validateSiteIcon(*icon); err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalidSettings, err)
+		}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	next := s.config
+	if icon != nil {
+		next.SiteIcon = strings.TrimSpace(*icon)
+	}
 	if title != "" || targets != nil {
 		if title != "" {
 			next.SiteTitle = title
@@ -38,20 +54,28 @@ func (s *Store) UpdateSettings(title string, targets []protocol.PingTarget, pass
 
 // UpdateSiteIcon updates the favicon URL independently of the other settings.
 func (s *Store) UpdateSiteIcon(icon string) error {
+	if err := validateSiteIcon(icon); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	next := s.config
 	next.SiteIcon = strings.TrimSpace(icon)
-	if len(next.SiteIcon) > 2048 {
+	return s.commitConfigLocked(next)
+}
+
+func validateSiteIcon(icon string) error {
+	icon = strings.TrimSpace(icon)
+	if len(icon) > 2048 {
 		return errors.New("site icon URL is too long")
 	}
-	if next.SiteIcon != "" {
-		u, err := url.Parse(next.SiteIcon)
-		if err != nil || (u.Scheme != "" && u.Scheme != "http" && u.Scheme != "https") || strings.HasPrefix(next.SiteIcon, "//") {
+	if icon != "" {
+		u, err := url.Parse(icon)
+		if err != nil || (u.Scheme != "" && u.Scheme != "http" && u.Scheme != "https") || strings.HasPrefix(icon, "//") {
 			return errors.New("site icon must be a relative URL or use http/https")
 		}
 	}
-	return s.commitConfigLocked(next)
+	return nil
 }
 
 func validatePingTargets(targets []protocol.PingTarget) error {

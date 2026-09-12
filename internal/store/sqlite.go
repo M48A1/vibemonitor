@@ -90,6 +90,11 @@ func (s *sqliteDB) Close() error {
 
 func (s *sqliteDB) initSchema() error {
 	schema := `
+	CREATE TABLE IF NOT EXISTS site_assets (
+		id INTEGER PRIMARY KEY CHECK (id = 1),
+		content_type TEXT NOT NULL,
+		data BLOB NOT NULL
+	);
 	CREATE TABLE IF NOT EXISTS config (
 		id INTEGER PRIMARY KEY CHECK (id = 1),
 		admin_username TEXT NOT NULL DEFAULT 'admin',

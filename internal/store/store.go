@@ -165,6 +165,10 @@ func New(dbPath string, defaultAdminPassword string, usernames ...string) (*Stor
 		_ = sdb.Close()
 		return nil, err
 	}
+	if err := s.importLegacyIcon(); err != nil {
+		_ = sdb.Close()
+		return nil, fmt.Errorf("import site icon: %w", err)
+	}
 	go s.periodicFlusher()
 	return s, nil
 }
@@ -782,6 +786,9 @@ func (s *Store) IngestReport(tokenOrUUID string, report protocol.Report, clientI
 		return nil, errors.New("negative network counters")
 	}
 	node := s.nodes[uuid]
+	if report.Network.Source != "" && (node.LastReport == nil || node.LastReport.Network.Source != report.Network.Source) {
+		node.TrafficBaselineSet = false // New selection: preserve usage, replace only raw-counter baseline.
+	}
 	node.LastReport = &report
 	s.dirty = true
 	node.LastSeen = time.Now().UTC()

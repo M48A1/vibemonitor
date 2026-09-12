@@ -139,6 +139,8 @@ bash install.sh restore /etc/vibemonitor/backups/data-YYYYMMDD-HHMMSS.XXXXXX.db
 
 本版本仅接受 SQLite 备份。v1.0.40 导出的 JSON 备份不再支持，升级后请重新生成 `.db` 备份。手动部署或自定义服务需要先停服，再执行 `vibemonitor export-data DATA.db BACKUP.db` 或 `vibemonitor restore-data BACKUP.db DATA.db`，完成后重新启动。不要在运行中的 SQLite 数据库上仅复制 `.db` 而忽略 WAL。
 
+上传的站点图标（最大 2 MiB）也存储在 SQLite 中，随新备份一起恢复。升级后首次启动会把数据库当前引用的旧 `site-icon.*` 图片导入数据库，原图片保留但不再用于日常读取；后续上传和删除均在数据库事务内完成。旧版 SQLite 备份仍可恢复，但其中没有图标图片内容，迁移到新机器时可能需要重新上传。外部图标链接只备份链接，不下载远端图片。
+
 备份和数据文件包含管理员密码哈希及节点密钥，应仅供管理员读取。恢复也会恢复备份时的密码和节点密钥。安装/重装和卸载前需输入 `yes` 二次确认，并删除专用 `backups` 目录中的所有旧备份，不会自动建立新备份；服务端安装/重装和卸载会删除整个配置目录中的配置、账号、节点及监控数据；探针安装仍仅清理备份。需要留存的备份请提前复制到其他位置。备份保存在本机，应另行复制到其他机器，并自行制定保留期限。
 
 ```bash
@@ -178,6 +180,11 @@ python3 -m unittest discover -s tests -v
 | `--server`, `-s` | `VIBEMONITOR_SERVER` | 探针必填 |
 | `--token`, `-t` | `VIBEMONITOR_TOKEN` | 探针必填 |
 | `--interval`, `-i` | `VIBEMONITOR_INTERVAL` | `3s` |
+| `--interfaces` | `VIBEMONITOR_INTERFACES` | 自动选择统计网卡 |
+
+流量统计默认排除回环、常见容器/隧道接口、网桥、VLAN 子接口和 bond 从接口。复杂网络建议明确指定出口网卡，例如 `vibemonitor agent --server https://monitor.example.com --token YOUR_TOKEN --interfaces eth0`；多个接口使用逗号分隔，勿同时选择同一流量经过的物理接口与隧道接口。systemd 安装可在探针服务的 drop-in 中设置 `Environment="VIBEMONITOR_INTERFACES=eth0"`，然后重新加载并重启探针。接口不存在或读取失败时不提交零流量报告；统计接口集合变化时重新建立计数基线，保留已累计用量，不回算历史误差。请先更新主控，再更新或重启探针，以支持新基线标记。
+
+探针基础信息在启动时上报，失败后会在实时指标恢复上报时继续重试；连接失败后补报，正常连接期间每 15 分钟刷新一次。
 
 `vibemonitor validate-data BACKUP.db` 以只读方式检查 SQLite 完整性、表结构及配置和节点，不启动服务或修改数据库内容。
 

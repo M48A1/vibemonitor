@@ -94,6 +94,34 @@ func ValidateBackup(path string) error {
 			return err
 		}
 	}
+	// v1.0.41 and earlier SQLite backups have no embedded icon table.
+	var assetTables int
+	if err := db.db.QueryRow("SELECT count(*) FROM sqlite_schema WHERE name='site_assets' AND type='table'").Scan(&assetTables); err != nil {
+		return err
+	}
+	if assetTables > 0 {
+		rows, err := db.db.Query("SELECT id, content_type, length(data) FROM site_assets")
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id, size int
+			var kind string
+			if err := rows.Scan(&id, &kind, &size); err != nil {
+				return err
+			}
+			if id != 1 || size <= 0 || size > MaxIconBytes || !validIconType(kind) {
+				return errors.New("invalid embedded site icon")
+			}
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+	}
 	config, err := db.loadConfig()
 	if err != nil {
 		return err
@@ -235,6 +263,18 @@ func RestoreData(source, destination string) error {
 		return err
 	}
 	defer tx.Rollback()
+	if _, err := tx.Exec("DELETE FROM main.site_assets"); err != nil {
+		return err
+	}
+	var assetTables int
+	if err := tx.QueryRow("SELECT count(*) FROM restore_source.sqlite_schema WHERE name='site_assets' AND type='table'").Scan(&assetTables); err != nil {
+		return err
+	}
+	if assetTables > 0 {
+		if _, err := tx.Exec("INSERT INTO main.site_assets(id, content_type, data) SELECT id, content_type, data FROM restore_source.site_assets"); err != nil {
+			return err
+		}
+	}
 	for i := len(backupTables) - 1; i >= 0; i-- {
 		if _, err := tx.Exec("DELETE FROM " + backupTables[i].name); err != nil {
 			return err

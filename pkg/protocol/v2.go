@@ -122,10 +122,11 @@ type DiskReport struct {
 }
 
 type NetworkReport struct {
-	Up        int64 `json:"up"`        // Bytes/s
-	Down      int64 `json:"down"`      // Bytes/s
-	TotalUp   int64 `json:"totalUp"`   // Cumulative Bytes
-	TotalDown int64 `json:"totalDown"` // Cumulative Bytes
+	Source    string `json:"source,omitempty"` // Counter selection identity; changes reset the billing baseline.
+	Up        int64  `json:"up"`               // Bytes/s
+	Down      int64  `json:"down"`             // Bytes/s
+	TotalUp   int64  `json:"totalUp"`          // Cumulative Bytes
+	TotalDown int64  `json:"totalDown"`        // Cumulative Bytes
 }
 
 type ConnectionsReport struct {
