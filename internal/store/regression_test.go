@@ -7,7 +7,7 @@ import (
 )
 
 func TestPasswordChangeSurvivesRestart(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "data.json")
+	path := filepath.Join(t.TempDir(), "data.db")
 	st, err := New(path, "original-password")
 	if err != nil {
 		t.Fatal(err)

@@ -12,7 +12,7 @@ import (
 )
 
 func TestSiteIconUploadAndServe(t *testing.T) {
-	dataPath := filepath.Join(t.TempDir(), "data.json")
+	dataPath := filepath.Join(t.TempDir(), "data.db")
 	s, err := New(Options{DataFile: dataPath, AdminPassword: "test-password"})
 	if err != nil {
 		t.Fatal(err)

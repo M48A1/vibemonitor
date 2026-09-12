@@ -163,7 +163,9 @@ func (s *sqliteDB) loadConfig() (*Config, error) {
 		return nil, err
 	}
 	if targetsJSON != "" {
-		_ = json.Unmarshal([]byte(targetsJSON), &c.PingTargets)
+		if err := json.Unmarshal([]byte(targetsJSON), &c.PingTargets); err != nil {
+			return nil, fmt.Errorf("invalid stored ping targets: %w", err)
+		}
 	}
 	if c.PingTargets == nil {
 		c.PingTargets = []protocol.PingTarget{}

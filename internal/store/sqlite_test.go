@@ -149,4 +149,3 @@ func TestSQLitePingHistoryRanges(t *testing.T) {
 		t.Errorf("invalid StartTime/EndTime in all range: %d / %d", hAll.StartTime, hAll.EndTime)
 	}
 }
-

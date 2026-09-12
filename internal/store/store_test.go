@@ -11,14 +11,14 @@ import (
 
 func cleanTestDataFile(dataFile string) {
 	_ = os.Remove(dataFile)
-	dbPath := resolveDBPath(dataFile)
+	dbPath := dataFile
 	_ = os.Remove(dbPath)
 	_ = os.Remove(dbPath + "-wal")
 	_ = os.Remove(dbPath + "-shm")
 }
 
 func TestStoreConcurrency(t *testing.T) {
-	dataFile := "test-store-concurrency.json"
+	dataFile := "test-store-concurrency.db"
 	cleanTestDataFile(dataFile)
 	defer cleanTestDataFile(dataFile)
 
@@ -58,7 +58,7 @@ func TestStoreConcurrency(t *testing.T) {
 }
 
 func TestGetNodesRedactsBasicInfoIPs(t *testing.T) {
-	dataFile := "test-store-redaction.json"
+	dataFile := "test-store-redaction.db"
 	cleanTestDataFile(dataFile)
 	defer cleanTestDataFile(dataFile)
 
@@ -114,7 +114,7 @@ func TestGetBillingCycleRange(t *testing.T) {
 }
 
 func TestTrafficAccounting(t *testing.T) {
-	dataFile := "test-store-traffic.json"
+	dataFile := "test-store-traffic.db"
 	cleanTestDataFile(dataFile)
 	defer cleanTestDataFile(dataFile)
 
@@ -205,7 +205,7 @@ func TestTrafficAccounting(t *testing.T) {
 }
 
 func TestPingMonitoring(t *testing.T) {
-	dataFile := "test-store-ping.json"
+	dataFile := "test-store-ping.db"
 	cleanTestDataFile(dataFile)
 	defer cleanTestDataFile(dataFile)
 

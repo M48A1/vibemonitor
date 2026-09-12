@@ -1,7 +1,6 @@
 package store
 
 import (
-	"encoding/json"
 	"errors"
 	"net"
 	"net/url"
@@ -53,31 +52,6 @@ func (s *Store) UpdateSiteIcon(icon string) error {
 		}
 	}
 	return s.commitConfigLocked(next)
-}
-
-// ValidateData checks a backup without modifying or starting a store.
-func ValidateData(data []byte) error {
-	var df DataFile
-	if err := json.Unmarshal(data, &df); err != nil {
-		return err
-	}
-	if df.Config.AdminPassword == "" || df.Nodes == nil {
-		return errors.New("backup is missing configuration or nodes")
-	}
-	if err := validatePingTargets(df.Config.PingTargets); err != nil {
-		return err
-	}
-	tokens := make(map[string]bool)
-	for id, node := range df.Nodes {
-		if node == nil || id == "" || node.UUID != id || node.Token == "" || tokens[node.Token] {
-			return errors.New("backup contains invalid or duplicate nodes")
-		}
-		if err := validateProfile(node.Profile); err != nil {
-			return err
-		}
-		tokens[node.Token] = true
-	}
-	return nil
 }
 
 func validatePingTargets(targets []protocol.PingTarget) error {

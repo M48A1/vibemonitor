@@ -41,7 +41,7 @@ curl -4 -fsSL -o install.sh https://github.com/M48A1/vibemonitor/releases/latest
 sudo bash install.sh update -p 1314
 ```
 
-端口请填写现有主控实际监听端口。此命令只替换程序并重启主控，保留账号、节点、配置、监控历史、备份和现有 systemd 设置，无需重新填写密码和 Token。启动或健康检查失败时回退旧程序，不回退新程序启动后产生的数据变化。同机探针共用程序文件，重启探针后使用新版。
+端口请填写现有主控实际监听端口。此命令替换程序并重启主控，保留账号、节点、配置、监控历史和备份；标准安装中旧的 `--data ...json` 参数会改为现有 `.db` 路径，其他 systemd 设置保留，无需重新填写密码和 Token。启动或健康检查失败时回退旧程序，不回退新程序启动后产生的数据变化。同机探针共用程序文件，重启探针后使用新版。
 
 `update` 不执行下文安装/重装的清理步骤。`server` 仍是清空重装命令，请勿用它进行保留数据升级。
 
@@ -88,7 +88,7 @@ curl -4 -fL --progress-bar -o install.sh https://github.com/M48A1/vibemonitor/re
 ```ini
 [Service]
 ExecStart=
-ExecStart=/usr/local/bin/vibemonitor server --listen 127.0.0.1:1314 --data /etc/vibemonitor/vibemonitor-data.json
+ExecStart=/usr/local/bin/vibemonitor server --listen 127.0.0.1:1314 --data /etc/vibemonitor/vibemonitor-data.db
 ```
 
 准备自己的域名及证书，将以下示例替换为实际域名与证书路径：
@@ -124,20 +124,22 @@ server {
 
 ## 数据、备份与恢复
 
-安装器部署的数据源为 `/etc/vibemonitor/vibemonitor-data.db`（SQLite），统一保存配置、节点、流量和延迟历史。兼容旧 unit 的 `--data ...json` 参数时，实际数据库使用同名 `.db`；直接运行的默认路径为 `vibemonitor-data.db`。首次启动且数据库尚未初始化时，会导入旧 JSON 和摘要匹配的 `.ping.json`。事务提交后，会校验 SQLite 完整性、配置、节点及已导入的有效延迟样本；全部通过后，删除旧主 JSON、配套 `.ping.json`，以及同一数据目录下整个 `backups` 目录（包括无后缀文件和子目录）。这些删除不保留恢复副本。迁移或校验失败时不删除原文件和备份；清理失败会在日志中报告路径，需手动处理。清理仅随这次旧数据迁移执行，日常重启不会删除后来创建的备份，也不会扫描或删除其他目录的 JSON。全新安装直接创建 SQLite，不生成旧 JSON 镜像。已有数据库始终优先，恢复旧备份请使用恢复命令，不能只替换 JSON。
+程序仅使用 SQLite 文件存储，安装器默认路径为 `/etc/vibemonitor/vibemonitor-data.db`，直接运行默认路径为 `vibemonitor-data.db`。`--data` 接受 `.db`、`.sqlite` 或 `.sqlite3` 文件，不再进行 JSON 路径映射、导入、导出或迁移后清理。接口通信及数据库内结构化字段仍使用 JSON 序列化，它们不是独立 JSON 文件。
+
+从 v1.0.40 升级前，请确认已有可用的 SQLite 数据库。标准安装的旧启动参数由升级脚本改为 `.db`；自定义 unit 或 drop-in 中的旧路径需先手动修改为实际数据库路径。尚未迁移的旧用户请先使用 v1.0.40 完成迁移，再升级到 SQLite-only 版本。
 
 配置、节点修改与相关历史清理在同一数据库事务中提交，失败会回滚。周期保存跳过未变化的节点和样本；指标约每 15 秒保存，新延迟样本即时写入。后台写入失败会记日志并重试仍在内存中的样本（每个目标最近 24 个）；进程崩溃可能丢失尚未落盘的近期数据。
 
 ```bash
 bash install.sh backup
-bash install.sh restore /etc/vibemonitor/backups/data-YYYYMMDD-HHMMSS.XXXXXX
+bash install.sh restore /etc/vibemonitor/backups/data-YYYYMMDD-HHMMSS.XXXXXX.db
 ```
 
-备份会短暂停止正在运行的标准主控服务，完成退出保存后，从数据库导出单个完整 JSON 备份，再启动服务。备份包含配置、节点、流量和全部留存延迟历史，不依赖旧 JSON 镜像。恢复会先验证备份、停服并保存当前数据库快照，再在一个事务中替换数据；启动失败时恢复原快照，回退失败时保留恢复材料并报告路径。标准服务名为 `vibemonitor-server`。
+备份会短暂停止正在运行的标准主控服务，完成退出保存后，使用 SQLite `VACUUM INTO` 生成单个 `.db` 快照，再启动服务。快照包含配置、节点、流量和全部留存延迟历史，包括已经提交到 WAL 的数据。备份临时文件通过 SQLite 完整性和数据格式校验后才会替换空的输出占位文件；不覆盖已有的非空备份。恢复先校验备份、停服并保存当前快照，再通过 SQLite 事务替换数据；启动失败时恢复原快照，回退失败时保留恢复材料并报告路径。标准服务名为 `vibemonitor-server`。
 
-旧 JSON 备份仍可恢复；如有 `.ping.json`，请保持名称和相邻位置，只有摘要匹配的历史才会导入。手动部署或自定义服务需要先停服，再执行 `vibemonitor export-data DATA_PATH OUTPUT` 或 `vibemonitor restore-data BACKUP DATA_PATH`，完成后重新启动。不要在运行中的 SQLite 数据库上仅复制 `.db` 而忽略 WAL。
+本版本仅接受 SQLite 备份。v1.0.40 导出的 JSON 备份不再支持，升级后请重新生成 `.db` 备份。手动部署或自定义服务需要先停服，再执行 `vibemonitor export-data DATA.db BACKUP.db` 或 `vibemonitor restore-data BACKUP.db DATA.db`，完成后重新启动。不要在运行中的 SQLite 数据库上仅复制 `.db` 而忽略 WAL。
 
-备份和数据文件包含管理员密码及节点密钥，应仅供管理员读取。恢复也会恢复备份时的密码和节点密钥。安装/重装和卸载前需输入 `yes` 二次确认，并删除专用 `backups` 目录中的所有旧备份（包括 ping 配套文件），不会自动建立新备份；服务端安装/重装和卸载会删除整个配置目录中的配置、账号、节点及监控数据；探针安装仍仅清理备份。需要留存的备份请提前复制到其他位置。备份保存在本机，应另行复制到其他机器，并自行制定保留期限。
+备份和数据文件包含管理员密码哈希及节点密钥，应仅供管理员读取。恢复也会恢复备份时的密码和节点密钥。安装/重装和卸载前需输入 `yes` 二次确认，并删除专用 `backups` 目录中的所有旧备份，不会自动建立新备份；服务端安装/重装和卸载会删除整个配置目录中的配置、账号、节点及监控数据；探针安装仍仅清理备份。需要留存的备份请提前复制到其他位置。备份保存在本机，应另行复制到其他机器，并自行制定保留期限。
 
 ```bash
 bash install.sh status
@@ -145,7 +147,7 @@ bash install.sh restart
 bash install.sh uninstall
 ```
 
-卸载删除全部主控配置、账号、节点、监控数据和备份。保留数据更新不会重写现有 unit；服务端清空重装会删除旧服务的 drop-in 配置。若 drop-in 改了监听端口，请为更新命令传入对应的 `-p` 端口，以便健康检查。
+卸载删除全部主控配置、账号、节点、监控数据和备份。保留数据更新只在需要时修正标准 unit 的旧数据路径；服务端清空重装会删除旧服务的 drop-in 配置。若 drop-in 改了监听端口，请为更新命令传入对应的 `-p` 端口，以便健康检查。
 
 ## 编译与测试
 
@@ -177,13 +179,13 @@ python3 -m unittest discover -s tests -v
 | `--token`, `-t` | `VIBEMONITOR_TOKEN` | 探针必填 |
 | `--interval`, `-i` | `VIBEMONITOR_INTERVAL` | `3s` |
 
-`vibemonitor validate-data FILE` 只检查备份格式，不启动服务或修改文件。
+`vibemonitor validate-data BACKUP.db` 以只读方式检查 SQLite 完整性、表结构及配置和节点，不启动服务或修改数据库内容。
 
 ### 管理员账号
 
 系统仅有一个管理员账号。安装时必须填写账号和密码，空值或纯空格会提示重新输入，密码输入不回显。命令行安装必须提供 `-u 用户名 -w 密码`，缺少任一项会在清理数据前退出。
 
-管理员账号与 bcrypt 密码哈希保存在 SQLite 的 `config` 表中，数据库权限为 `0600`。旧明文密码在导入或成功登录后转换为哈希；哈希本身不能作为密码登录。安装器仍会在 `/etc/systemd/system/vibemonitor-server.service` 中保存初始化账号密码（权限 `0600`）；网页改密后，以数据库中的密码为准。尚未迁移或迁移失败时保留的旧 JSON 和旧备份可能仍含明文密码；数据库、备份和 unit 都应仅供管理员读取。
+管理员账号与 bcrypt 密码哈希保存在 SQLite 的 `config` 表中，数据库权限为 `0600`。仅支持 bcrypt 密码哈希；已移除旧明文密码兼容逻辑，哈希本身不能作为密码登录。安装器仍会在 `/etc/systemd/system/vibemonitor-server.service` 中保存初始化账号密码（权限 `0600`）；网页改密后，以数据库中的密码为准。数据库、备份和 unit 都应仅供管理员读取。
 
 ### 节点 TCP 测试与账单
 

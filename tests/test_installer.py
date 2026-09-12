@@ -55,28 +55,71 @@ curl() {
             env={**os.environ, 'SOURCE_INSTALLER':str(ROOT / 'install.sh'), 'TEST_ROOT':str(self.root), 'FAIL_NEW':'1' if fail else '0'}, timeout=10)
 
     def test_update_preserves_data_backups_and_service_settings(self):
-        data = self.root / 'config/vibemonitor-data.json'
+        data = self.root / 'config/vibemonitor-data.db'
         data.write_text('existing account and nodes')
         backups = self.root / 'config/backups'
         backups.mkdir()
-        (backups / 'saved.json').write_text('backup')
+        (backups / 'saved.db').write_text('backup')
         dropin = self.root / 'units/vibemonitor-server.service.d'
         dropin.mkdir()
         (dropin / 'override.conf').write_text('custom settings')
         result = self.run_installer('update_server 1314\n')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(data.read_text(), 'existing account and nodes')
-        self.assertEqual((backups / 'saved.json').read_text(), 'backup')
+        self.assertEqual((backups / 'saved.db').read_text(), 'backup')
         self.assertEqual((dropin / 'override.conf').read_text(), 'custom settings')
         self.assertEqual((self.root / 'units/vibemonitor-server.service').read_text(), 'old unit')
         self.assertNotEqual((self.root / 'bin/vibemonitor').read_text(), 'old binary')
 
     def test_update_failure_restores_binary_without_deleting_data(self):
-        data = self.root / 'config/vibemonitor-data.json'
+        data = self.root / 'config/vibemonitor-data.db'
         data.write_text('existing account and nodes')
         result = self.run_installer('update_server 1314\n', fail=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(data.read_text(), 'existing account and nodes')
+        self.assertEqual((self.root / 'bin/vibemonitor').read_text(), 'old binary')
+
+    def test_update_switches_old_unit_to_existing_database(self):
+        data = self.root / 'config/vibemonitor-data.db'
+        data.write_text('existing SQLite data')
+        unit = self.root / 'units/vibemonitor-server.service'
+        old_arg = f'--data "{self.root}/config/vibemonitor-data.json"'
+        new_arg = f'--data "{self.root}/config/vibemonitor-data.db"'
+        original = f'[Service]\nExecStart=/usr/local/bin/vibemonitor server --listen 127.0.0.1:1314 {old_arg} --admin-password keep-me\nRestartSec=7\n'
+        unit.write_text(original)
+        result = self.run_installer('update_server 1314\n')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(unit.read_text(), original.replace(old_arg, new_arg))
+        self.assertEqual(data.read_text(), 'existing SQLite data')
+
+    def test_update_failure_restores_original_data_argument(self):
+        (self.root / 'config/vibemonitor-data.db').write_text('existing SQLite data')
+        unit = self.root / 'units/vibemonitor-server.service'
+        original = f'ExecStart=/usr/local/bin/vibemonitor server --data "{self.root}/config/vibemonitor-data.json"\n'
+        unit.write_text(original)
+        result = self.run_installer('update_server 1314\n', fail=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(unit.read_text(), original)
+        self.assertEqual((self.root / 'bin/vibemonitor').read_text(), 'old binary')
+
+    def test_update_refuses_missing_migrated_database(self):
+        unit = self.root / 'units/vibemonitor-server.service'
+        original = f'ExecStart=/usr/local/bin/vibemonitor server --data "{self.root}/config/vibemonitor-data.json"\n'
+        unit.write_text(original)
+        result = self.run_installer('update_server 1314\n')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(unit.read_text(), original)
+        self.assertEqual((self.root / 'bin/vibemonitor').read_text(), 'old binary')
+        self.assertFalse((self.root / 'config/vibemonitor-data.db').exists())
+
+    def test_update_refuses_legacy_dropin_without_changing_it(self):
+        dropin = self.root / 'units/vibemonitor-server.service.d'
+        dropin.mkdir()
+        config = dropin / 'override.conf'
+        config.write_text('ExecStart=\nExecStart=/usr/local/bin/vibemonitor server --data /custom/data.json\n')
+        result = self.run_installer('update_server 1314\n')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('/custom/data.json', config.read_text())
         self.assertEqual((self.root / 'bin/vibemonitor').read_text(), 'old binary')
 
     def test_credentials_required_before_changes(self):
@@ -89,12 +132,12 @@ curl() {
     def test_cleanup_requires_confirmation(self):
         backups = self.root / 'config/backups'
         backups.mkdir()
-        (backups / 'old.json').write_text('backup')
-        data = self.root / 'config/vibemonitor-data.json'
+        (backups / 'old.db').write_text('backup')
+        data = self.root / 'config/vibemonitor-data.db'
         data.write_text('old credentials')
         result = self.run_installer('read_input() { printf -v "$2" no; }\ninstall_server 1314 pass owner\n')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue((backups / 'old.json').exists())
+        self.assertTrue((backups / 'old.db').exists())
         self.assertTrue(data.exists())
         self.assertEqual((self.root / 'bin/vibemonitor').read_text(), 'old binary')
         result = self.run_installer('install_server 1314 pass owner\n')
@@ -105,8 +148,8 @@ curl() {
     def test_uninstall_cleans_all_data(self):
         backups = self.root / 'config/backups'
         backups.mkdir()
-        (backups / 'old.json').write_text('backup')
-        data = self.root / 'config/vibemonitor-data.json'
+        (backups / 'old.db').write_text('backup')
+        data = self.root / 'config/vibemonitor-data.db'
         data.write_text('keep data')
         result = self.run_installer('uninstall_all\n')
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -225,13 +268,13 @@ restore_data "$TEST_ROOT/restored"
         self.assertEqual((self.root / 'config/vibemonitor-data.db').read_text(), 'old data')
 
     def test_invalid_backup_does_not_stop_service(self):
-        (self.root / 'config/vibemonitor-data.json').write_text('old data')
+        (self.root / 'config/vibemonitor-data.db').write_text('old data')
         binary = self.root / 'bin/vibemonitor'
         binary.write_text('#!/bin/sh\nexit 1\n')
         binary.chmod(0o755)
         result = self.run_installer('restore_data "$TEST_ROOT/missing"\n')
         self.assertNotEqual(result.returncode, 0)
-        self.assertEqual((self.root / 'config/vibemonitor-data.json').read_text(), 'old data')
+        self.assertEqual((self.root / 'config/vibemonitor-data.db').read_text(), 'old data')
         self.assertFalse((self.root / 'service-calls').exists())
 
     def test_unit_arguments_escape_expansion(self):

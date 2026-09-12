@@ -1,17 +1,17 @@
 package server
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func TestSessionRevocationAndFailedSettings(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "data.json")
+	path := filepath.Join(t.TempDir(), "data.db")
 	s, err := New(Options{DataFile: path, AdminPassword: "original"})
 	if err != nil {
 		t.Fatal(err)
@@ -47,14 +47,19 @@ func TestSessionRevocationAndFailedSettings(t *testing.T) {
 		t.Fatal("logged-out token remains valid")
 	}
 	second, third := login(), login()
-	if err := os.Mkdir(path+".tmp", 0700); err != nil {
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TRIGGER block_config BEFORE INSERT ON config BEGIN SELECT RAISE(ABORT,'write failure'); END`); err != nil {
 		t.Fatal(err)
 	}
 	w = call("POST", "/api/admin/settings", `{"site_title":"lost","new_password":"changed"}`, second, false)
 	if w.Code != 500 || s.store.GetConfig().SiteTitle == "lost" || !s.store.VerifyAdminPassword("original") {
 		t.Fatal("failed settings were accepted")
 	}
-	if err := os.Remove(path + ".tmp"); err != nil {
+	if _, err := db.Exec("DROP TRIGGER block_config"); err != nil {
 		t.Fatal(err)
 	}
 	w = call("POST", "/api/admin/settings", `{"new_password":"changed"}`, second, false)
@@ -77,7 +82,7 @@ func (b unreadableBody) Read([]byte) (int, error) {
 func (unreadableBody) Close() error { return nil }
 
 func TestRequestLimitsAndEarlyAuthentication(t *testing.T) {
-	s, err := New(Options{DataFile: filepath.Join(t.TempDir(), "data.json"), AdminPassword: "pass"})
+	s, err := New(Options{DataFile: filepath.Join(t.TempDir(), "data.db"), AdminPassword: "pass"})
 	if err != nil {
 		t.Fatal(err)
 	}

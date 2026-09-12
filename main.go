@@ -149,7 +149,7 @@ func main() {
 		if len(args) != 2 {
 			log.Fatal("usage: vibemonitor validate-data FILE")
 		}
-		if _, err := store.ReadBackup(args[1]); err != nil {
+		if err := store.ValidateBackup(args[1]); err != nil {
 			log.Fatal(err)
 		}
 		fmt.Println("Backup is valid")

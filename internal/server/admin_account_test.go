@@ -8,7 +8,7 @@ import (
 )
 
 func TestSingleAdminAccount(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "data.json")
+	path := filepath.Join(t.TempDir(), "data.db")
 	for _, username := range []string{"owner", "replacement"} {
 		s, err := New(Options{DataFile: path, AdminUsername: username, AdminPassword: "secret"})
 		if err != nil {

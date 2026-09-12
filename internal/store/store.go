@@ -2,13 +2,11 @@ package store
 
 import (
 	"crypto/rand"
-	"crypto/subtle"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
 	"math"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -85,7 +83,7 @@ type Node struct {
 	LastReport  *protocol.Report    `json:"last_report,omitempty"`
 	History     []HistoryPoint      `json:"history,omitempty"`
 
-	// 60-second Ping Latency History (TargetName -> []PingSample, persisted in JSON)
+	// Recent latency previews; complete history is persisted in SQLite.
 	PingHistory map[string][]PingSample `json:"ping_history,omitempty"`
 
 	// Traffic Billing Quota (sum mode: up + down)
@@ -114,14 +112,8 @@ type Config struct {
 	PingTargets      []protocol.PingTarget `json:"ping_targets"`
 }
 
-type DataFile struct {
-	Config Config           `json:"config"`
-	Nodes  map[string]*Node `json:"nodes"`
-}
-
 type Store struct {
 	mu         sync.RWMutex
-	filePath   string
 	dbPath     string
 	sdb        *sqliteDB
 	config     Config
@@ -148,29 +140,16 @@ func GenerateUUID() string {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
 
-func resolveDBPath(filePath string) string {
-	if strings.HasSuffix(filePath, ".db") || strings.HasSuffix(filePath, ".sqlite") || strings.HasSuffix(filePath, ".sqlite3") {
-		return filePath
+func New(dbPath string, defaultAdminPassword string, usernames ...string) (*Store, error) {
+	if err := validateDatabasePath(dbPath); err != nil {
+		return nil, err
 	}
-	if strings.HasSuffix(filePath, ".json") {
-		return strings.TrimSuffix(filePath, ".json") + ".db"
-	}
-	return filePath + ".db"
-}
-
-func New(filePath string, defaultAdminPassword string, usernames ...string) (*Store, error) {
-	dbPath := resolveDBPath(filePath)
 	sdb, err := openSQLite(dbPath)
 	if err != nil {
 		return nil, err
 	}
-	if err := sdb.migrateLegacy(filePath); err != nil {
-		_ = sdb.Close()
-		return nil, err
-	}
 
 	s := &Store{
-		filePath:   filePath,
 		dbPath:     dbPath,
 		sdb:        sdb,
 		nodes:      make(map[string]*Node),
@@ -196,9 +175,6 @@ func (s *Store) DataDir() string {
 	defer s.mu.RUnlock()
 	if s.dbPath != "" {
 		return filepath.Dir(s.dbPath)
-	}
-	if s.filePath != "" {
-		return filepath.Dir(s.filePath)
 	}
 	return "."
 }
@@ -298,7 +274,7 @@ func (s *Store) load(defaultPassword, username string) error {
 			AutoDiscoveryKey: GenerateToken(16),
 			PingTargets:      []protocol.PingTarget{},
 		}
-		if err := s.sdb.saveSnapshot(s.config, s.nodes, false); err != nil {
+		if err := s.sdb.saveSnapshot(s.config, s.nodes); err != nil {
 			return err
 		}
 	} else {
@@ -371,22 +347,10 @@ func (s *Store) load(defaultPassword, username string) error {
 }
 
 func (s *Store) saveLocked() error {
-	// 检查是否有模拟写入失败的目录阻断
-	if s.filePath != "" {
-		if fi, err := os.Stat(s.filePath + ".tmp"); err == nil && fi.IsDir() {
-			return errors.New("cannot write: temporary directory blocking")
-		}
-	}
-	if s.dbPath != "" {
-		if fi, err := os.Stat(s.dbPath + ".tmp"); err == nil && fi.IsDir() {
-			return errors.New("cannot write: temporary directory blocking")
-		}
-	}
-
 	if s.sdb == nil {
 		return nil
 	}
-	if err := s.sdb.saveSnapshot(s.config, s.nodes, false); err != nil {
+	if err := s.sdb.saveSnapshot(s.config, s.nodes); err != nil {
 		return err
 	}
 
@@ -405,35 +369,12 @@ func hashAdminPassword(password string) (string, error) {
 	return string(hashed), err
 }
 
-// verifyAdminPasswordLocked also migrates legacy plaintext passwords on the
-// first successful login.
+// Only bcrypt hashes are accepted; password verification never writes storage.
 func (s *Store) verifyAdminPasswordLocked(pwd string) bool {
 	if pwd == "" {
 		return false
 	}
-	if bcrypt.CompareHashAndPassword([]byte(s.config.AdminPassword), []byte(pwd)) == nil {
-		return true
-	}
-	// Never treat a stored hash (including a malformed hash) as plaintext.
-	if strings.HasPrefix(s.config.AdminPassword, "$2") {
-		return false
-	}
-	// Backward compatibility for data files created before password hashing.
-	if subtle.ConstantTimeCompare([]byte(pwd), []byte(s.config.AdminPassword)) != 1 {
-		return false
-	}
-	hashed, err := bcrypt.GenerateFromPassword([]byte(pwd), bcrypt.DefaultCost)
-	if err != nil {
-		log.Printf("[Store] Password migration failed: %v", err)
-		return true
-	}
-	previous := s.config.AdminPassword
-	s.config.AdminPassword = string(hashed)
-	if err := s.saveLocked(); err != nil {
-		s.config.AdminPassword = previous
-		log.Printf("[Store] Password migration save failed: %v", err)
-	}
-	return true
+	return bcrypt.CompareHashAndPassword([]byte(s.config.AdminPassword), []byte(pwd)) == nil
 }
 
 func (s *Store) SetAdminPassword(newPwd string) error {

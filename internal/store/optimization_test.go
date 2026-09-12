@@ -1,13 +1,7 @@
 package store
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"testing"
-	"time"
 
 	"vibemonitor/pkg/protocol"
 )
@@ -24,8 +18,8 @@ func TestHashedPasswordCannotBeUsedAsPassword(t *testing.T) {
 	s.mu.Lock()
 	s.config.AdminPassword = "legacy"
 	s.mu.Unlock()
-	if !s.VerifyAdminPassword("legacy") || s.GetConfig().AdminPassword == "legacy" {
-		t.Fatal("legacy password not migrated")
+	if s.VerifyAdminPassword("legacy") {
+		t.Fatal("plaintext password unexpectedly accepted")
 	}
 }
 
@@ -46,128 +40,6 @@ func TestBillingWithoutTargetsSurvivesRestart(t *testing.T) {
 	got := reopened.GetNode(n.UUID).Profile
 	if got.Price != 45 || got.DueDate != profile.DueDate || got.Currency != "EUR" || got.PaymentCycle != "year" || len(got.Targets) != 0 {
 		t.Fatalf("profile changed: %+v", got)
-	}
-}
-
-func TestLegacyMigrationCleansSourceAndPreservesHistory(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "data.json")
-	target := protocol.PingTarget{Name: "target", Host: "example.com:443"}
-	data := DataFile{Config: Config{AdminUsername: "owner", AdminPassword: "legacy", SiteTitle: "old", PingTargets: []protocol.PingTarget{}}, Nodes: map[string]*Node{
-		"node": {UUID: "node", Token: "secret", CurrentCycleUsed: 12345, Profile: &NodeProfile{Targets: []protocol.PingTarget{target}, Price: 9}},
-	}}
-	raw, _ := json.Marshal(data)
-	if err := os.WriteFile(path, raw, 0600); err != nil {
-		t.Fatal(err)
-	}
-	digest := sha256.Sum256(raw)
-	ping, _ := json.Marshal(map[string]any{"data_digest": hex.EncodeToString(digest[:]), "nodes": map[string]any{"node": map[string]any{"history": map[string][]PingSample{"target": {{Host: target.Host, Method: "tcp", Timestamp: time.Now().Unix() - 60, Latency: 42}}}}}})
-	if err := os.WriteFile(path+".ping.json", ping, 0600); err != nil {
-		t.Fatal(err)
-	}
-	backups := filepath.Join(filepath.Dir(path), "backups")
-	if err := os.MkdirAll(filepath.Join(backups, "nested"), 0700); err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"old.json", "data-without-extension", "nested/old.ping.json"} {
-		if err := os.WriteFile(filepath.Join(backups, name), []byte("old backup"), 0600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	unrelated := filepath.Join(filepath.Dir(path), "unrelated.json")
-	if err := os.WriteFile(unrelated, []byte("unrelated"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	outside := filepath.Join(t.TempDir(), "keep.json")
-	if err := os.WriteFile(outside, []byte("outside"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(filepath.Dir(outside), filepath.Join(backups, "external")); err != nil {
-		t.Fatal(err)
-	}
-	s, err := New(path, "ignored")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !s.VerifyAdmin("owner", "legacy") || s.GetNode("node").CurrentCycleUsed != 12345 {
-		t.Fatal("migration lost credentials or traffic")
-	}
-	h, err := s.GetPingHistory("node", "target", "all")
-	if err != nil || len(h.Samples) != 1 || h.Samples[0].Latency != 42 {
-		t.Fatalf("history lost: %+v %v", h, err)
-	}
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
-	for _, deleted := range []string{path, path + ".ping.json", backups} {
-		if _, err := os.Lstat(deleted); !os.IsNotExist(err) {
-			t.Fatalf("legacy file remains: %s (%v)", deleted, err)
-		}
-	}
-	for _, kept := range []string{unrelated, outside} {
-		if _, err := os.Stat(kept); err != nil {
-			t.Fatal("unrelated file removed", err)
-		}
-	}
-	if err := os.Mkdir(backups, 0700); err != nil {
-		t.Fatal(err)
-	}
-	newBackup := filepath.Join(backups, "new-backup")
-	if err := os.WriteFile(newBackup, []byte("new"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	reopened, err := New(path, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer reopened.Close()
-	if len(reopened.GetNodes()) != 1 {
-		t.Fatal("migration duplicated nodes")
-	}
-	if _, err := os.Stat(newBackup); err != nil {
-		t.Fatal("restart deleted new backup", err)
-	}
-}
-
-func TestCompleteBackupRestore(t *testing.T) {
-	s, n, path := pingStore(t)
-	now := time.Now().Unix()
-	for i := 0; i < 50; i++ {
-		if err := s.sdb.recordPingSample(n.UUID, "target", "192.0.2.1:80", "tcp", now-int64(i)*3600, i); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
-	backup := filepath.Join(t.TempDir(), "backup.json")
-	if err := ExportData(path, backup); err != nil {
-		t.Fatal(err)
-	}
-	data, err := ReadBackup(backup)
-	if err != nil || len(data.Nodes[n.UUID].PingHistory["target"]) != 50 {
-		t.Fatalf("incomplete backup: %v", err)
-	}
-	other := filepath.Join(t.TempDir(), "restored.db")
-	old, err := New(other, "different")
-	if err != nil {
-		t.Fatal(err)
-	}
-	oldNode, _ := old.CreateNode("remove me", "", "")
-	old.Close()
-	if err := RestoreData(backup, other); err != nil {
-		t.Fatal(err)
-	}
-	restored, err := New(other, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer restored.Close()
-	if !restored.VerifyAdminPassword("pass") || restored.FindNodeByToken(n.Token) == nil || restored.GetNode(oldNode.UUID) != nil {
-		t.Fatal("credentials or nodes not restored")
-	}
-	h, err := restored.GetPingHistory(n.UUID, "target", "all")
-	if err != nil || len(h.Samples) != 50 {
-		t.Fatalf("history not restored: %v", err)
 	}
 }
 
@@ -268,64 +140,5 @@ func TestHistoryCleanupRollsBackWithDatabaseFailure(t *testing.T) {
 	var count int
 	if err := s.sdb.db.QueryRow("SELECT count(*) FROM ping_history").Scan(&count); err != nil || count != 0 {
 		t.Fatal("deleted node retained history", err)
-	}
-}
-
-func TestInvalidMigrationAndDefaultDBPath(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "vibemonitor-data.json")
-	if err := os.WriteFile(path, []byte("invalid"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if s, err := New(resolveDBPath(path), "pass"); err == nil {
-		s.Close()
-		t.Fatal("invalid legacy file silently ignored")
-	}
-	raw, _ := os.ReadFile(path)
-	if string(raw) != "invalid" {
-		t.Fatal("invalid source overwritten")
-	}
-	raw, _ = json.Marshal(DataFile{Config: Config{AdminPassword: "old"}, Nodes: map[string]*Node{}})
-	if err := os.WriteFile(path, raw, 0600); err != nil {
-		t.Fatal(err)
-	}
-	s, err := New(resolveDBPath(path), "new")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !s.VerifyAdminPassword("old") {
-		t.Fatal("default database path did not migrate old JSON")
-	}
-	s.Close()
-	if err := ExportData(path, resolveDBPath(path)); err == nil {
-		t.Fatal("export allowed overwriting database")
-	}
-}
-
-func TestRestoreFailureLeavesDatabaseIntact(t *testing.T) {
-	s, n, path := pingStore(t)
-	if _, err := s.sdb.db.Exec(`CREATE TRIGGER fail_restore BEFORE INSERT ON config BEGIN SELECT RAISE(ABORT,'restore failed'); END`); err != nil {
-		t.Fatal(err)
-	}
-	// Close without a new dirty update: the failure is exercised by the restore command.
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
-	backup := filepath.Join(t.TempDir(), "backup.json")
-	raw, _ := json.Marshal(DataFile{Config: Config{AdminPassword: "replacement"}, Nodes: map[string]*Node{}})
-	if err := os.WriteFile(backup, raw, 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := RestoreData(backup, path); err == nil {
-		t.Fatal("expected restore failure")
-	}
-	db, err := openSQLite(resolveDBPath(path))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	nodes, err := db.loadNodes()
-	if err != nil || nodes[n.UUID] == nil {
-		t.Fatal("failed restore deleted original nodes", err)
 	}
 }
