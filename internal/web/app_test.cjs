@@ -104,11 +104,15 @@ test('ping actions preserve quoted names as data and open the target selector', 
   assert.equal(app.document.getElementById('pingTargetSelector').children[0].textContent,target);
 });
 
-test('ping range switching supports 1h, 24h, 7d, and all', () => {
+test('ping range switching supports 1h, 24h, 7d, 31d, and all', () => {
   const app = dashboard();
   app.run('loadPingHistory = () => {};');
+  app.run('switchPingRange("24h");');
+  assert.equal(app.run('currentPingRange'), '24h');
   app.run('switchPingRange("7d");');
   assert.equal(app.run('currentPingRange'), '7d');
+  app.run('switchPingRange("31d");');
+  assert.equal(app.run('currentPingRange'), '31d');
   app.run('switchPingRange("all");');
   assert.equal(app.run('currentPingRange'), 'all');
   app.run('switchPingRange("1h");');

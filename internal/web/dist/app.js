@@ -160,10 +160,10 @@ guideCopyBtns.forEach(item => {
 });
 
 // Ping chart range switch buttons
-['btnRange1h', 'btnRange24h', 'btnRange7d', 'btnRangeAll'].forEach(id => {
+['btnRange1h', 'btnRange24h', 'btnRange7d', 'btnRange31d'].forEach(id => {
   const btn = document.getElementById(id);
   if (btn && typeof btn.addEventListener === 'function') {
-    const range = id === 'btnRange1h' ? '1h' : (id === 'btnRange24h' ? '24h' : (id === 'btnRange7d' ? '7d' : 'all'));
+    const range = id === 'btnRange1h' ? '1h' : (id === 'btnRange24h' ? '24h' : (id === 'btnRange7d' ? '7d' : '31d'));
     btn.addEventListener('click', () => switchPingRange(range));
   }
 });
@@ -1002,7 +1002,7 @@ window.openPingChart = function(uuid, nodeName, targetName) {
   currentPingTarget = targetName || '';
   currentPingRange = '1h';
 
-  ['btnRange1h', 'btnRange24h', 'btnRange7d', 'btnRangeAll'].forEach(id => {
+  ['btnRange1h', 'btnRange24h', 'btnRange7d', 'btnRange31d'].forEach(id => {
     const el = document.getElementById(id);
     if (el && el.classList) {
       if (id === 'btnRange1h') {
@@ -1059,6 +1059,7 @@ window.switchPingRange = function(range) {
     '1h': 'btnRange1h',
     '24h': 'btnRange24h',
     '7d': 'btnRange7d',
+    '31d': 'btnRange31d',
     'all': 'btnRangeAll'
   };
   Object.entries(rangeBtnMap).forEach(([r, btnId]) => {
@@ -1115,6 +1116,7 @@ async function loadPingHistory() {
     if (!startSec) {
       const duration = currentPingRange === '1h' ? 3600 :
                        currentPingRange === '7d' ? 7 * 86400 :
+                       currentPingRange === '31d' ? 31 * 86400 :
                        currentPingRange === 'all' ? (cachedPingSamples[0]?.t || (nowSec - 86400)) : 86400;
       startSec = nowSec - duration;
     }
@@ -1185,7 +1187,7 @@ function renderPingSvgChart(samples, range, errorMsg, startSec, nowSec, offlineI
 
   const duration = (nowSec && startSec && nowSec > startSec)
     ? (nowSec - startSec)
-    : (range === '1h' ? 3600 : (range === '7d' ? 7 * 86400 : 86400));
+    : (range === '1h' ? 3600 : (range === '7d' ? 7 * 86400 : (range === '31d' ? 31 * 86400 : 86400)));
   const baseStart = startSec || (Math.floor(Date.now() / 1000) - duration);
 
   const offlineSvg = offlineIntervals.map(iv => {

@@ -919,8 +919,11 @@ func (s *Store) GetPingHistory(uuid, targetName, timeRange string) (*PingHistory
 	case "1h":
 		duration = 3600
 		cutoff = nowUnix - duration
-	case "7d":
+	case "7d", "7*24h", "7x24h", "168h":
 		duration = 7 * 86400
+		cutoff = nowUnix - duration
+	case "31d", "31*24h", "31x24h", "744h":
+		duration = 31 * 86400
 		cutoff = nowUnix - duration
 	case "all":
 		duration = 0
