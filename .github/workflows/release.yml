@@ -58,3 +58,4 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
+          body_path: RELEASE_NOTES.md

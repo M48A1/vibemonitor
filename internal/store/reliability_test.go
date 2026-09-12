@@ -97,6 +97,9 @@ func TestBackupValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.Close()
+	if err := ExportData(path, path); err != nil {
+		t.Fatal(err)
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)

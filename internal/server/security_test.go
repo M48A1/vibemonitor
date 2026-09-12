@@ -123,9 +123,13 @@ func TestNodeCredentialIsolation(t *testing.T) {
 	if err := s.store.Save(); err != nil {
 		t.Fatal(err)
 	}
-	disk, err := os.ReadFile(dataPath)
-	if err != nil || !strings.Contains(string(disk), token) {
-		t.Fatal("persisted node token lost", err)
+	reopened, err := store.New(dataPath, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if reopened.FindNodeByToken(token) == nil {
+		t.Fatal("persisted node token lost")
 	}
 }
 
