@@ -122,7 +122,7 @@ func TestSQLitePingHistoryRanges(t *testing.T) {
 		t.Errorf("expected range '24h', got %s", h24.Range)
 	}
 
-	// 7d range (最近一周)
+	// 7d range (最近 7*24 小时)
 	h7d, err := s.GetPingHistory(node.UUID, "Target-A", "7d")
 	if err != nil {
 		t.Fatalf("failed to get 7d history: %v", err)
@@ -132,6 +132,36 @@ func TestSQLitePingHistoryRanges(t *testing.T) {
 	}
 	if h7d.Range != "7d" {
 		t.Errorf("expected range '7d', got %s", h7d.Range)
+	}
+
+	// 7*24h alias test
+	h7x24, err := s.GetPingHistory(node.UUID, "Target-A", "7*24h")
+	if err != nil {
+		t.Fatalf("failed to get 7*24h history: %v", err)
+	}
+	if len(h7x24.Samples) != 3 {
+		t.Errorf("expected 3 samples in 7*24h, got %d", len(h7x24.Samples))
+	}
+
+	// 31d range (最近 31*24 小时)
+	h31d, err := s.GetPingHistory(node.UUID, "Target-A", "31d")
+	if err != nil {
+		t.Fatalf("failed to get 31d history: %v", err)
+	}
+	if len(h31d.Samples) != 4 {
+		t.Errorf("expected 4 samples in 31d, got %d", len(h31d.Samples))
+	}
+	if h31d.Range != "31d" {
+		t.Errorf("expected range '31d', got %s", h31d.Range)
+	}
+
+	// 31*24h alias test
+	h31x24, err := s.GetPingHistory(node.UUID, "Target-A", "31*24h")
+	if err != nil {
+		t.Fatalf("failed to get 31*24h history: %v", err)
+	}
+	if len(h31x24.Samples) != 4 {
+		t.Errorf("expected 4 samples in 31*24h, got %d", len(h31x24.Samples))
 	}
 
 	// all range (所有)
