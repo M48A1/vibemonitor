@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -333,6 +334,13 @@ func (c *LinuxCollector) readNetDev() (totalDown, totalUp int64, source string, 
 	return totalDown, totalUp, source, nil
 }
 
+var lineBufPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, 8192)
+		return &b
+	},
+}
+
 func countLinesInFile(path string) int {
 	f, err := os.Open(path)
 	if err != nil {
@@ -340,7 +348,10 @@ func countLinesInFile(path string) int {
 	}
 	defer f.Close()
 
-	buf := make([]byte, 8192)
+	bufPtr := lineBufPool.Get().(*[]byte)
+	defer lineBufPool.Put(bufPtr)
+	buf := *bufPtr
+
 	lineCount := 0
 	hasData := false
 	lastByteWasLF := false
@@ -380,14 +391,16 @@ func countProcesses() int {
 	}
 	defer f.Close()
 
-	names, err := f.Readdirnames(-1)
-	if err != nil {
-		return 0
-	}
 	count := 0
-	for _, name := range names {
-		if isAllDigits(name) {
-			count++
+	for {
+		names, err := f.Readdirnames(128)
+		for _, name := range names {
+			if isAllDigits(name) {
+				count++
+			}
+		}
+		if err != nil {
+			break
 		}
 	}
 	return count

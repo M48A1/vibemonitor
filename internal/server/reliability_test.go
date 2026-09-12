@@ -1,8 +1,10 @@
 package server
 
 import (
+	"compress/gzip"
 	"database/sql"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -119,5 +121,61 @@ func TestRequestLimitsAndEarlyAuthentication(t *testing.T) {
 		if w.Code != want {
 			t.Fatalf("login attempt %d got %d", i, w.Code)
 		}
+	}
+}
+
+func TestGzipCompression(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "data.db")
+	s, err := New(Options{DataFile: path, AdminPassword: "password"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.store.Close()
+	h := s.Handler()
+
+	// 1. Request with Accept-Encoding: gzip to /api/public
+	r := httptest.NewRequest("GET", "/api/public", nil)
+	r.Header.Set("Accept-Encoding", "gzip")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if w.Header().Get("Content-Encoding") != "gzip" {
+		t.Fatalf("expected Content-Encoding: gzip, got %q", w.Header().Get("Content-Encoding"))
+	}
+
+	gzReader, err := gzip.NewReader(w.Body)
+	if err != nil {
+		t.Fatalf("failed to create gzip reader: %v", err)
+	}
+	defer gzReader.Close()
+	decompressed, err := io.ReadAll(gzReader)
+	if err != nil {
+		t.Fatalf("failed to decompress gzip body: %v", err)
+	}
+	if !strings.Contains(string(decompressed), "VibeMonitor") {
+		t.Fatalf("decompressed body missing VibeMonitor: %s", string(decompressed))
+	}
+
+	// 2. Request without Accept-Encoding: gzip
+	rNoGzip := httptest.NewRequest("GET", "/api/public", nil)
+	wNoGzip := httptest.NewRecorder()
+	h.ServeHTTP(wNoGzip, rNoGzip)
+	if wNoGzip.Header().Get("Content-Encoding") == "gzip" {
+		t.Fatal("unexpected Content-Encoding: gzip when client did not accept it")
+	}
+
+	// 3. /ping endpoint should not be compressed
+	rPing := httptest.NewRequest("GET", "/ping", nil)
+	rPing.Header.Set("Accept-Encoding", "gzip")
+	wPing := httptest.NewRecorder()
+	h.ServeHTTP(wPing, rPing)
+	if wPing.Header().Get("Content-Encoding") == "gzip" {
+		t.Fatal("/ping should not be gzip compressed")
+	}
+	if wPing.Body.String() != "pong" {
+		t.Fatalf("expected pong, got %s", wPing.Body.String())
 	}
 }

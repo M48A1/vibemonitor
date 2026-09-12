@@ -1071,6 +1071,8 @@ func (s *Store) GetPingHistory(uuid, targetName, timeRange string) (*PingHistory
 		startTime = endTime - 3600
 	}
 
+	chartSamples := downsamplePingSamples(filtered, maxChartSamples)
+
 	return &PingHistoryResponse{
 		Method:           method,
 		UUID:             uuid,
@@ -1080,9 +1082,68 @@ func (s *Store) GetPingHistory(uuid, targetName, timeRange string) (*PingHistory
 		StartTime:        startTime,
 		EndTime:          endTime,
 		Stats:            stats,
-		Samples:          filtered,
+		Samples:          chartSamples,
 		OfflineIntervals: offlineIntervals,
 	}, nil
+}
+
+const maxChartSamples = 720
+
+func downsamplePingSamples(samples []PingSample, maxPoints int) []PingSample {
+	if len(samples) <= maxPoints || maxPoints <= 0 {
+		return samples
+	}
+
+	result := make([]PingSample, 0, maxPoints)
+	bucketSize := float64(len(samples)) / float64(maxPoints)
+
+	for i := 0; i < maxPoints; i++ {
+		startIdx := int(float64(i) * bucketSize)
+		endIdx := int(float64(i+1) * bucketSize)
+		if endIdx > len(samples) {
+			endIdx = len(samples)
+		}
+		if startIdx >= endIdx {
+			continue
+		}
+
+		bucket := samples[startIdx:endIdx]
+		var lossSample *PingSample
+		var maxLatencySample PingSample
+		maxLatency := -1
+		var sumLatency int64
+		validCount := 0
+
+		for j := range bucket {
+			s := bucket[j]
+			if s.Latency < 0 {
+				if lossSample == nil {
+					lossCopy := s
+					lossSample = &lossCopy
+				}
+			} else {
+				validCount++
+				sumLatency += int64(s.Latency)
+				if s.Latency > maxLatency {
+					maxLatency = s.Latency
+					maxLatencySample = s
+				}
+			}
+		}
+
+		if lossSample != nil {
+			result = append(result, *lossSample)
+		} else if validCount > 0 {
+			avgLat := int(math.Round(float64(sumLatency) / float64(validCount)))
+			rep := maxLatencySample
+			if maxLatency <= avgLat+15 {
+				rep.Latency = avgLat
+			}
+			result = append(result, rep)
+		}
+	}
+
+	return result
 }
 
 func (s *Store) VerifyAdmin(username, password string) bool {
