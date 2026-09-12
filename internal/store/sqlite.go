@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,7 +20,18 @@ const (
 )
 
 type sqliteDB struct {
-	db *sql.DB
+	db          *sql.DB
+	tx          *sql.Tx // Set only on a transaction-scoped writer.
+	nodeCache   map[string]string
+	pingCache   map[string]PingSample
+	targetCache map[string]string
+}
+
+func (s *sqliteDB) exec(query string, args ...any) (sql.Result, error) {
+	if s.tx != nil {
+		return s.tx.Exec(query, args...)
+	}
+	return s.db.Exec(query, args...)
 }
 
 func openSQLite(dbPath string) (*sqliteDB, error) {
@@ -27,7 +39,24 @@ func openSQLite(dbPath string) (*sqliteDB, error) {
 		return nil, fmt.Errorf("failed to create db directory: %w", err)
 	}
 
-	dsn := fmt.Sprintf("%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)", dbPath)
+	// Set permissions before SQLite creates WAL/SHM files (they inherit this mode).
+	f, err := os.OpenFile(dbPath, os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return nil, err
+	}
+	if err = f.Chmod(0600); err != nil {
+		f.Close()
+		return nil, err
+	}
+	if err = f.Close(); err != nil {
+		return nil, err
+	}
+	absPath, err := filepath.Abs(dbPath)
+	if err != nil {
+		return nil, err
+	}
+	uri := url.URL{Scheme: "file", Path: absPath}
+	dsn := uri.String() + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(FULL)"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sqlite database %s: %w", dbPath, err)
@@ -41,6 +70,12 @@ func openSQLite(dbPath string) (*sqliteDB, error) {
 	if err := s.initSchema(); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("failed to initialize sqlite schema: %w", err)
+	}
+	for _, suffix := range []string{"-wal", "-shm"} {
+		if err := os.Chmod(dbPath+suffix, 0600); err != nil && !errors.Is(err, os.ErrNotExist) {
+			_ = db.Close()
+			return nil, err
+		}
 	}
 
 	return s, nil
@@ -152,7 +187,7 @@ func (s *sqliteDB) saveConfig(c *Config) error {
 		auto_discovery_key = excluded.auto_discovery_key,
 		ping_targets_json = excluded.ping_targets_json;
 	`
-	_, err = s.db.Exec(query, c.AdminUsername, c.AdminPassword, c.SiteTitle, c.SiteIcon, c.AutoDiscoveryKey, string(targetsJSON))
+	_, err = s.exec(query, c.AdminUsername, c.AdminPassword, c.SiteTitle, c.SiteIcon, c.AutoDiscoveryKey, string(targetsJSON))
 	return err
 }
 
@@ -198,11 +233,10 @@ func (s *sqliteDB) deleteNode(uuid string) error {
 }
 
 func (s *sqliteDB) saveAllNodes(nodes map[string]*Node) error {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return err
+	tx := s.tx
+	if tx == nil {
+		return errors.New("node writes require a transaction")
 	}
-	defer tx.Rollback()
 
 	// 清理不在当前集合的节点
 	if len(nodes) > 0 {
@@ -247,6 +281,9 @@ func (s *sqliteDB) saveAllNodes(nodes map[string]*Node) error {
 		if err != nil {
 			return err
 		}
+		if s.nodeCache[n.UUID] == string(nodeBytes) {
+			continue
+		}
 		onlineInt := 0
 		if n.Online {
 			onlineInt = 1
@@ -256,7 +293,7 @@ func (s *sqliteDB) saveAllNodes(nodes map[string]*Node) error {
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 func (s *sqliteDB) recordPingSample(nodeUUID, targetName, host, method string, timestamp int64, latency int) error {
@@ -320,4 +357,3 @@ func (s *sqliteDB) pruneOldPingHistory(beforeTimestamp int64) (int64, error) {
 	}
 	return res.RowsAffected()
 }
-

@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -165,6 +164,10 @@ func New(filePath string, defaultAdminPassword string, usernames ...string) (*St
 	if err != nil {
 		return nil, err
 	}
+	if err := sdb.migrateLegacy(filePath); err != nil {
+		_ = sdb.Close()
+		return nil, err
+	}
 
 	s := &Store{
 		filePath:   filePath,
@@ -220,7 +223,9 @@ func (s *Store) periodicFlusher() {
 			s.mu.Unlock()
 		case <-pruneTicker.C:
 			if s.sdb != nil {
-				_, _ = s.sdb.pruneOldPingHistory(time.Now().Unix() - pingHistoryRetentionSec)
+				if _, err := s.sdb.pruneOldPingHistory(time.Now().Unix() - pingHistoryRetentionSec); err != nil {
+					log.Printf("[Store] History cleanup failed: %v", err)
+				}
 			}
 		}
 	}
@@ -293,10 +298,9 @@ func (s *Store) load(defaultPassword, username string) error {
 			AutoDiscoveryKey: GenerateToken(16),
 			PingTargets:      []protocol.PingTarget{},
 		}
-		if err := s.sdb.saveConfig(&s.config); err != nil {
+		if err := s.sdb.saveSnapshot(s.config, s.nodes, false); err != nil {
 			return err
 		}
-		_ = s.saveLocked()
 	} else {
 		s.config = *cfg
 	}
@@ -326,7 +330,7 @@ func (s *Store) load(defaultPassword, username string) error {
 		if n == nil {
 			continue
 		}
-		if n.Profile == nil || len(n.Profile.Targets) == 0 {
+		if n.Profile == nil {
 			targets := append([]protocol.PingTarget{}, s.config.PingTargets...)
 			for i := range targets {
 				if !strings.Contains(targets[i].Host, ":") {
@@ -347,7 +351,10 @@ func (s *Store) load(defaultPassword, username string) error {
 		// 加载每个 target 最新 24 个采样点到内存供卡片预览快速展示
 		targets := s.targetsLocked(n)
 		for _, target := range targets {
-			recent, _ := s.sdb.getPingHistory(uuid, target.Name, target.Host, "", time.Now().Unix()-86400)
+			recent, err := s.sdb.getPingHistory(uuid, target.Name, target.Host, "", time.Now().Unix()-86400)
+			if err != nil {
+				return fmt.Errorf("load ping history: %w", err)
+			}
 			if len(recent) > 24 {
 				recent = recent[len(recent)-24:]
 			}
@@ -379,35 +386,8 @@ func (s *Store) saveLocked() error {
 	if s.sdb == nil {
 		return nil
 	}
-	if err := s.sdb.saveConfig(&s.config); err != nil {
+	if err := s.sdb.saveSnapshot(s.config, s.nodes, false); err != nil {
 		return err
-	}
-	if err := s.sdb.saveAllNodes(s.nodes); err != nil {
-		return err
-	}
-	for nodeUUID, n := range s.nodes {
-		for targetName, samples := range n.PingHistory {
-			for _, smp := range samples {
-				_ = s.sdb.recordPingSample(nodeUUID, targetName, smp.Host, smp.Method, smp.Timestamp, smp.Latency)
-			}
-		}
-	}
-
-	// 如果 filePath 存在且以 .json 结尾，同步生成干净的 JSON 格式备份（供外部备份工具使用）
-	if strings.HasSuffix(s.filePath, ".json") {
-		cleanNodes := make(map[string]*Node, len(s.nodes))
-		for id, n := range s.nodes {
-			clone := *n
-			clone.PingHistory = nil
-			cleanNodes[id] = &clone
-		}
-		df := DataFile{
-			Config: s.config,
-			Nodes:  cleanNodes,
-		}
-		if raw, err := json.MarshalIndent(df, "", "  "); err == nil {
-			_ = os.WriteFile(s.filePath, raw, 0600)
-		}
 	}
 
 	s.dirty = false
@@ -433,6 +413,10 @@ func (s *Store) verifyAdminPasswordLocked(pwd string) bool {
 	}
 	if bcrypt.CompareHashAndPassword([]byte(s.config.AdminPassword), []byte(pwd)) == nil {
 		return true
+	}
+	// Never treat a stored hash (including a malformed hash) as plaintext.
+	if strings.HasPrefix(s.config.AdminPassword, "$2") {
+		return false
 	}
 	// Backward compatibility for data files created before password hashing.
 	if subtle.ConstantTimeCompare([]byte(pwd), []byte(s.config.AdminPassword)) != 1 {
@@ -933,7 +917,9 @@ func (s *Store) IngestReport(tokenOrUUID string, report protocol.Report, clientI
 
 				// 直接高效追加写入 SQLite
 				if s.sdb != nil {
-					_ = s.sdb.recordPingSample(node.UUID, p.Name, p.Host, p.Method, nowUnix, p.Latency)
+					if err := s.sdb.recordPingSample(node.UUID, p.Name, p.Host, p.Method, nowUnix, p.Latency); err != nil {
+						log.Printf("[Store] Ping write failed (will retry on save): %v", err)
+					}
 				}
 			}
 		}

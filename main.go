@@ -37,11 +37,14 @@ Commands:
   agent     Start the lightweight probe agent
   version   Show version information
   validate-data FILE  Validate a backup before restoring
+  export-data DATA_PATH OUTPUT  Export complete backup (stop server first)
+  restore-data BACKUP DATA_PATH  Restore complete backup (stop server first)
   help      Show this help message
 
 Server Options:
   --listen, -l            Address to listen on (default: [::]:1314, env: VIBEMONITOR_LISTEN)
   --data, -d              Path to data storage file (default: vibemonitor-data.db, env: VIBEMONITOR_DATA)
+  --admin-username       Initial admin username (default: admin, env: VIBEMONITOR_ADMIN_USERNAME)
   --admin-password, -p    Initial admin password (first run only, env: VIBEMONITOR_ADMIN_PASSWORD)
 
 Agent Options:
@@ -146,14 +149,23 @@ func main() {
 		if len(args) != 2 {
 			log.Fatal("usage: vibemonitor validate-data FILE")
 		}
-		data, err := os.ReadFile(args[1])
-		if err != nil {
-			log.Fatal(err)
-		}
-		if err := store.ValidateData(data); err != nil {
+		if _, err := store.ReadBackup(args[1]); err != nil {
 			log.Fatal(err)
 		}
 		fmt.Println("Backup is valid")
+	case "export-data", "restore-data":
+		if len(args) != 3 {
+			log.Fatal("usage: export-data DATA_PATH OUTPUT | restore-data BACKUP DATA_PATH (stop server first)")
+		}
+		var err error
+		if cmd == "export-data" {
+			err = store.ExportData(args[1], args[2])
+		} else {
+			err = store.RestoreData(args[1], args[2])
+		}
+		if err != nil {
+			log.Fatal(err)
+		}
 	case "help", "-h", "--help":
 		printHelp()
 	default:

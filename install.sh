@@ -258,71 +258,50 @@ EOF
 backup_data() {
     check_root; detect_arch
     local was_active=0 result=0 destination
-    [ -f "$CONFIG_DIR/vibemonitor-data.json" ] || error "No server data exists."
     mkdir -p "$CONFIG_DIR/backups"
     chmod 700 "$CONFIG_DIR/backups"
     systemctl is-active --quiet "$SERVER_SERVICE" && was_active=1
-    if [ "$was_active" = 1 ]; then systemctl stop "$SERVER_SERVICE"; fi
+    if [ "$was_active" = 1 ]; then systemctl stop "$SERVER_SERVICE" || error "Could not stop server."; fi
     destination=$(mktemp "$CONFIG_DIR/backups/data-$(date +%Y%m%d-%H%M%S).XXXXXX") || result=1
-    if [ "$result" = 0 ]; then cp "$CONFIG_DIR/vibemonitor-data.json" "$destination" || result=1; fi
-    if [ "$result" = 0 ] && [ -f "$CONFIG_DIR/vibemonitor-data.json.ping.json" ]; then
-        cp "$CONFIG_DIR/vibemonitor-data.json.ping.json" "$destination.ping.json" || result=1
+    if [ "$result" = 0 ]; then
+        "$INSTALL_BIN" export-data "$CONFIG_DIR/vibemonitor-data.json" "$destination" || result=1
     fi
     if [ "$was_active" = 1 ]; then systemctl start "$SERVER_SERVICE" || result=1; fi
-    [ "$result" = 0 ] || error "Backup failed; check the service status."
+    [ "$result" = 0 ] || error "Backup failed; check service status. Any partial output is at $destination."
     success "Backup saved: $destination"
 }
 
 restore_data() {
     check_root; detect_arch
-    local source="$1" was_active=0 staged previous ping_path
-    ping_path="$CONFIG_DIR/vibemonitor-data.json.ping.json"
-    "$INSTALL_BIN" validate-data "$source"
-    backup_data
-    staged=$(mktemp "$CONFIG_DIR/.restore.XXXXXX")
-    previous=$(mktemp "$CONFIG_DIR/.previous.XXXXXX")
-    cp "$source" "$staged"
-    if [ -f "$source.ping.json" ]; then cp "$source.ping.json" "$staged.ping.json"; fi
+    local source="$1" was_active=0 previous result=0
+    "$INSTALL_BIN" validate-data "$source" || error "Invalid backup."
+    mkdir -p "$CONFIG_DIR/backups"
+    chmod 700 "$CONFIG_DIR/backups"
     systemctl is-active --quiet "$SERVER_SERVICE" && was_active=1
-    if [ "$was_active" = 1 ]; then systemctl stop "$SERVER_SERVICE"; fi
-    if [ -f "$ping_path" ]; then
-        if ! cp "$ping_path" "$previous.ping.json"; then
-            if [ "$was_active" = 1 ]; then systemctl start "$SERVER_SERVICE"; fi
-            error "Could not preserve previous ping data."
-        fi
+    if [ "$was_active" = 1 ]; then systemctl stop "$SERVER_SERVICE" || error "Could not stop server."; fi
+    previous=$(mktemp "$CONFIG_DIR/backups/before-restore-XXXXXX") || result=1
+    if [ "$result" = 0 ]; then
+        "$INSTALL_BIN" export-data "$CONFIG_DIR/vibemonitor-data.json" "$previous" || result=1
     fi
-    if ! cp "$CONFIG_DIR/vibemonitor-data.json" "$previous" || ! mv -f "$staged" "$CONFIG_DIR/vibemonitor-data.json"; then
-        if [ "$was_active" = 1 ]; then systemctl start "$SERVER_SERVICE"; fi
-        rm -f "$staged" "$previous"
-        error "Restore failed."
+    if [ "$result" != 0 ]; then
+        if [ "$was_active" = 1 ]; then systemctl start "$SERVER_SERVICE" || true; fi
+        error "Could not back up current database; restore cancelled."
     fi
-    local ping_result=0
-    if [ -f "$staged.ping.json" ]; then
-        mv -f "$staged.ping.json" "$ping_path" || ping_result=1
-    else
-        rm -f "$ping_path" || ping_result=1
-    fi
-    if [ "$ping_result" != 0 ]; then
-        mv -f "$previous" "$CONFIG_DIR/vibemonitor-data.json"
-        if [ -f "$previous.ping.json" ]; then mv -f "$previous.ping.json" "$ping_path"; fi
-        if [ "$was_active" = 1 ]; then systemctl start "$SERVER_SERVICE"; fi
-        error "Could not restore ping data; previous data restored."
+    if ! "$INSTALL_BIN" restore-data "$source" "$CONFIG_DIR/vibemonitor-data.json"; then
+        if [ "$was_active" = 1 ]; then systemctl start "$SERVER_SERVICE" || true; fi
+        error "Restore transaction failed; previous database retained. Backup: $previous"
     fi
     if [ "$was_active" = 1 ]; then
         if ! systemctl start "$SERVER_SERVICE" || ! sleep 3 || ! systemctl is-active --quiet "$SERVER_SERVICE"; then
-            systemctl stop "$SERVER_SERVICE" || true
-            mv -f "$previous" "$CONFIG_DIR/vibemonitor-data.json"
-            if [ -f "$previous.ping.json" ]; then
-                mv -f "$previous.ping.json" "$ping_path"
-            else
-                rm -f "$ping_path"
+            systemctl stop "$SERVER_SERVICE" || error "Cannot stop failed service; recovery backup: $previous"
+            if ! "$INSTALL_BIN" restore-data "$previous" "$CONFIG_DIR/vibemonitor-data.json"; then
+                error "Rollback failed; recovery backup retained: $previous"
             fi
-            systemctl start "$SERVER_SERVICE" || true
-            error "Restored data could not start; previous data restored."
+            systemctl start "$SERVER_SERVICE" || error "Previous database restored but service failed; backup: $previous"
+            error "Restored database could not start; previous database restored. Backup: $previous"
         fi
     fi
-    rm -f "$previous" "$previous.ping.json"
-    success "Data restored. Restored passwords and node tokens now apply."
+    success "Data restored, including passwords, tokens and history. Previous backup: $previous"
 }
 
 read_input() {

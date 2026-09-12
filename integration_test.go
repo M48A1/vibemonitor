@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -254,13 +255,9 @@ func TestFullWorkflow(t *testing.T) {
 	}
 	t.Log("[PASS] /api/nodes/ping-history verified successfully")
 
-	// Verify configuration backup and SQLite persistence on disk
-	diskData, err := os.ReadFile(dataFile)
-	if err != nil {
-		t.Fatalf("Failed to read JSON data file from disk: %v", err)
-	}
-	if strings.Contains(string(diskData), "ping_history") {
-		t.Fatal("main file still contains ping history")
+	// SQLite is authoritative; startup must not create a misleading JSON mirror.
+	if _, err := os.Stat(dataFile); !os.IsNotExist(err) {
+		t.Fatalf("unexpected JSON mirror: %v", err)
 	}
 	if _, err := os.Stat(strings.TrimSuffix(dataFile, ".json") + ".db"); err != nil {
 		t.Fatalf("SQLite database missing: %v", err)
@@ -347,8 +344,62 @@ func TestGracefulShutdownAndPersistence(t *testing.T) {
 	}
 
 	// Verify data file exists on disk
-	if _, err := os.Stat(dataFile); err != nil {
+	if _, err := os.Stat(strings.TrimSuffix(dataFile, ".json") + ".db"); err != nil {
 		t.Fatalf("Expected data file to exist after shutdown: %v", err)
 	}
 	t.Log("[PASS] Graceful shutdown and persistence verified")
+}
+
+func TestBackupCLIHelper(t *testing.T) {
+	if os.Getenv("VIBEMONITOR_TEST_CLI") != "1" {
+		return
+	}
+	for i, arg := range os.Args {
+		if arg == "--" {
+			os.Args = append([]string{"vibemonitor"}, os.Args[i+1:]...)
+			main()
+			os.Exit(0)
+		}
+	}
+	os.Exit(2)
+}
+
+func TestBackupCLIRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path, backup := filepath.Join(dir, "source.db"), filepath.Join(dir, "backup.json")
+	s, err := store.New(path, "original")
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, err := s.CreateNode("original node", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command(exe, append([]string{"-test.run=^TestBackupCLIHelper$", "--"}, args...)...)
+		cmd.Env = append(os.Environ(), "VIBEMONITOR_TEST_CLI=1")
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("CLI %v: %s (%v)", args, output, err)
+		}
+	}
+	run("export-data", path, backup)
+	run("validate-data", backup)
+	destination := filepath.Join(dir, "destination.db")
+	run("restore-data", backup, destination)
+	restored, err := store.New(destination, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restored.Close()
+	if !restored.VerifyAdminPassword("original") || restored.FindNodeByToken(n.Token) == nil {
+		t.Fatal("CLI backup lost credentials or nodes")
+	}
 }

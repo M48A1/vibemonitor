@@ -175,38 +175,54 @@ curl() {
         self.assertIn('No interactive terminal', result.stderr)
 
     def test_restore_keeps_a_backup_and_replaces_data(self):
-        (self.root / 'config/vibemonitor-data.json').write_text('old data')
+        (self.root / 'config/vibemonitor-data.db').write_text('old data including history')
         (self.root / 'restored').write_text('restored data')
-        (self.root / 'restored.ping.json').write_text('restored ping')
-        (self.root / 'config/vibemonitor-data.json.ping.json').write_text('old ping')
-        binary = self.root / 'bin/vibemonitor'
-        binary.write_text('#!/bin/sh\nexit 0\n')
-        binary.chmod(0o755)
+        self.install_data_cli_mock()
         result = self.run_installer('restore_data "$TEST_ROOT/restored"\n')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual((self.root / 'config/vibemonitor-data.json').read_text(), 'restored data')
-        self.assertEqual((self.root / 'config/vibemonitor-data.json.ping.json').read_text(), 'restored ping')
-        self.assertTrue(any(p.read_text() == 'old ping' for p in (self.root / 'config/backups').iterdir()))
-        self.assertTrue(any(p.read_text() == 'old data' for p in (self.root / 'config/backups').iterdir()))
+        self.assertEqual((self.root / 'config/vibemonitor-data.db').read_text(), 'restored data')
+        self.assertTrue(any(p.read_text() == 'old data including history' for p in (self.root / 'config/backups').iterdir()))
+
+    def install_data_cli_mock(self):
+        binary = self.root / 'bin/vibemonitor'
+        binary.write_text('''#!/bin/sh
+case "$1" in
+validate-data) test -f "$2";;
+export-data) cp "$TEST_ROOT/config/vibemonitor-data.db" "$3";;
+restore-data) cp "$2" "$TEST_ROOT/config/vibemonitor-data.db";;
+*) exit 1;;
+esac
+''')
+        binary.chmod(0o755)
+
+    def test_backup_reads_database_without_json_mirror(self):
+        (self.root / 'config/vibemonitor-data.db').write_text('complete database')
+        self.install_data_cli_mock()
+        result = self.run_installer('backup_data\n')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(any(p.read_text() == 'complete database' for p in (self.root / 'config/backups').iterdir()))
+
+    def test_export_failure_restarts_service_without_restoring(self):
+        (self.root / 'restored').write_text('restored data')
+        self.install_data_cli_mock()
+        result = self.run_installer('restore_data "$TEST_ROOT/restored"\n')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.root / 'config/vibemonitor-data.db').exists())
+        self.assertIn('start vibemonitor-server', (self.root / 'service-calls').read_text())
 
     def test_failed_restore_start_rolls_data_back(self):
-        (self.root / 'config/vibemonitor-data.json').write_text('old data')
+        (self.root / 'config/vibemonitor-data.db').write_text('old data')
         (self.root / 'restored').write_text('restored data')
-        (self.root / 'restored.ping.json').write_text('restored ping')
-        (self.root / 'config/vibemonitor-data.json.ping.json').write_text('old ping')
-        binary = self.root / 'bin/vibemonitor'
-        binary.write_text('#!/bin/sh\nexit 0\n')
-        binary.chmod(0o755)
+        self.install_data_cli_mock()
         result = self.run_installer(r"""
 systemctl() {
-    if [ "$1" = start ] && [ "$(cat "$CONFIG_DIR/vibemonitor-data.json")" = 'restored data' ]; then return 1; fi
+    if [ "$1" = start ] && [ "$(cat "$CONFIG_DIR/vibemonitor-data.db")" = 'restored data' ]; then return 1; fi
     return 0
 }
 restore_data "$TEST_ROOT/restored"
 """)
         self.assertNotEqual(result.returncode, 0)
-        self.assertEqual((self.root / 'config/vibemonitor-data.json').read_text(), 'old data')
-        self.assertEqual((self.root / 'config/vibemonitor-data.json.ping.json').read_text(), 'old ping')
+        self.assertEqual((self.root / 'config/vibemonitor-data.db').read_text(), 'old data')
 
     def test_invalid_backup_does_not_stop_service(self):
         (self.root / 'config/vibemonitor-data.json').write_text('old data')
