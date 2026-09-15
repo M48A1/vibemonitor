@@ -188,7 +188,7 @@ func TestInstallerValidation(t *testing.T) {
 				cmd := exec.Command("bash", "-c", "uname() { if [ \"$1\" = \"-s\" ]; then echo \"$TEST_MACHINE_OS\"; else echo \"$TEST_MACHINE_ARCH\"; fi; }; id() { echo 0; };\n"+detection)
 				cmd.Env = append(os.Environ(), "TEST_MACHINE_ARCH="+arch, "TEST_MACHINE_OS="+machineOS)
 				out, err := cmd.CombinedOutput()
-				supported := machineOS == "Linux" && (arch == "x86_64" || arch == "amd64")
+				supported := machineOS == "Linux" && (arch == "x86_64" || arch == "amd64" || arch == "aarch64" || arch == "arm64")
 				if supported && err != nil {
 					t.Fatalf("supported machine rejected: %s %v", out, err)
 				}

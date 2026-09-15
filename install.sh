@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# VibeMonitor Linux x86-64 installer and maintenance commands.
+# VibeMonitor Linux (x86-64 / arm64) installer and maintenance commands.
 set -e
 umask 077
 GITHUB_REPO="M48A1/vibemonitor"
@@ -21,10 +21,11 @@ error() { echo "[ERROR] $*" >&2; exit 1; }
 check_root() { [ "$(id -u)" = 0 ] || error "Run as root."; }
 
 detect_arch() {
-    [ "$(uname -s)" = Linux ] || error "Only Linux x86-64 is supported."
+    [ "$(uname -s)" = Linux ] || error "Only Linux (x86-64 / arm64) is supported."
     case "$(uname -m)" in
         x86_64|amd64) SYSTEM_ARCH=amd64 ;;
-        *) error "Only x86-64 (Intel/AMD 64-bit) is supported." ;;
+        aarch64|arm64) SYSTEM_ARCH=arm64 ;;
+        *) error "Only Linux (x86-64 / arm64) is supported." ;;
     esac
 }
 
@@ -104,8 +105,8 @@ cleanup_update() {
 
 download_binary() {
     resolve_release
-    local asset="vibemonitor-linux-amd64"
-    info "正在下载 ${RELEASE_BASE##*/} · Linux x86-64"
+    local asset="vibemonitor-linux-${SYSTEM_ARCH}"
+    info "正在下载 ${RELEASE_BASE##*/} · Linux ${SYSTEM_ARCH}"
     local progress=(-sS)
     if [ -t 2 ]; then progress=(--progress-bar --show-error); fi
     curl -4 -fL "${progress[@]}" --connect-timeout 10 --max-time 180 -o "$UPDATE_DIR/new-binary" "$RELEASE_BASE/$asset"
@@ -114,7 +115,11 @@ download_binary() {
     verify_checksum "$UPDATE_DIR/new-binary" "$UPDATE_DIR/sha256sums.txt" "$asset"
     # Reject HTML, scripts, wrong ELF class, and wrong machine architecture.
     [ "$(od -An -tx1 -N5 "$UPDATE_DIR/new-binary" | tr -d ' \n')" = 7f454c4602 ] || error "Download is not a 64-bit ELF executable."
-    [ "$(od -An -tx1 -j18 -N2 "$UPDATE_DIR/new-binary" | tr -d ' \n')" = 3e00 ] || error "Download is not an x86-64 executable."
+    local expected_machine="3e00"
+    if [ "$SYSTEM_ARCH" = "arm64" ]; then
+        expected_machine="b700"
+    fi
+    [ "$(od -An -tx1 -j18 -N2 "$UPDATE_DIR/new-binary" | tr -d ' \n')" = "$expected_machine" ] || error "Download is not a $SYSTEM_ARCH executable."
     chmod 755 "$UPDATE_DIR/new-binary"
     "$UPDATE_DIR/new-binary" version
     mv -f "$UPDATE_DIR/new-binary" "$INSTALL_BIN"
@@ -410,7 +415,7 @@ menu_header() {
     printf '\n%s================================================%s\n' "$C_BLUE" "$C_RESET"
     printf '              VibeMonitor 管理面板\n'
     printf '================================================\n'
-    printf '  支持系统  Linux x86-64 · IPv4\n'
+    printf '  支持系统  Linux (x86-64 / arm64) · IPv4\n'
     printf '  服务端    %s    |    探针  %s\n' "$(service_label "$SERVER_SERVICE")" "$(service_label "$AGENT_SERVICE")"
     printf '%s------------------------------------------------%s\n' "$C_BLUE" "$C_RESET"
     printf '  安装与更新\n    1. 安装 / 清空重装服务端（删除全部数据）\n    2. 安装 / 更新探针\n\n'

@@ -11,7 +11,7 @@ build:
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="$(LDFLAGS)" -o $(BINARY_NAME) .
 
 test:
-	@test "$$(uname -s)/$$(uname -m)" = "Linux/x86_64" || { echo "Full tests require Linux x86-64."; exit 1; }
+	@case "$$(uname -s)/$$(uname -m)" in Linux/x86_64|Linux/aarch64|Linux/arm64) ;; *) echo "Full tests require Linux (x86-64 or arm64)."; exit 1 ;; esac
 	go test -v ./...
 
 clean:
@@ -22,3 +22,5 @@ release-all:
 	mkdir -p dist
 	# Linux AMD64
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="$(LDFLAGS)" -o dist/$(BINARY_NAME)-linux-amd64 .
+	# Linux ARM64
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="$(LDFLAGS)" -o dist/$(BINARY_NAME)-linux-arm64 .

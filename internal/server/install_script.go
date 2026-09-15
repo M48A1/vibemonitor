@@ -36,10 +36,10 @@ set -e
 SERVER_URL="@SERVER@"
 TOKEN="@TOKEN@"
 if [ "$(id -u)" != 0 ]; then echo "Run as root."; exit 1; fi
-if [ "$(uname -s)" != Linux ]; then echo "Only Linux x86-64 is supported."; exit 1; fi
+if [ "$(uname -s)" != Linux ]; then echo "Only Linux (x86-64 / arm64) is supported."; exit 1; fi
 case "$(uname -m)" in
-    x86_64|amd64) ;;
-    *) echo "Only x86-64 (Intel/AMD 64-bit) is supported."; exit 1 ;;
+    x86_64|amd64|aarch64|arm64) ;;
+    *) echo "Only Linux (x86-64 / arm64) is supported."; exit 1 ;;
 esac
 # Installation begins here
 for cmd in curl sha256sum awk; do command -v "$cmd" >/dev/null || { echo "Missing $cmd"; exit 1; }; done
