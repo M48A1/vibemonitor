@@ -16,8 +16,15 @@
 - 添加节点 / 编辑节点 / 删除节点
 - 测速节点目标手动维护在节点信息内
   
+## 安装
+- 粘贴复制安装，更新就是粘贴复制菜单里选择10
+```bash
+curl -4 -fsSL -o install.sh https://raw.githubusercontent.com/M48A1/vibemonitor/main/install.sh
+bash install.sh
+```
 
 
+# 以下有时间可以细看
 ## 安装要求
 
 仅支持 **Linux x86-64 + systemd**，不支持 ARM、32 位 x86 或其他操作系统。安装器需要 root，以及 `curl`、`sha256sum`、`systemctl`、`mktemp`、`od`、`awk` 等常用工具。ICMP 测量需要系统提供 `ping`。
