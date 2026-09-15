@@ -17,7 +17,8 @@
 - 测速节点目标手动维护在节点信息内
   
 ## 安装
-- 粘贴复制安装，更新就是粘贴复制菜单里选择10
+- 粘贴复制选择菜单内容，更新主控菜单里选择10
+- 初次安装域名反代下面也有说明
 ```bash
 curl -4 -fsSL -o install.sh https://raw.githubusercontent.com/M48A1/vibemonitor/main/install.sh
 bash install.sh
