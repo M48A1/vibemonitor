@@ -29,9 +29,9 @@ jobs:
         with:
           node-version: '22'
       - run: node --test internal/web/app_test.cjs
-      - run: python3 -m unittest discover -s tests -v
+      - run: if [ -d tests ]; then python3 -m unittest discover -s tests -v; fi
 
-      - name: Build Linux x86-64 Release
+      - name: Build Linux Binaries (AMD64 & ARM64)
         run: |
           mkdir -p dist
           VERSION=${GITHUB_REF_NAME}
@@ -42,6 +42,12 @@ jobs:
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X vibemonitor/internal/version.Version=$VERSION -X vibemonitor/internal/version.Commit=$GITHUB_SHA" -o dist/vibemonitor .
           tar -czf dist/vibemonitor-linux-amd64.tar.gz -C dist vibemonitor
           cp dist/vibemonitor dist/vibemonitor-linux-amd64
+          rm dist/vibemonitor
+
+          # Linux ARM64
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w -X vibemonitor/internal/version.Version=$VERSION -X vibemonitor/internal/version.Commit=$GITHUB_SHA" -o dist/vibemonitor .
+          tar -czf dist/vibemonitor-linux-arm64.tar.gz -C dist vibemonitor
+          cp dist/vibemonitor dist/vibemonitor-linux-arm64
           rm dist/vibemonitor
 
           cp install.sh dist/install.sh

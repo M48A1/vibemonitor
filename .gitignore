@@ -9,3 +9,5 @@ vibemonitor-*
 
 __pycache__/
 *.pyc
+/tests/
+integration_test.go

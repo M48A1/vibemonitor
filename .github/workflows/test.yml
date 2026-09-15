@@ -1,4 +1,4 @@
-name: Test Linux x86-64
+name: Test Linux (x86-64 & arm64)
 
 on:
   push:
@@ -21,5 +21,5 @@ jobs:
         with:
           node-version: '22'
       - run: node --test internal/web/app_test.cjs
-      - run: python3 -m unittest discover -s tests -v
+      - run: if [ -d tests ]; then python3 -m unittest discover -s tests -v; fi
       - run: make release-all

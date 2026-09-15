@@ -1,6 +1,6 @@
 # VibeMonitor
 
-面向 Linux x86-64（Intel/AMD 64 位）的轻量服务器监控程序。
+面向 Linux x86-64 / ARM64（aarch64）的轻量服务器监控程序。
 
 ## 功能
 
@@ -28,11 +28,11 @@ bash install.sh
 # 以下有时间可以细看
 ## 安装要求
 
-仅支持 **Linux x86-64 + systemd**，不支持 ARM、32 位 x86 或其他操作系统。安装器需要 root，以及 `curl`、`sha256sum`、`systemctl`、`mktemp`、`od`、`awk` 等常用工具。ICMP 测量需要系统提供 `ping`。
+仅支持 **Linux (x86-64 / ARM64) + systemd**，不支持 32 位系统或其他非 Linux 操作系统。安装器需要 root，以及 `curl`、`sha256sum`、`systemctl`、`mktemp`、`od`、`awk` 等常用工具。ICMP 测量需要系统提供 `ping`。
 
 安装器从 GitHub Releases 下载固定版本的二进制和 SHA-256 清单，校验通过后原子替换。启动或主控健康检查失败会恢复旧二进制和旧服务配置。如果回退步骤也失败，会保留恢复目录中的旧程序和服务配置，并在错误输出中显示路径，需检查后手动恢复；不会自动删除恢复材料。探针的启动检查仅确认进程存活，是否成功连接主控请查看面板或日志。
 
-**需要先发布包含 `vibemonitor-linux-amd64`、`install.sh`、`sha256sums.txt` 的新版 Release。** 仅推送源码不会更新服务器，也不会创建新版 Release。SHA-256 用于完整性校验，信任来源仍是该 GitHub 仓库及其发布权限。
+**需要先发布包含 `vibemonitor-linux-amd64`、`vibemonitor-linux-arm64`、`install.sh`、`sha256sums.txt` 的新版 Release。** 仅推送源码不会更新服务器，也不会创建新版 Release。SHA-256 用于完整性校验，信任来源仍是该 GitHub 仓库及其发布权限。
 
 下载并查看安装脚本后执行：
 
@@ -169,9 +169,9 @@ make build
 make release-all
 ```
 
-均只编译 Linux amd64。可在 Mac 上交叉编译，但不能在 Mac 上运行产物。版本号来自 Git 标签或提交；Release 使用标签和提交哈希，可通过 `vibemonitor version` 或 `/api/version` 查询。
+均编译 Linux amd64 与 arm64。可在 Mac 上交叉编译，但不能在 Mac 上运行产物。版本号来自 Git 标签或提交；Release 使用标签和提交哈希，可通过 `vibemonitor version` 或 `/api/version` 查询。
 
-在 Linux x86-64 上运行完整测试：
+在 Linux (x86-64 或 ARM64) 上运行完整测试：
 
 ```bash
 go test -race ./...
