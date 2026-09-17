@@ -11,3 +11,6 @@ __pycache__/
 *.pyc
 /tests/
 integration_test.go
+*_test.go
+*_test.cjs
+*.test

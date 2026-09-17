@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -65,6 +67,16 @@ func writeJSON(w http.ResponseWriter, status int, data any) {
 	_ = json.NewEncoder(w).Encode(data)
 }
 
+func (s *Server) pruneExpiredTokens() {
+	now := time.Now()
+	s.adminTokens.Range(func(key, val any) bool {
+		if expiry, ok := val.(time.Time); ok && now.After(expiry) {
+			s.adminTokens.Delete(key)
+		}
+		return true
+	})
+}
+
 func (s *Server) checkAdmin(r *http.Request) bool {
 	s.authMu.RLock()
 	defer s.authMu.RUnlock()
@@ -118,8 +130,17 @@ func (s *Server) Handler() http.Handler {
 			http.Error(w, "could not load icon", http.StatusInternalServerError)
 			return
 		}
+		h := sha256.Sum256(data)
+		etag := `"` + hex.EncodeToString(h[:16]) + `"`
 		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("ETag", etag)
 		w.Header().Set("Cache-Control", "no-cache")
+		if match := r.Header.Get("If-None-Match"); match != "" {
+			if strings.Contains(match, etag) || match == "*" {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+		}
 		http.ServeContent(w, r, "site-icon", time.Time{}, bytes.NewReader(data))
 	})
 
@@ -547,6 +568,20 @@ func (s *Server) Run(ctx context.Context) error {
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
+
+	// Periodic expired admin tokens cleaner
+	cleanupTicker := time.NewTicker(15 * time.Minute)
+	defer cleanupTicker.Stop()
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-cleanupTicker.C:
+				s.pruneExpiredTokens()
+			}
+		}
+	}()
 
 	errCh := make(chan error, 1)
 	go func() {

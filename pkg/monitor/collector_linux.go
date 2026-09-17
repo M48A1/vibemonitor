@@ -89,11 +89,18 @@ func (c *LinuxCollector) GetBasicInfo() (protocol.BasicInfo, error) {
 
 	// Disk total
 	var stat syscall.Statfs_t
-	if err := syscall.Statfs("/", &stat); err == nil {
+	if err := syscall.Statfs(getDiskPath(), &stat); err == nil {
 		info.DiskTotal = int64(stat.Blocks * uint64(stat.Bsize))
 	}
 
 	return info, nil
+}
+
+func getDiskPath() string {
+	if p := os.Getenv("VIBEMONITOR_DISK_PATH"); p != "" {
+		return p
+	}
+	return "/"
 }
 
 func (c *LinuxCollector) GetReport() (protocol.Report, error) {
@@ -123,9 +130,12 @@ func (c *LinuxCollector) GetReport() (protocol.Report, error) {
 
 	// 4. Disk
 	var stat syscall.Statfs_t
-	if err := syscall.Statfs("/", &stat); err == nil {
+	if err := syscall.Statfs(getDiskPath(), &stat); err == nil {
 		total := int64(stat.Blocks * uint64(stat.Bsize))
-		free := int64(stat.Bfree * uint64(stat.Bsize))
+		free := int64(stat.Bavail * uint64(stat.Bsize))
+		if free > total {
+			free = total
+		}
 		report.Disk.Total = total
 		report.Disk.Used = total - free
 	}

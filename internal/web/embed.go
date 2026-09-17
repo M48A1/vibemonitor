@@ -1,15 +1,45 @@
 package web
 
 import (
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
+	"io"
 	"io/fs"
 	"net/http"
+	"strings"
 )
 
 //go:embed dist/*
 var distFS embed.FS
 
-// Handler returns an http.Handler that serves the embedded frontend files
+var (
+	fileETags = make(map[string]string)
+)
+
+func init() {
+	sub, err := fs.Sub(distFS, "dist")
+	if err != nil {
+		return
+	}
+	_ = fs.WalkDir(sub, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		f, err := sub.Open(p)
+		if err != nil {
+			return nil
+		}
+		defer f.Close()
+		h := sha256.New()
+		if _, err := io.Copy(h, f); err == nil {
+			fileETags[p] = `"` + hex.EncodeToString(h.Sum(nil)[:16]) + `"`
+		}
+		return nil
+	})
+}
+
+// Handler returns an http.Handler that serves the embedded frontend files with ETag support
 func Handler() http.Handler {
 	sub, err := fs.Sub(distFS, "dist")
 	if err != nil {
@@ -18,23 +48,41 @@ func Handler() http.Handler {
 	fileServer := http.FileServer(http.FS(sub))
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Single-Page Application (SPA) fallback:
-		// If requesting root or a non-file path, serve index.html
-		path := r.URL.Path
-		if path == "" || path == "/" {
-			fileServer.ServeHTTP(w, r)
-			return
+		reqPath := strings.TrimPrefix(r.URL.Path, "/")
+		if reqPath == "" {
+			reqPath = "index.html"
 		}
 
-		// Try opening the file
-		f, err := sub.Open(path[1:])
+		// Check if the requested file exists
+		targetFile := reqPath
+		f, err := sub.Open(targetFile)
 		if err != nil {
-			// File not found, serve index.html for SPA
-			r.URL.Path = "/"
-			fileServer.ServeHTTP(w, r)
-			return
+			// SPA fallback: serve index.html
+			targetFile = "index.html"
+			f, err = sub.Open(targetFile)
+			if err != nil {
+				http.NotFound(w, r)
+				return
+			}
 		}
 		_ = f.Close()
+
+		etag := fileETags[targetFile]
+		if etag != "" {
+			w.Header().Set("ETag", etag)
+			w.Header().Set("Cache-Control", "no-cache")
+			if match := r.Header.Get("If-None-Match"); match != "" {
+				if strings.Contains(match, etag) || match == "*" {
+					w.WriteHeader(http.StatusNotModified)
+					return
+				}
+			}
+		}
+
+		if targetFile == "index.html" && r.URL.Path != "/" && r.URL.Path != "/index.html" {
+			r = r.Clone(r.Context())
+			r.URL.Path = "/"
+		}
 		fileServer.ServeHTTP(w, r)
 	})
 }

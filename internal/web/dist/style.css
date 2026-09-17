@@ -891,3 +891,37 @@ body {
 .sample-bar.empty { opacity:.35; }
 @media (max-width:400px) { .ping-panels { grid-template-columns:1fr; } }
 @media (max-width:480px) { .node-summary { gap:6px; } .summary-box { padding:8px; } .summary-value { font-size:11px; } }
+
+/* Password input with toggle button */
+.password-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+.password-input-wrap .form-input {
+  width: 100%;
+  padding-right: 42px;
+}
+.btn-toggle-pwd {
+  position: absolute;
+  right: 8px;
+  background: transparent;
+  border: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  padding: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  line-height: 1;
+  border-radius: 6px;
+  transition: color 0.15s ease, background-color 0.15s ease;
+  user-select: none;
+}
+.btn-toggle-pwd:hover {
+  color: var(--foreground);
+  background-color: var(--card-data-bg);
+}
+
