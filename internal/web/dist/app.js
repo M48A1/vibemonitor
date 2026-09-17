@@ -88,16 +88,20 @@ window.closeModal = function(id) {
   if (m && m.classList && typeof m.classList.remove === 'function') {
     m.classList.remove('active');
   }
-  // Reset password fields to plain text so browsers won't detect them
+  // Reset password fields and toggle buttons
   if (id === 'loginModal') {
     const pwInput = document.getElementById('loginPassword');
-    if (pwInput) { pwInput.type = 'text'; pwInput.value = ''; pwInput.autocomplete = 'off'; }
+    if (pwInput) { pwInput.type = 'password'; pwInput.value = ''; }
+    const toggleBtn = document.querySelector('.btn-toggle-pwd[data-target="loginPassword"]');
+    if (toggleBtn) { toggleBtn.textContent = '👁️'; toggleBtn.title = '显示密码'; }
     const unInput = document.getElementById('loginUsername');
     if (unInput) { unInput.autocomplete = 'off'; }
   }
   if (id === 'settingsModal') {
     const spInput = document.getElementById('settingNewPassword');
-    if (spInput) { spInput.type = 'text'; spInput.value = ''; spInput.autocomplete = 'off'; }
+    if (spInput) { spInput.type = 'password'; spInput.value = ''; }
+    const toggleBtn = document.querySelector('.btn-toggle-pwd[data-target="settingNewPassword"]');
+    if (toggleBtn) { toggleBtn.textContent = '👁️'; toggleBtn.title = '显示密码'; }
   }
 };
 
@@ -408,7 +412,7 @@ function renderNodes() {
           <span>⚡ ${info.cpu_cores || cpu.cores || 1}C</span>
           <span>⏱️ ${formatUptime(r.uptime)}</span>
           <span class="price-badge">${bill.price}</span>
-          ${node.reset_day > 0 ? `<span class="billing-reset">♻️ ${node.reset_day}日重置</span>` : ''}
+          ${node.reset_day > 0 ? `<span class="billing-reset" title="每月 ${node.reset_day} 日重置流量">♻️ ${node.reset_day}日重置${node.days_until_reset !== undefined ? (node.days_until_reset === 0 ? ' (今日)' : ` (剩${node.days_until_reset}天)`) : ''}</span>` : ''}
         </div>
 
         <div class="node-metrics">
@@ -449,7 +453,7 @@ function renderNodes() {
         <div class="metric-row">
           <div class="metric-meta">
             <span class="metric-name">Traffic</span>
-            <span class="metric-value">${formatBytes(cycleTotalUsed)} / ${formatBytes(trafficLimit)} (${cyclePercent.toFixed(1)}%)</span>
+            <span class="metric-value">${formatBytes(cycleTotalUsed)} / ${formatBytes(trafficLimit)} (${cyclePercent.toFixed(1)}%)${node.reset_day > 0 && node.days_until_reset !== undefined ? (node.days_until_reset === 0 ? ' · 今日重置' : ` · 剩 ${node.days_until_reset} 天`) : ''}</span>
           </div>
           <div class="progress-track">
             <div class="progress-bar ${trafficClass}" style="width: ${Math.min(cyclePercent, 100).toFixed(1)}%;"></div>
@@ -1366,6 +1370,25 @@ function renderPingSvgChart(samples, range, errorMsg, startSec, nowSec, offlineI
     if (tooltip) tooltip.style.display = 'none';
   });
 }
+
+// Password show/hide toggle handling
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.btn-toggle-pwd');
+  if (!btn) return;
+  const targetId = btn.dataset.target;
+  if (!targetId) return;
+  const input = document.getElementById(targetId);
+  if (!input) return;
+  if (input.type === 'password') {
+    input.type = 'text';
+    btn.textContent = '🙈';
+    btn.title = '隐藏密码';
+  } else {
+    input.type = 'password';
+    btn.textContent = '👁️';
+    btn.title = '显示密码';
+  }
+});
 
 // Initialize
 checkAdminAuth();

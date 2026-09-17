@@ -504,7 +504,7 @@ func (n *Node) calculateDynamicFields(now time.Time) {
 		n.checkCycleRollover(now)
 		_, cycleEnd := GetBillingCycleRange(n.ResetDay, now)
 		duration := cycleEnd.Sub(now)
-		days := int(duration.Hours() / 24)
+		days := int(math.Ceil(duration.Hours() / 24.0))
 		if days < 0 {
 			days = 0
 		}
