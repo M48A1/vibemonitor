@@ -72,6 +72,27 @@ window.openModal = function(id) {
   }
 };
 
+function resetLoginPasswordFields() {
+  const pwInput = document.getElementById('loginPassword');
+  if (pwInput) { pwInput.type = 'text'; pwInput.value = ''; pwInput.autocomplete = 'off'; }
+  const toggleBtn = document.querySelector('.btn-toggle-pwd[data-target="loginPassword"]');
+  if (toggleBtn) { toggleBtn.textContent = '👁️'; toggleBtn.title = '显示密码'; }
+  const unInput = document.getElementById('loginUsername');
+  if (unInput) { unInput.autocomplete = 'off'; }
+}
+
+function resetSettingsPasswordFields() {
+  const spInput = document.getElementById('settingNewPassword');
+  if (spInput) { spInput.type = 'text'; spInput.value = ''; spInput.autocomplete = 'off'; }
+  const toggleBtn = document.querySelector('.btn-toggle-pwd[data-target="settingNewPassword"]');
+  if (toggleBtn) { toggleBtn.textContent = '👁️'; toggleBtn.title = '显示密码'; }
+}
+
+function resetPasswordFields() {
+  resetLoginPasswordFields();
+  resetSettingsPasswordFields();
+}
+
 window.closeModal = function(id) {
   if (!id) {
     const activeModals = typeof document.querySelectorAll === 'function'
@@ -82,26 +103,19 @@ window.closeModal = function(id) {
         activeModals[i].classList.remove('active');
       }
     }
+    resetPasswordFields();
     return;
   }
   const m = typeof id === 'string' ? document.getElementById(id) : id;
   if (m && m.classList && typeof m.classList.remove === 'function') {
     m.classList.remove('active');
   }
-  // Reset password fields and toggle buttons
-  if (id === 'loginModal') {
-    const pwInput = document.getElementById('loginPassword');
-    if (pwInput) { pwInput.type = 'password'; pwInput.value = ''; }
-    const toggleBtn = document.querySelector('.btn-toggle-pwd[data-target="loginPassword"]');
-    if (toggleBtn) { toggleBtn.textContent = '👁️'; toggleBtn.title = '显示密码'; }
-    const unInput = document.getElementById('loginUsername');
-    if (unInput) { unInput.autocomplete = 'off'; }
+  const modalId = (m && m.id) || id;
+  if (modalId === 'loginModal') {
+    resetLoginPasswordFields();
   }
-  if (id === 'settingsModal') {
-    const spInput = document.getElementById('settingNewPassword');
-    if (spInput) { spInput.type = 'password'; spInput.value = ''; }
-    const toggleBtn = document.querySelector('.btn-toggle-pwd[data-target="settingNewPassword"]');
-    if (toggleBtn) { toggleBtn.textContent = '👁️'; toggleBtn.title = '显示密码'; }
+  if (modalId === 'settingsModal') {
+    resetSettingsPasswordFields();
   }
 };
 
@@ -663,17 +677,28 @@ window.deleteNode = async function(uuid) {
 document.getElementById('adminBtn').addEventListener('click', () => {
   if (isAdmin) {
     const spInput = document.getElementById('settingNewPassword');
-    spInput.type = 'password';
-    spInput.autocomplete = 'new-password';
+    if (spInput) {
+      spInput.type = 'password';
+      spInput.autocomplete = 'new-password';
+    }
+    const spToggleBtn = document.querySelector('.btn-toggle-pwd[data-target="settingNewPassword"]');
+    if (spToggleBtn) { spToggleBtn.textContent = '👁️'; spToggleBtn.title = '显示密码'; }
     openModal('settingsModal');
     fetchSettingsForAdmin();
   } else {
     document.getElementById('loginError').style.display = 'none';
     const pwInput = document.getElementById('loginPassword');
-    pwInput.value = '';
-    pwInput.type = 'password';
-    pwInput.autocomplete = 'current-password';
-    document.getElementById('loginUsername').autocomplete = 'username';
+    if (pwInput) {
+      pwInput.value = '';
+      pwInput.type = 'password';
+      pwInput.autocomplete = 'current-password';
+    }
+    const pwToggleBtn = document.querySelector('.btn-toggle-pwd[data-target="loginPassword"]');
+    if (pwToggleBtn) { pwToggleBtn.textContent = '👁️'; pwToggleBtn.title = '显示密码'; }
+    const unInput = document.getElementById('loginUsername');
+    if (unInput) {
+      unInput.autocomplete = 'username';
+    }
     openModal('loginModal');
   }
 });
@@ -1391,6 +1416,7 @@ document.addEventListener('click', (e) => {
 });
 
 // Initialize
+resetPasswordFields();
 checkAdminAuth();
 fetchPublicSettings();
 fetchNodes();
