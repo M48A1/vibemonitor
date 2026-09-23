@@ -137,7 +137,24 @@ func (s *sqliteDB) initSchema() error {
 	}
 	// 兼容已有旧测试创建的数据库，确保 data_json 列存在
 	_, _ = s.db.Exec("ALTER TABLE nodes ADD COLUMN data_json TEXT DEFAULT ''")
+	for _, column := range []struct{ name, fallback string }{{"site_theme", "default"}, {"color_mode", "dark"}} {
+		exists, err := s.hasConfigColumn(column.name)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			if _, err := s.db.Exec("ALTER TABLE config ADD COLUMN " + column.name + " TEXT NOT NULL DEFAULT '" + column.fallback + "'"); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
+}
+
+func (s *sqliteDB) hasConfigColumn(name string) (bool, error) {
+	var count int
+	err := s.db.QueryRow("SELECT count(*) FROM pragma_table_info('config') WHERE name = ?", name).Scan(&count)
+	return count > 0, err
 }
 
 func (s *sqliteDB) pruneNodePing(nodeUUID string, allowedTargets []protocol.PingTarget) error {
@@ -175,6 +192,28 @@ func (s *sqliteDB) loadConfig() (*Config, error) {
 	if c.PingTargets == nil {
 		c.PingTargets = []protocol.PingTarget{}
 	}
+	// Read old backups without migrating or modifying the source database.
+	c.SiteTheme, c.ColorMode = "default", "dark"
+	for _, column := range []struct {
+		name  string
+		value *string
+	}{{"site_theme", &c.SiteTheme}, {"color_mode", &c.ColorMode}} {
+		exists, err := s.hasConfigColumn(column.name)
+		if err != nil {
+			return nil, err
+		}
+		if exists {
+			if err := s.db.QueryRow("SELECT " + column.name + " FROM config WHERE id = 1").Scan(column.value); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if c.SiteTheme != "hex" {
+		c.SiteTheme = "default"
+	}
+	if c.ColorMode != "light" {
+		c.ColorMode = "dark"
+	}
 	return &c, nil
 }
 
@@ -184,17 +223,19 @@ func (s *sqliteDB) saveConfig(c *Config) error {
 		return err
 	}
 	query := `
-	INSERT INTO config (id, admin_username, admin_password, site_title, site_icon, auto_discovery_key, ping_targets_json)
-	VALUES (1, ?, ?, ?, ?, ?, ?)
+	INSERT INTO config (id, admin_username, admin_password, site_title, site_icon, auto_discovery_key, ping_targets_json, site_theme, color_mode)
+	VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT(id) DO UPDATE SET
 		admin_username = excluded.admin_username,
 		admin_password = excluded.admin_password,
 		site_title = excluded.site_title,
 		site_icon = excluded.site_icon,
 		auto_discovery_key = excluded.auto_discovery_key,
-		ping_targets_json = excluded.ping_targets_json;
+		ping_targets_json = excluded.ping_targets_json,
+		site_theme = excluded.site_theme,
+		color_mode = excluded.color_mode;
 	`
-	_, err = s.exec(query, c.AdminUsername, c.AdminPassword, c.SiteTitle, c.SiteIcon, c.AutoDiscoveryKey, string(targetsJSON))
+	_, err = s.exec(query, c.AdminUsername, c.AdminPassword, c.SiteTitle, c.SiteIcon, c.AutoDiscoveryKey, string(targetsJSON), c.SiteTheme, c.ColorMode)
 	return err
 }
 

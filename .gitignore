@@ -14,3 +14,6 @@ integration_test.go
 *_test.go
 *_test.cjs
 *.test
+!internal/server/theme_test.go
+!internal/store/theme_test.go
+!internal/web/embed_test.go

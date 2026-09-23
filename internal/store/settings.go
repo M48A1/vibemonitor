@@ -20,6 +20,18 @@ func (s *Store) UpdateSettings(title string, targets []protocol.PingTarget, pass
 
 // UpdateSettingsWithIcon validates and commits all submitted settings atomically.
 func (s *Store) UpdateSettingsWithIcon(title string, targets []protocol.PingTarget, password string, icon *string) error {
+	return s.UpdateSettingsWithAppearance(title, targets, password, icon, nil, nil)
+}
+
+// UpdateSettingsWithAppearance saves appearance and other settings in one transaction.
+// Nil fields preserve the current selection for older clients.
+func (s *Store) UpdateSettingsWithAppearance(title string, targets []protocol.PingTarget, password string, icon, theme, mode *string) error {
+	if theme != nil && *theme != "default" && *theme != "hex" {
+		return fmt.Errorf("%w: unknown site theme", ErrInvalidSettings)
+	}
+	if mode != nil && *mode != "light" && *mode != "dark" {
+		return fmt.Errorf("%w: unknown color mode", ErrInvalidSettings)
+	}
 	if err := validatePingTargets(targets); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidSettings, err)
 	}
@@ -31,6 +43,12 @@ func (s *Store) UpdateSettingsWithIcon(title string, targets []protocol.PingTarg
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	next := s.config
+	if theme != nil {
+		next.SiteTheme = *theme
+	}
+	if mode != nil {
+		next.ColorMode = *mode
+	}
 	if icon != nil {
 		next.SiteIcon = strings.TrimSpace(*icon)
 	}
