@@ -218,16 +218,24 @@ if (typeof document.addEventListener === 'function') {
   });
 }
 
-// Theme Toggle
-const themeToggle = document.getElementById('themeToggle');
-const savedTheme = localStorage.getItem('theme') || 'dark';
-document.documentElement.setAttribute('data-theme', savedTheme);
+// Site appearance is server-owned; browser preferences cannot override it.
+function applyAppearance(data) {
+  const theme = VibeThemes.normalize(data.site_theme);
+  const mode = data.color_mode === 'light' ? 'light' : 'dark';
+  const root = document.documentElement;
+  const changed = root.dataset.siteTheme !== theme || root.dataset.theme !== mode;
+  root.dataset.siteTheme = theme;
+  root.dataset.theme = mode;
+  if (changed) {
+    updateGlobalStats();
+    renderNodes();
+  }
+}
 
-themeToggle.addEventListener('click', () => {
-  const current = document.documentElement.getAttribute('data-theme');
-  const next = current === 'dark' ? 'light' : 'dark';
-  document.documentElement.setAttribute('data-theme', next);
-  localStorage.setItem('theme', next);
+document.getElementById('nodeSearch').addEventListener('input', renderNodes);
+document.getElementById('nodeStatusFilter').addEventListener('change', renderNodes);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) fetchPublicSettings();
 });
 
 // Admin Authentication
@@ -277,6 +285,8 @@ function updateGlobalStats() {
   const down = document.getElementById('statNetDown');
   if (up) up.textContent = `↑ ${formatSpeed(totalNetUp)}`;
   if (down) down.textContent = `↓ ${formatSpeed(totalNetDown)}`;
+
+  VibeThemes.renderOverview(nodes);
 
   updateGroupButtons();
 }
@@ -362,13 +372,19 @@ function renderPingPanels(node) {
 // Render Nodes
 function renderNodes() {
   const grid = document.getElementById('nodeGrid');
+  const hex = document.documentElement.dataset.siteTheme === 'hex';
+  const query = hex ? document.getElementById('nodeSearch').value.trim().toLowerCase() : '';
+  const status = hex ? document.getElementById('nodeStatusFilter').value : 'all';
   const filtered = nodes.filter(n => currentGroup === null || n.group === currentGroup)
+    .filter(n => status === 'all' || (status === 'online' ? n.online : !n.online))
+    .filter(n => !query || [n.name, n.region, n.group, (n.basic_info || {}).os, (n.basic_info || {}).arch].join(' ').toLowerCase().includes(query))
     .sort((a, b) => (a.name || '').trim().localeCompare((b.name || '').trim(), 'en', { sensitivity: 'base', numeric: true })
       || (a.uuid || '').localeCompare(b.uuid || '', 'en'));
 
+  document.getElementById('nodeResultCount').textContent = `${filtered.length} / ${nodes.length} 个节点`;
   if (filtered.length === 0) {
     grid.innerHTML = `
-      <div style="grid-column: 1 / -1; text-align: center; padding: 60px 20px; color: var(--text-muted);">
+      <div style="grid-column: 1 / -1; text-align: center; padding: 60px 20px; color: var(--muted-foreground);">
         ${nodes.length === 0 ? '暂无监控节点。点击右上角“管理”添加节点开始监控。' : '没有匹配的节点'}
       </div>
     `;
@@ -376,6 +392,7 @@ function renderNodes() {
   }
 
   grid.innerHTML = filtered.map(node => {
+    if (hex) return VibeThemes.renderHexNode(node);
     const isOnline = node.online;
     const r = node.last_report || {};
     const info = node.basic_info || {};
@@ -565,7 +582,9 @@ function updateLogoDisplay(iconUrl) {
 async function fetchPublicSettings() {
   try {
     const res = await fetch('/api/public');
+    if (!res.ok) throw new Error('无法读取网站设置');
     const data = await res.json();
+    applyAppearance(data);
     if (data.site_title) {
       document.getElementById('siteTitle').textContent = data.site_title;
       document.title = data.site_title;
@@ -577,9 +596,15 @@ async function fetchPublicSettings() {
 }
 
 async function fetchSettingsForAdmin() {
+  const submit = document.querySelector('#settingsForm button[type="submit"]');
+  submit.disabled = true;
   try {
     const res = await fetch('/api/public');
+    if (!res.ok) throw new Error('无法读取网站设置，请关闭后重试');
     const data = await res.json();
+    const selected = document.querySelector(`input[name="siteTheme"][value="${VibeThemes.normalize(data.site_theme)}"]`);
+    selected.checked = true;
+    document.getElementById('settingColorMode').value = data.color_mode === 'light' ? 'light' : 'dark';
     const titleInput = document.getElementById('settingSiteTitle');
     if (titleInput) titleInput.value = data.site_title || '';
     const pwInput = document.getElementById('settingNewPassword');
@@ -587,7 +612,8 @@ async function fetchSettingsForAdmin() {
     updateLogoDisplay(data.site_icon || '');
     const status = document.getElementById('logoUploadStatus');
     if (status) status.textContent = '';
-  } catch (e) { console.error('Failed to fetch admin settings:', e); }
+    submit.disabled = false;
+  } catch (e) { alert(e.message); }
 }
 
 function connectWebSocket() {
@@ -607,6 +633,7 @@ function connectWebSocket() {
   ws.onmessage = (event) => {
     try {
       const msg = JSON.parse(event.data);
+      if (msg.appearance) applyAppearance(msg.appearance);
       if (msg.nodes) {
         nodes = msg.nodes;
         updateGlobalStats();
@@ -823,6 +850,8 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
   try {
     const bodyPayload = {
       site_title: document.getElementById('settingSiteTitle').value.trim(),
+      site_theme: (document.querySelector('input[name="siteTheme"]:checked')?.value) ?? 'default',
+      color_mode: document.getElementById('settingColorMode').value,
       new_password: newPassword
     };
     const res = await fetch('/api/admin/settings', {
@@ -1423,3 +1452,5 @@ fetchNodes();
 connectWebSocket();
 // Periodic fallback polling every 5s
 setInterval(fetchNodes, 5000);
+// Also synchronize appearance when WebSocket is unavailable.
+setInterval(fetchPublicSettings, 15000);
