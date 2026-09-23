@@ -60,7 +60,7 @@ func (h *WSHub) run() {
 			if time.Since(lastBroadcast) >= minInterval {
 				lastBroadcast = time.Now()
 				pendingTrigger = false
-				h.broadcastNodes(false)
+				h.broadcastNodes()
 			} else {
 				pendingTrigger = true
 			}
@@ -68,7 +68,7 @@ func (h *WSHub) run() {
 			if pendingTrigger || time.Since(lastBroadcast) >= minInterval {
 				lastBroadcast = time.Now()
 				pendingTrigger = false
-				h.broadcastNodes(false)
+				h.broadcastNodes()
 			}
 		}
 	}
@@ -148,9 +148,11 @@ func (h *WSHub) HandleWS(w http.ResponseWriter, r *http.Request) {
 
 func (h *WSHub) sendNodesTo(client *wsClient) error {
 	nodes := h.store.GetNodes()
+	cfg := h.store.GetConfig()
 	payload, err := json.Marshal(map[string]any{
-		"nodes":  nodes,
-		"status": "success",
+		"nodes":      nodes,
+		"status":     "success",
+		"appearance": map[string]string{"site_theme": cfg.SiteTheme, "color_mode": cfg.ColorMode},
 	})
 	if err != nil {
 		return err
@@ -170,12 +172,21 @@ func (h *WSHub) sendNodesTo(client *wsClient) error {
 	return nil
 }
 
-func (h *WSHub) broadcastNodes(force ...bool) {
-	shouldForce := true
-	if len(force) > 0 {
-		shouldForce = force[0]
-	}
+// broadcastNodes sends the current node+appearance state to all connected clients.
+// If the serialised payload is identical to the previous broadcast it is skipped
+// (deduplication), which prevents redundant writes on high-frequency ticks.
+func (h *WSHub) broadcastNodes() {
+	h.doBroadcastNodes(false)
+}
 
+// forceBroadcastNodes sends the current state to all clients unconditionally,
+// bypassing payload deduplication.  Use this after a settings change to ensure
+// clients receive the update even if the node list itself did not change.
+func (h *WSHub) forceBroadcastNodes() {
+	h.doBroadcastNodes(true)
+}
+
+func (h *WSHub) doBroadcastNodes(force bool) {
 	h.mu.RLock()
 	clients := make([]*wsClient, 0, len(h.clients))
 	for c := range h.clients {
@@ -188,16 +199,18 @@ func (h *WSHub) broadcastNodes(force ...bool) {
 	}
 
 	nodes := h.store.GetNodes()
+	cfg := h.store.GetConfig()
 	payload, err := json.Marshal(map[string]any{
-		"nodes":  nodes,
-		"status": "success",
+		"nodes":      nodes,
+		"status":     "success",
+		"appearance": map[string]string{"site_theme": cfg.SiteTheme, "color_mode": cfg.ColorMode},
 	})
 	if err != nil {
 		return
 	}
 
 	h.payloadMu.Lock()
-	if !shouldForce && bytes.Equal(h.lastPayload, payload) {
+	if !force && bytes.Equal(h.lastPayload, payload) {
 		h.payloadMu.Unlock()
 		return
 	}
