@@ -108,6 +108,8 @@ type Config struct {
 	AdminPassword    string                `json:"admin_password"`
 	SiteTitle        string                `json:"site_title"`
 	SiteIcon         string                `json:"site_icon,omitempty"`
+	SiteTheme        string                `json:"site_theme"`
+	ColorMode        string                `json:"color_mode"`
 	AutoDiscoveryKey string                `json:"auto_discovery_key"`
 	PingTargets      []protocol.PingTarget `json:"ping_targets"`
 }
@@ -275,6 +277,8 @@ func (s *Store) load(defaultPassword, username string) error {
 			AdminPassword:    hashedPassword,
 			AdminUsername:    username,
 			SiteTitle:        "VibeMonitor",
+			SiteTheme:        "default",
+			ColorMode:        "dark",
 			AutoDiscoveryKey: GenerateToken(16),
 			PingTargets:      []protocol.PingTarget{},
 		}

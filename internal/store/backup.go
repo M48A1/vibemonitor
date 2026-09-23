@@ -245,6 +245,18 @@ func RestoreData(source, destination string) error {
 	if err := ExportData(source, snapshot); err != nil {
 		return err
 	}
+	sourceDB, err := openBackup(snapshot)
+	if err != nil {
+		return err
+	}
+	config, err := sourceDB.loadConfig()
+	closeErr := sourceDB.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return closeErr
+	}
 	db, err := openSQLite(destination)
 	if err != nil {
 		return err
@@ -285,6 +297,9 @@ func RestoreData(source, destination string) error {
 		if _, err := tx.Exec(query); err != nil {
 			return err
 		}
+	}
+	if _, err := tx.Exec("UPDATE main.config SET site_theme = ?, color_mode = ? WHERE id = 1", config.SiteTheme, config.ColorMode); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
