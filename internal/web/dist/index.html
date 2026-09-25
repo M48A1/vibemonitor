@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-site-theme="default" data-theme="dark">
+<html lang="zh-CN" data-site-theme="hex" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -36,21 +36,16 @@
     </header>
 
     <!-- Stats Bar -->
-    <section class="hex-overview hex-only" aria-label="服务器总览">
+    <section class="hex-overview" aria-label="服务器总览">
       <div class="hex-section-heading"><h1>服务器总览</h1><span>实时监控</span></div>
       <div class="hex-stats" id="statsBanner"></div>
     </section>
 
     <!-- Controls & Filter Bar -->
     <div class="controls-bar">
-      <div class="hex-tools hex-only">
-        <label class="hex-search"><span aria-hidden="true">⌕</span><input id="nodeSearch" type="search" placeholder="搜索名称、地区、系统…" aria-label="搜索节点"></label>
+      <div class="hex-tools">
         <select id="nodeStatusFilter" class="form-input" aria-label="节点状态"><option value="all">全部状态</option><option value="online">仅在线</option><option value="offline">仅离线</option></select>
         <span id="nodeResultCount" class="hex-result-count"></span>
-      </div>
-      <div class="filter-group">
-        <div id="groupButtons" style="display: flex; gap: 6px; flex-wrap: wrap;">
-        </div>
       </div>
       <div id="adminQuickActions" style="display: none;">
         <details class="node-management" id="nodeManagementMenu">
@@ -85,22 +80,6 @@
         <button type="button" class="modal-close" id="closeSettingsModalBtn" data-close-modal="settingsModal" aria-label="关闭">&times;</button>
       </div>
       <form id="settingsForm" autocomplete="off">
-        <fieldset class="theme-management">
-          <legend>主题管理</legend>
-          <p class="theme-hint">由管理员统一设置，保存后对所有访客生效。</p>
-          <div class="theme-options">
-            <label class="theme-option">
-              <input type="radio" name="siteTheme" value="default" checked>
-              <span class="theme-option-content"><span class="theme-preview preview-default" aria-hidden="true"><i></i><b></b><b></b></span><strong>默认主题</strong><small>原版布局 · 绿色强调 · 宽幅卡片</small></span>
-            </label>
-            <label class="theme-option">
-              <input type="radio" name="siteTheme" value="hex">
-              <span class="theme-option-content"><span class="theme-preview preview-hex" aria-hidden="true"><i></i><b></b><b></b><b></b></span><strong>Hex</strong><small>蓝灰配色 · 数据总览 · 多列卡片</small></span>
-            </label>
-          </div>
-          <label class="form-label" for="settingColorMode">全站明暗模式</label>
-          <select class="form-input" id="settingColorMode"><option value="dark">深色</option><option value="light">浅色</option></select>
-        </fieldset>
         <div class="form-group"><label class="form-label">网站名称</label><input class="form-input" id="settingSiteTitle" maxlength="80"></div>
         <div class="form-group">
           <label class="form-label">网站 Logo 图标（本地上传）</label>
@@ -177,10 +156,6 @@
           <input type="text" class="form-input" id="newNodeName" placeholder="例如: Tokyo-VPS-01" required>
         </div>
         <div class="form-group">
-          <label class="form-label">分组名称 (可选)</label>
-          <input type="text" class="form-input" id="newNodeGroup" placeholder="例如: 生产机、测试集群">
-        </div>
-        <div class="form-group">
           <label class="form-label">地区代码 / 国旗代码</label>
           <input type="text" class="form-input" id="newNodeRegion" placeholder="例如: JP, US, CN, HK, SG" value="JP">
         </div>
@@ -229,10 +204,6 @@
         <div class="form-group">
           <label class="form-label">节点名称</label>
           <input type="text" class="form-input" id="editNodeName" required>
-        </div>
-        <div class="form-group">
-          <label class="form-label">分组名称</label>
-          <input type="text" class="form-input" id="editNodeGroup">
         </div>
         <div class="form-group">
           <label class="form-label">地区代码</label>

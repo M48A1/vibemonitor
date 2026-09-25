@@ -1,7 +1,6 @@
 // VibeMonitor Modern Dashboard Script
 
 let nodes = [];
-let currentGroup = null;
 let isAdmin = false;
 let ws = null;
 let pollTimer = null;
@@ -218,21 +217,6 @@ if (typeof document.addEventListener === 'function') {
   });
 }
 
-// Site appearance is server-owned; browser preferences cannot override it.
-function applyAppearance(data) {
-  const theme = VibeThemes.normalize(data.site_theme);
-  const mode = data.color_mode === 'light' ? 'light' : 'dark';
-  const root = document.documentElement;
-  const changed = root.dataset.siteTheme !== theme || root.dataset.theme !== mode;
-  root.dataset.siteTheme = theme;
-  root.dataset.theme = mode;
-  if (changed) {
-    updateGlobalStats();
-    renderNodes();
-  }
-}
-
-document.getElementById('nodeSearch').addEventListener('input', renderNodes);
 document.getElementById('nodeStatusFilter').addEventListener('change', renderNodes);
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) fetchPublicSettings();
@@ -286,30 +270,7 @@ function updateGlobalStats() {
   if (up) up.textContent = `↑ ${formatSpeed(totalNetUp)}`;
   if (down) down.textContent = `↓ ${formatSpeed(totalNetDown)}`;
 
-  VibeThemes.renderOverview(nodes);
-
-  updateGroupButtons();
-}
-
-function updateGroupButtons() {
-  const groups = new Set();
-  nodes.forEach(n => {
-    if (n.group) groups.add(n.group);
-  });
-  if (currentGroup !== null && !groups.has(currentGroup)) currentGroup = null;
-  const container = document.getElementById('groupButtons');
-  container.innerHTML = '';
-  groups.forEach(g => {
-    const btn = document.createElement('button');
-    btn.className = `btn ${currentGroup === g ? 'btn-primary' : ''}`;
-    btn.textContent = g;
-    btn.onclick = () => {
-      currentGroup = currentGroup === g ? null : g;
-      updateGroupButtons();
-      renderNodes();
-    };
-    container.appendChild(btn);
-  });
+  VibeHex.renderOverview(nodes);
 }
 
 function readNodeProfile(prefix) {
@@ -372,12 +333,8 @@ function renderPingPanels(node) {
 // Render Nodes
 function renderNodes() {
   const grid = document.getElementById('nodeGrid');
-  const hex = document.documentElement.dataset.siteTheme === 'hex';
-  const query = hex ? document.getElementById('nodeSearch').value.trim().toLowerCase() : '';
-  const status = hex ? document.getElementById('nodeStatusFilter').value : 'all';
-  const filtered = nodes.filter(n => currentGroup === null || n.group === currentGroup)
-    .filter(n => status === 'all' || (status === 'online' ? n.online : !n.online))
-    .filter(n => !query || [n.name, n.region, n.group, (n.basic_info || {}).os, (n.basic_info || {}).arch].join(' ').toLowerCase().includes(query))
+  const status = document.getElementById('nodeStatusFilter').value;
+  const filtered = nodes.filter(n => status === 'all' || (status === 'online' ? n.online : !n.online))
     .sort((a, b) => (a.name || '').trim().localeCompare((b.name || '').trim(), 'en', { sensitivity: 'base', numeric: true })
       || (a.uuid || '').localeCompare(b.uuid || '', 'en'));
 
@@ -391,122 +348,7 @@ function renderNodes() {
     return;
   }
 
-  grid.innerHTML = filtered.map(node => {
-    if (hex) return VibeThemes.renderHexNode(node);
-    const isOnline = node.online;
-    const r = node.last_report || {};
-    const info = node.basic_info || {};
-    const cpu = r.cpu || {};
-    const ram = r.ram || {};
-    const disk = r.disk || {};
-    const net = r.network || {};
-
-    const cpuUsage = isOnline ? (cpu.usage || 0).toFixed(1) : 0;
-    let ramPct = 0;
-    if (isOnline && ram.total > 0) {
-      ramPct = ((ram.used / ram.total) * 100).toFixed(1);
-    }
-    let diskPct = 0;
-    if (isOnline && disk.total > 0) {
-      diskPct = ((disk.used / disk.total) * 100).toFixed(1);
-    }
-
-    const cpuClass = cpuUsage > 90 ? 'critical' : cpuUsage > 75 ? 'high' : '';
-    const ramClass = ramPct > 90 ? 'critical' : ramPct > 80 ? 'high' : '';
-    const diskClass = diskPct > 90 ? 'critical' : diskPct > 80 ? 'high' : '';
-
-    const trafficLimit = node.traffic_limit || 0;
-    const cycleTotalUsed = node.cycle_total_used || 0;
-    const cyclePercent = node.cycle_percent || (trafficLimit > 0 ? (cycleTotalUsed / trafficLimit * 100) : 0);
-    const trafficClass = cyclePercent >= 90 ? 'critical' : cyclePercent >= 60 ? 'high' : '';
-
-    const bill = billingDisplay(node.profile);
-    const adminActions = '';
-
-    return `
-      <div class="node-card ${isOnline ? '' : 'offline'}">
-        <div class="node-header">
-          <div class="node-title-group">
-            <span class="node-status-dot ${isOnline ? 'online' : ''}" title="${isOnline ? '在线' : '离线'}"></span>
-            <div>
-              <div class="node-name">${escapeHtml(node.name)}</div>
-            </div>
-          </div>
-          <div class="node-badges">
-            <span class="badge badge-region">${getRegionBadge(node.region)}</span>
-            ${node.group ? `<span class="badge">${escapeHtml(node.group)}</span>` : ''}
-          </div>
-        </div>
-
-        <div class="node-specs">
-          <span>🖥️ ${escapeHtml(info.os || 'Linux')} (${escapeHtml(info.arch || 'x64')})</span>
-          <span>⚡ ${info.cpu_cores || cpu.cores || 1}C</span>
-          <span>⏱️ ${formatUptime(r.uptime)}</span>
-          <span class="price-badge">${bill.price}</span>
-          ${node.reset_day > 0 ? `<span class="billing-reset" title="每月 ${node.reset_day} 日重置流量">♻️ ${node.reset_day}日重置${node.days_until_reset !== undefined ? (node.days_until_reset === 0 ? ' (今日)' : ` (剩${node.days_until_reset}天)`) : ''}</span>` : ''}
-        </div>
-
-        <div class="node-metrics">
-        <!-- CPU Metric -->
-        <div class="metric-row">
-          <div class="metric-meta">
-            <span class="metric-name">CPU</span>
-            <span class="metric-value">${cpuUsage}%</span>
-          </div>
-          <div class="progress-track">
-            <div class="progress-bar ${cpuClass}" style="width: ${cpuUsage}%;"></div>
-          </div>
-        </div>
-
-        <!-- Memory Metric -->
-        <div class="metric-row">
-          <div class="metric-meta">
-            <span class="metric-name">RAM</span>
-            <span class="metric-value">${formatBytes(ram.used)} / ${formatBytes(ram.total)} (${ramPct}%)</span>
-          </div>
-          <div class="progress-track">
-            <div class="progress-bar ${ramClass}" style="width: ${ramPct}%;"></div>
-          </div>
-        </div>
-
-        <!-- Disk Metric -->
-        <div class="metric-row">
-          <div class="metric-meta">
-            <span class="metric-name">Disk</span>
-            <span class="metric-value">${formatBytes(disk.used)} / ${formatBytes(disk.total)} (${diskPct}%)</span>
-          </div>
-          <div class="progress-track">
-            <div class="progress-bar ${diskClass}" style="width: ${diskPct}%;"></div>
-          </div>
-        </div>
-
-        ${trafficLimit > 0 ? `
-        <div class="metric-row">
-          <div class="metric-meta">
-            <span class="metric-name">Traffic</span>
-            <span class="metric-value">${formatBytes(cycleTotalUsed)} / ${formatBytes(trafficLimit)} (${cyclePercent.toFixed(1)}%)${node.reset_day > 0 && node.days_until_reset !== undefined ? (node.days_until_reset === 0 ? ' · 今日重置' : ` · 剩 ${node.days_until_reset} 天`) : ''}</span>
-          </div>
-          <div class="progress-track">
-            <div class="progress-bar ${trafficClass}" style="width: ${Math.min(cyclePercent, 100).toFixed(1)}%;"></div>
-          </div>
-        </div>
-        ` : ''}
-
-        </div>
-
-        <div class="node-summary">
-          <div class="summary-box"><span class="summary-value up">↑ ${formatSpeed(net.up || 0)}</span><span class="summary-value down">↓ ${formatSpeed(net.down || 0)}</span></div>
-          <div class="summary-box"><span class="summary-value">↑ ${formatBytes(net.totalUp || 0)}</span><span class="summary-value">↓ ${formatBytes(net.totalDown || 0)}</span></div>
-          <div class="summary-box"><span class="summary-value">▦ ${bill.remaining}</span><span class="summary-value">${bill.price}</span></div>
-        </div>
-
-
-        ${renderPingPanels(node)}
-
-        ${adminActions}
-      </div>
-    `;
-  }).join('');
+  grid.innerHTML = filtered.map(VibeHex.renderNode).join('');
 }
 
 function escapeHtml(str) {
@@ -584,7 +426,6 @@ async function fetchPublicSettings() {
     const res = await fetch('/api/public');
     if (!res.ok) throw new Error('无法读取网站设置');
     const data = await res.json();
-    applyAppearance(data);
     if (data.site_title) {
       document.getElementById('siteTitle').textContent = data.site_title;
       document.title = data.site_title;
@@ -602,9 +443,6 @@ async function fetchSettingsForAdmin() {
     const res = await fetch('/api/public');
     if (!res.ok) throw new Error('无法读取网站设置，请关闭后重试');
     const data = await res.json();
-    const selected = document.querySelector(`input[name="siteTheme"][value="${VibeThemes.normalize(data.site_theme)}"]`);
-    selected.checked = true;
-    document.getElementById('settingColorMode').value = data.color_mode === 'light' ? 'light' : 'dark';
     const titleInput = document.getElementById('settingSiteTitle');
     if (titleInput) titleInput.value = data.site_title || '';
     const pwInput = document.getElementById('settingNewPassword');
@@ -633,7 +471,6 @@ function connectWebSocket() {
   ws.onmessage = (event) => {
     try {
       const msg = JSON.parse(event.data);
-      if (msg.appearance) applyAppearance(msg.appearance);
       if (msg.nodes) {
         nodes = msg.nodes;
         updateGlobalStats();
@@ -850,8 +687,6 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
   try {
     const bodyPayload = {
       site_title: document.getElementById('settingSiteTitle').value.trim(),
-      site_theme: (document.querySelector('input[name="siteTheme"]:checked')?.value) ?? 'default',
-      color_mode: document.getElementById('settingColorMode').value,
       new_password: newPassword
     };
     const res = await fetch('/api/admin/settings', {
@@ -894,7 +729,7 @@ document.getElementById('editExistingNodeBtn').addEventListener('click', () => {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'btn';
-    button.textContent = `${node.name || node.uuid}${node.group ? ' · ' + node.group : ''}`;
+    button.textContent = node.name || node.uuid;
     button.addEventListener('click', async () => {
       closeModal('selectNodeModal');
       await openEditModal(node.uuid);
@@ -909,7 +744,6 @@ if (addNodeBtn) addNodeBtn.addEventListener('click', () => {
   nodeManagementMenu.open = false;
   if (!isAdmin) return;
   document.getElementById('newNodeName').value = '';
-  document.getElementById('newNodeGroup').value = '';
   document.getElementById('newNodeTrafficLimit').value = '';
   document.getElementById('newNodeResetDay').value = '';
   document.getElementById('newNodeInitialUsed').value = '';
@@ -920,7 +754,6 @@ if (addNodeBtn) addNodeBtn.addEventListener('click', () => {
 document.getElementById('addNodeForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const name = document.getElementById('newNodeName').value;
-  const group = document.getElementById('newNodeGroup').value;
   const region = document.getElementById('newNodeRegion').value;
   const trafficLimitGB = parseFloat(document.getElementById('newNodeTrafficLimit').value) || 0;
   const resetDay = parseInt(document.getElementById('newNodeResetDay').value) || 0;
@@ -936,7 +769,6 @@ document.getElementById('addNodeForm').addEventListener('submit', async (e) => {
       credentials: 'same-origin',
       body: JSON.stringify({
         name,
-        group,
         region,
         traffic_limit_gb: trafficLimitGB,
         reset_day: resetDay,
@@ -974,7 +806,6 @@ window.openEditModal = async function(uuid) {
   }
   document.getElementById('editNodeUUID').value = node.uuid;
   document.getElementById('editNodeName').value = node.name || '';
-  document.getElementById('editNodeGroup').value = node.group || '';
   document.getElementById('editNodeRegion').value = node.region || '';
   document.getElementById('editNodeTrafficLimit').value = node.traffic_limit > 0 ? (node.traffic_limit / (1024*1024*1024)).toFixed(1) : '';
   document.getElementById('editNodeResetDay').value = node.reset_day > 0 ? node.reset_day : '';
@@ -992,7 +823,7 @@ document.getElementById('editNodeForm').addEventListener('submit', async (e) => 
   e.preventDefault();
   const uuid = document.getElementById('editNodeUUID').value;
   const name = document.getElementById('editNodeName').value;
-  const group = document.getElementById('editNodeGroup').value;
+  const group = nodes.find(node => node.uuid === uuid)?.group || ''; // Preserve legacy metadata when editing.
   const region = document.getElementById('editNodeRegion').value;
   const trafficLimitGB = parseFloat(document.getElementById('editNodeTrafficLimit').value) || 0;
   const resetDay = parseInt(document.getElementById('editNodeResetDay').value) || 0;
@@ -1452,5 +1283,5 @@ fetchNodes();
 connectWebSocket();
 // Periodic fallback polling every 5s
 setInterval(fetchNodes, 5000);
-// Also synchronize appearance when WebSocket is unavailable.
+// Refresh the site title and logo when WebSocket is unavailable.
 setInterval(fetchPublicSettings, 15000);

@@ -137,7 +137,7 @@ func (s *sqliteDB) initSchema() error {
 	}
 	// 兼容已有旧测试创建的数据库，确保 data_json 列存在
 	_, _ = s.db.Exec("ALTER TABLE nodes ADD COLUMN data_json TEXT DEFAULT ''")
-	for _, column := range []struct{ name, fallback string }{{"site_theme", "default"}, {"color_mode", "dark"}} {
+	for _, column := range []struct{ name, fallback string }{{"site_theme", "hex"}, {"color_mode", "light"}} {
 		exists, err := s.hasConfigColumn(column.name)
 		if err != nil {
 			return err
@@ -192,28 +192,8 @@ func (s *sqliteDB) loadConfig() (*Config, error) {
 	if c.PingTargets == nil {
 		c.PingTargets = []protocol.PingTarget{}
 	}
-	// Read old backups without migrating or modifying the source database.
-	c.SiteTheme, c.ColorMode = "default", "dark"
-	for _, column := range []struct {
-		name  string
-		value *string
-	}{{"site_theme", &c.SiteTheme}, {"color_mode", &c.ColorMode}} {
-		exists, err := s.hasConfigColumn(column.name)
-		if err != nil {
-			return nil, err
-		}
-		if exists {
-			if err := s.db.QueryRow("SELECT " + column.name + " FROM config WHERE id = 1").Scan(column.value); err != nil {
-				return nil, err
-			}
-		}
-	}
-	if c.SiteTheme != "hex" {
-		c.SiteTheme = "default"
-	}
-	if c.ColorMode != "light" {
-		c.ColorMode = "dark"
-	}
+	// Legacy columns remain compatible with backups; appearance is fixed.
+	c.SiteTheme, c.ColorMode = "hex", "light"
 	return &c, nil
 }
 
