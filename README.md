@@ -4,7 +4,7 @@
 
 ## 功能
 
-- 仅保留 Hex 主题，固定浅色界面
+
 - 无插件
 - 无外部通知功能
 - Hex 主题提供节点状态、周期流量、实时网速和高负载总览
@@ -16,20 +16,13 @@
 - 添加节点 / 编辑节点 / 删除节点
 - 测速节点目标手动维护在节点信息内
 
-### Hex 主题
 
-界面统一使用浅色 Hex，参考 [Monitor HEX](https://github.com/8bitNull/monitor-theme-hex) 的蓝灰配色与紧凑卡片设计，提供实时监控统计、节点明细，以及桌面多列 / 手机单列布局，使用 VibeMonitor 自身的数据接口。
-
-管理页保留网站名称、Logo 和管理员密码设置。主题选择、全局明暗模式、搜索框、状态筛选和分组相关界面已移除；旧数据库及备份恢复后统一使用浅色 Hex。
-
-前端文件为 `internal/web/dist/themes.js` 和 `themes.css`，无需前端构建工具或外部 CDN。运行回归检查：`go test ./internal/store ./internal/server ./internal/web`；前端行为检查：`node --test internal/web/*.cjs`。参考项目的许可声明随前端打包在 `third-party-notices.txt` 中。
   
 ## 安装
 - 粘贴复制选择菜单内容，更新主控菜单里选择10
 - 初次安装域名反代下面也有说明
 ```bash
-curl -4 -fsSL -o install.sh https://raw.githubusercontent.com/M48A1/vibemonitor/main/install.sh
-bash install.sh
+curl -4 -fsSL -o install.sh https://raw.githubusercontent.com/M48A1/vibemonitor/main/install.sh && bash install.sh
 ```
 
 
