@@ -14,23 +14,37 @@
     <!-- Navbar -->
     <header class="navbar">
       <div class="brand">
-        <div class="brand-icon" id="brandIcon">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22">
-            <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/>
-            <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"/>
-            <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 10.04 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
-            <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
-          </svg>
-        </div>
+        <details class="site-menu" id="siteMenu">
+          <summary class="site-menu-trigger" id="siteMenuTrigger" aria-label="站点菜单" title="站点菜单">
+            <span class="brand-icon" id="brandIcon">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22">
+                <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/>
+                <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"/>
+                <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 10.04 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
+                <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+              </svg>
+            </span>
+          </summary>
+          <div class="site-menu-panel">
+            <button type="button" class="site-menu-item" id="adminBtn">⚙️ 管理</button>
+            <div id="adminQuickActions" style="display: none;">
+              <details class="node-management" id="nodeManagementMenu">
+                <summary class="site-menu-item">节点管理 <span class="site-menu-chevron" aria-hidden="true">›</span></summary>
+                <div class="node-management-menu">
+                  <button type="button" class="site-menu-item" id="editExistingNodeBtn">编辑现有节点</button>
+                  <button type="button" class="site-menu-item" id="addNodeBtn">新建节点</button>
+                </div>
+              </details>
+              <button type="button" class="site-menu-item site-menu-logout" id="logoutBtn">退出登录</button>
+            </div>
+          </div>
+        </details>
         <div>
           <div style="display: flex; align-items: center; gap: 8px;">
             <span class="brand-title" id="siteTitle">VibeMonitor</span>
             <span class="brand-badge">Probe</span>
           </div>
         </div>
-      </div>
-      <div class="nav-actions">
-        <button class="btn btn-primary" id="adminBtn">⚙️ 管理</button>
       </div>
     </header>
 
@@ -40,19 +54,9 @@
       <div class="hex-stats" id="statsBanner"></div>
     </section>
 
-    <!-- Node Details Heading & Actions -->
+    <!-- Node Details Heading -->
     <div class="controls-bar">
       <h2 class="hex-section-label" id="nodeDetailsHeading">节点明细</h2>
-      <div id="adminQuickActions" style="display: none;">
-        <details class="node-management" id="nodeManagementMenu">
-          <summary class="btn btn-primary">节点管理</summary>
-          <div class="node-management-menu">
-            <button type="button" class="btn" id="editExistingNodeBtn">编辑现有节点</button>
-            <button type="button" class="btn" id="addNodeBtn">新建节点</button>
-          </div>
-        </details>
-        <button class="btn btn-danger" id="logoutBtn">退出登录</button>
-      </div>
     </div>
 
     <!-- Nodes Grid -->
@@ -93,7 +97,7 @@
           <div class="logo-upload-hint">支持 PNG、JPG、SVG、WebP、ICO 格式（最大 2MB），保存于服务器本地</div>
         </div>
         <div class="form-group"><label class="form-label">新管理员密码（留空则不修改）</label><div class="password-input-wrap"><input type="text" class="form-input" id="settingNewPassword" minlength="8" autocomplete="off"><button type="button" class="btn-toggle-pwd" data-target="settingNewPassword" title="显示密码">👁️</button></div></div>
-        <div style="display:flex;justify-content:space-between;gap:10px;margin-top:14px;"><button type="button" class="btn btn-danger" id="settingsLogoutBtn">退出登录</button><div style="display:flex;gap:10px;"><button type="button" class="btn" id="cancelSettingsModalBtn" data-close-modal="settingsModal">取消</button><button type="submit" class="btn btn-primary">保存</button></div></div>
+        <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:14px;"><button type="button" class="btn" id="cancelSettingsModalBtn" data-close-modal="settingsModal">取消</button><button type="submit" class="btn btn-primary">保存</button></div>
       </form>
     </div>
   </div>

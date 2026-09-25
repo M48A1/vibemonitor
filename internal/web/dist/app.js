@@ -238,15 +238,9 @@ async function checkAdminAuth() {
 
 function setAdminState(admin) {
   isAdmin = admin;
-  const adminBtn = document.getElementById('adminBtn');
   const quickActions = document.getElementById('adminQuickActions');
-  if (admin) {
-    adminBtn.textContent = '⚙️ 管理';
-    quickActions.style.display = 'flex';
-  } else {
-    adminBtn.textContent = '⚙️ 管理';
-    quickActions.style.display = 'none';
-  }
+  quickActions.style.display = admin ? 'block' : 'none';
+  if (!admin) closeSiteMenu();
   renderNodes();
 }
 
@@ -322,7 +316,7 @@ function renderNodes() {
   if (sorted.length === 0) {
     grid.innerHTML = `
       <div style="grid-column: 1 / -1; text-align: center; padding: 60px 20px; color: var(--muted-foreground);">
-        暂无监控节点。点击右上角“管理”添加节点开始监控。
+        暂无监控节点。点击左上角站点图标，登录后通过“节点管理 → 新建节点”开始监控。
       </div>
     `;
     return;
@@ -587,8 +581,6 @@ async function handleLogout() {
 
 const logoutBtn = document.getElementById('logoutBtn');
 if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
-const settingsLogoutBtn = document.getElementById('settingsLogoutBtn');
-if (settingsLogoutBtn) settingsLogoutBtn.addEventListener('click', handleLogout);
 
 // Logo upload & reset button handling
 const btnSelectLogo = document.getElementById('btnSelectLogo');
@@ -685,17 +677,34 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
   } catch (e) { alert(e.message); }
 });
 
+const siteMenu = document.getElementById('siteMenu');
+const siteMenuTrigger = document.getElementById('siteMenuTrigger');
 const nodeManagementMenu = document.getElementById('nodeManagementMenu');
-nodeManagementMenu.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') {
-    nodeManagementMenu.open = false;
-    nodeManagementMenu.querySelector('summary').focus();
+function closeSiteMenu() {
+  siteMenu.open = false;
+  nodeManagementMenu.open = false;
+}
+siteMenu.addEventListener('toggle', () => {
+  if (!siteMenu.open) nodeManagementMenu.open = false;
+});
+siteMenu.addEventListener('click', (event) => {
+  if (event.target.closest('button')) {
+    closeSiteMenu();
+    siteMenuTrigger.focus();
   }
 });
-nodeManagementMenu.addEventListener('focusout', (event) => {
-  // Safari can leave relatedTarget null when a menu button is pressed.
-  // Keep the menu mounted until its click handler has run in that case.
-  if (event.relatedTarget && !nodeManagementMenu.contains(event.relatedTarget)) nodeManagementMenu.open = false;
+siteMenu.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    closeSiteMenu();
+    siteMenuTrigger.focus();
+  }
+});
+siteMenu.addEventListener('focusout', (event) => {
+  // Safari can leave relatedTarget null until a menu button's click runs.
+  if (event.relatedTarget && !siteMenu.contains(event.relatedTarget)) closeSiteMenu();
+});
+document.addEventListener('click', (event) => {
+  if (!siteMenu.contains(event.target)) closeSiteMenu();
 });
 document.getElementById('editExistingNodeBtn').addEventListener('click', () => {
   nodeManagementMenu.open = false;
