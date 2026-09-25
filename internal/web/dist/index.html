@@ -30,23 +30,19 @@
         </div>
       </div>
       <div class="nav-actions">
-        <div class="nav-speed" aria-label="实时网络速率"><span id="statNetUp">↑ 0 B/s</span><span id="statNetDown">↓ 0 B/s</span></div>
         <button class="btn btn-primary" id="adminBtn">⚙️ 管理</button>
       </div>
     </header>
 
     <!-- Stats Bar -->
-    <section class="hex-overview" aria-label="服务器总览">
-      <div class="hex-section-heading"><h1>服务器总览</h1><span>实时监控</span></div>
+    <section class="hex-overview" aria-label="实时监控">
+      <div class="hex-section-heading"><span class="hex-section-label">实时监控</span></div>
       <div class="hex-stats" id="statsBanner"></div>
     </section>
 
-    <!-- Controls & Filter Bar -->
+    <!-- Node Details Heading & Actions -->
     <div class="controls-bar">
-      <div class="hex-tools">
-        <select id="nodeStatusFilter" class="form-input" aria-label="节点状态"><option value="all">全部状态</option><option value="online">仅在线</option><option value="offline">仅离线</option></select>
-        <span id="nodeResultCount" class="hex-result-count"></span>
-      </div>
+      <h2 class="hex-section-label" id="nodeDetailsHeading">节点明细</h2>
       <div id="adminQuickActions" style="display: none;">
         <details class="node-management" id="nodeManagementMenu">
           <summary class="btn btn-primary">节点管理</summary>
@@ -60,7 +56,7 @@
     </div>
 
     <!-- Nodes Grid -->
-    <main class="node-grid" id="nodeGrid">
+    <main class="node-grid" id="nodeGrid" aria-labelledby="nodeDetailsHeading">
       <div style="grid-column: 1 / -1; text-align: center; padding: 60px 20px; color: var(--muted-foreground);">
         正在加载监控节点...
       </div>
