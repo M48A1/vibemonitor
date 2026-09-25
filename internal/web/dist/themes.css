@@ -29,9 +29,8 @@
 .brand-icon { background: var(--card-bg); border-radius: 8px; }
 .btn { border-radius: 8px; font-weight: 500; }
 .hex-section-heading { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
-.hex-section-heading h1 { font-size: 18px; letter-spacing: -.3px; }
-.hex-section-heading > span { font-size: 11px; color: var(--success); }
-.hex-section-heading > span::before, .hex-live-dot { content: ''; display: inline-block; width: 6px; height: 6px; background: var(--success); border-radius: 50%; margin-right: 6px; }
+.hex-section-label { font-size: 11px; font-weight: 400; color: var(--success); }
+.hex-section-label::before, .hex-live-dot { content: ''; display: inline-block; width: 6px; height: 6px; background: var(--success); border-radius: 50%; margin-right: 6px; }
 .hex-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); background: var(--card-bg); border: 1px solid var(--border); border-radius: 14px; margin-bottom: 24px; overflow: hidden; }
 .hex-stat { padding: 20px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .hex-stat + .hex-stat { border-left: 1px solid var(--border); }
@@ -43,9 +42,6 @@
 .hex-stat-network span:first-child { color: var(--primary); }
 .hex-stat-network span:last-child { color: var(--success); }
 .controls-bar { justify-content: flex-start; gap: 12px; margin-bottom: 18px; }
-.hex-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.hex-tools .form-input { width: auto; font-size: 13px; padding: 8px 10px; border-radius: 8px; }
-.hex-result-count { font-size: 12px; color: var(--muted-foreground); white-space: nowrap; }
 #adminQuickActions { margin-left: auto; }
 .node-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; align-items: stretch; }
 .hex-card { padding: 20px; border-radius: 14px; gap: 22px; min-width: 0; }
@@ -103,14 +99,12 @@
   .container { padding: 0 14px 28px; }
   .navbar { gap: 12px; padding: 16px 0; margin-bottom: 20px; }
   .nav-actions { flex-wrap: wrap; }
-  .nav-speed { font-size: 11px; }
   .hex-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 16px; }
   .hex-stat:nth-child(3) { border-left: 0; }
   .hex-stat:nth-child(n+3) { border-top: 1px solid var(--border); }
   .hex-stat { padding: 14px; }
   .hex-stat > strong { font-size: 20px; }
   .hex-stat-network { gap: 4px; }
-  .hex-tools { width: 100%; }
   .node-grid { grid-template-columns: minmax(0, 1fr); gap: 14px; }
   .hex-card { padding: 18px; }
   #adminQuickActions { margin-left: 0; }

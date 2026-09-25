@@ -217,7 +217,6 @@ if (typeof document.addEventListener === 'function') {
   });
 }
 
-document.getElementById('nodeStatusFilter').addEventListener('change', renderNodes);
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) fetchPublicSettings();
 });
@@ -253,23 +252,6 @@ function setAdminState(admin) {
 
 // Global Stats Calculation
 function updateGlobalStats() {
-  let totalNetUp = 0;
-  let totalNetDown = 0;
-
-  nodes.forEach(n => {
-    if (n.last_report) {
-      if (n.last_report.network) {
-        totalNetUp += n.last_report.network.up || 0;
-        totalNetDown += n.last_report.network.down || 0;
-      }
-    }
-  });
-
-  const up = document.getElementById('statNetUp');
-  const down = document.getElementById('statNetDown');
-  if (up) up.textContent = `↑ ${formatSpeed(totalNetUp)}`;
-  if (down) down.textContent = `↓ ${formatSpeed(totalNetDown)}`;
-
   VibeHex.renderOverview(nodes);
 }
 
@@ -333,22 +315,20 @@ function renderPingPanels(node) {
 // Render Nodes
 function renderNodes() {
   const grid = document.getElementById('nodeGrid');
-  const status = document.getElementById('nodeStatusFilter').value;
-  const filtered = nodes.filter(n => status === 'all' || (status === 'online' ? n.online : !n.online))
+  const sorted = [...nodes]
     .sort((a, b) => (a.name || '').trim().localeCompare((b.name || '').trim(), 'en', { sensitivity: 'base', numeric: true })
       || (a.uuid || '').localeCompare(b.uuid || '', 'en'));
 
-  document.getElementById('nodeResultCount').textContent = `${filtered.length} / ${nodes.length} 个节点`;
-  if (filtered.length === 0) {
+  if (sorted.length === 0) {
     grid.innerHTML = `
       <div style="grid-column: 1 / -1; text-align: center; padding: 60px 20px; color: var(--muted-foreground);">
-        ${nodes.length === 0 ? '暂无监控节点。点击右上角“管理”添加节点开始监控。' : '没有匹配的节点'}
+        暂无监控节点。点击右上角“管理”添加节点开始监控。
       </div>
     `;
     return;
   }
 
-  grid.innerHTML = filtered.map(VibeHex.renderNode).join('');
+  grid.innerHTML = sorted.map(VibeHex.renderNode).join('');
 }
 
 function escapeHtml(str) {

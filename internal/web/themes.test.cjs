@@ -17,7 +17,6 @@ function dashboard() {
     }
     return elements.get(id);
   }
-  element('nodeStatusFilter').value = 'all';
   const root = { dataset: { siteTheme: 'hex', theme: 'light' } };
   const ctx = vm.createContext({ console: { log() {}, warn() {}, error() {} },
     document: { documentElement: root, getElementById: element, createElement: () => element(Symbol()),
@@ -62,18 +61,13 @@ test('Hex handles real zero, missing and offline values, escaping node names', (
   assert.doesNotMatch(d.element('statsBanner').innerHTML, /120\.6/);
 });
 
-test('Hex ignores group filters and keeps status filtering separate from site totals', () => {
+test('Hex shows all nodes regardless of status or legacy groups', () => {
   const d = dashboard();
   d.ctx.fixture = nodes;
   d.run('nodes = fixture; updateGlobalStats(); renderNodes()');
-  assert.equal(d.element('nodeResultCount').textContent, '2 / 2 个节点');
-  d.element('nodeStatusFilter').value = 'offline';
-  d.element('nodeStatusFilter').events.change();
-  assert.equal(d.element('nodeResultCount').textContent, '1 / 2 个节点');
-  assert.match(d.element('nodeGrid').innerHTML, /London/);
-  assert.doesNotMatch(d.element('nodeGrid').innerHTML, /Tokyo/);
+  const cards = d.element('nodeGrid').innerHTML;
+  assert.equal((cards.match(/<article /g) || []).length, 2);
+  assert.match(cards, /London/);
+  assert.match(cards, /Tokyo/);
   assert.match(d.element('statsBanner').innerHTML, /1 个在线 · 1 个离线/);
-  d.element('nodeStatusFilter').value = 'all';
-  d.element('nodeStatusFilter').events.change();
-  assert.equal(d.element('nodeResultCount').textContent, '2 / 2 个节点');
 });
