@@ -1,8 +1,5 @@
-// Built-in themes share the same API, authentication and node actions.
 // Hex is a native VibeMonitor adaptation inspired by 8bitNull/monitor-theme-hex.
-window.VibeThemes = (() => {
-  const catalog = Object.freeze({ default: '默认主题', hex: 'Hex' });
-  const normalize = value => Object.hasOwn(catalog, value) ? value : 'default';
+window.VibeHex = (() => {
   const number = value => Number.isFinite(Number(value)) && value != null ? Number(value) : null;
   const percent = (used, total) => number(total) > 0 && number(used) != null ? Math.max(0, Math.min(100, Number(used) / Number(total) * 100)) : null;
 
@@ -12,7 +9,7 @@ window.VibeThemes = (() => {
     return `<div class="hex-metric"><div class="metric-meta"><span class="metric-name">${label}</span><strong>${pct == null ? '—' : pct.toFixed(1) + '%'}</strong></div><div class="progress-track"><div class="progress-bar ${level}" style="width:${pct || 0}%"></div></div><small>${detail}</small></div>`;
   }
 
-  function renderHexNode(node) {
+  function renderNode(node) {
     const r = node.last_report || {};
     const info = node.basic_info || {};
     const live = node.online && !!node.last_report;
@@ -35,7 +32,7 @@ window.VibeThemes = (() => {
       <div class="hex-facts"><div><span>累计上传</span><strong>${number(net.totalUp) == null ? '—' : formatBytes(net.totalUp)}</strong></div><div><span>累计下载</span><strong>${number(net.totalDown) == null ? '—' : formatBytes(net.totalDown)}</strong></div><div><span>在线时长</span><strong>${live && number(r.uptime) != null ? formatUptime(r.uptime) : '—'}</strong></div></div>
       <div class="hex-probes">${renderPingPanels(node)}</div>
       <div class="hex-billing"><div><span>到期时间</span><strong>${bill.date}</strong><small>${bill.remaining}</small></div><div><span>流量重置</span><strong>${node.reset_day > 0 ? '每月 ' + node.reset_day + ' 日' : '未设置'}</strong><small>${node.reset_day > 0 && node.days_until_reset != null ? (node.days_until_reset === 0 ? '今日重置' : '剩余 ' + node.days_until_reset + ' 天') : '按节点账期统计'}</small></div></div>
-      <footer class="hex-card-footer"><span>${escapeHtml(node.group || '未分组')}</span><strong>${bill.price}</strong></footer>
+      <footer class="hex-card-footer"><strong>${bill.price}</strong></footer>
     </article>`;
   }
 
@@ -51,5 +48,5 @@ window.VibeThemes = (() => {
       <div class="hex-stat"><span>实时网速</span><strong>${formatSpeed(total('up') + total('down'))}</strong><small class="hex-stat-network"><span>↑ ${formatSpeed(total('up'))}</span><span>↓ ${formatSpeed(total('down'))}</span></small></div>
       <div class="hex-stat"><span>高负载节点</span><strong>${busy}<em> 台</em></strong><small>当前在线节点 CPU ≥ 85%</small></div>`;
   }
-  return Object.freeze({ catalog, normalize, renderHexNode, renderOverview });
+  return Object.freeze({ renderNode, renderOverview });
 })();

@@ -28,7 +28,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: if [ -f internal/web/app_test.cjs ]; then node --test internal/web/app_test.cjs; fi
+      - run: node --test internal/web/*.cjs
       - run: if [ -d tests ]; then python3 -m unittest discover -s tests -v; fi
 
       - name: Build Linux Binaries (AMD64 & ARM64)

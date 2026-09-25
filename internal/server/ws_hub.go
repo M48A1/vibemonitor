@@ -148,11 +148,9 @@ func (h *WSHub) HandleWS(w http.ResponseWriter, r *http.Request) {
 
 func (h *WSHub) sendNodesTo(client *wsClient) error {
 	nodes := h.store.GetNodes()
-	cfg := h.store.GetConfig()
 	payload, err := json.Marshal(map[string]any{
-		"nodes":      nodes,
-		"status":     "success",
-		"appearance": map[string]string{"site_theme": cfg.SiteTheme, "color_mode": cfg.ColorMode},
+		"nodes":  nodes,
+		"status": "success",
 	})
 	if err != nil {
 		return err
@@ -199,11 +197,9 @@ func (h *WSHub) doBroadcastNodes(force bool) {
 	}
 
 	nodes := h.store.GetNodes()
-	cfg := h.store.GetConfig()
 	payload, err := json.Marshal(map[string]any{
-		"nodes":      nodes,
-		"status":     "success",
-		"appearance": map[string]string{"site_theme": cfg.SiteTheme, "color_mode": cfg.ColorMode},
+		"nodes":  nodes,
+		"status": "success",
 	})
 	if err != nil {
 		return

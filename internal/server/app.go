@@ -117,8 +117,6 @@ func (s *Server) Handler() http.Handler {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"site_title": cfg.SiteTitle,
 			"site_icon":  cfg.SiteIcon,
-			"site_theme": cfg.SiteTheme,
-			"color_mode": cfg.ColorMode,
 		})
 	})
 
@@ -435,8 +433,6 @@ func (s *Server) Handler() http.Handler {
 		var req struct {
 			SiteTitle   string                 `json:"site_title"`
 			SiteIcon    *string                `json:"site_icon"`
-			SiteTheme   *string                `json:"site_theme"`
-			ColorMode   *string                `json:"color_mode"`
 			NewPassword string                 `json:"new_password"`
 			PingTargets *[]protocol.PingTarget `json:"ping_targets"`
 		}
@@ -455,7 +451,7 @@ func (s *Server) Handler() http.Handler {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "session expired"})
 			return
 		}
-		if err := s.store.UpdateSettingsWithAppearance(req.SiteTitle, pts, req.NewPassword, req.SiteIcon, req.SiteTheme, req.ColorMode); err != nil {
+		if err := s.store.UpdateSettingsWithIcon(req.SiteTitle, pts, req.NewPassword, req.SiteIcon); err != nil {
 			if errors.Is(err, store.ErrInvalidSettings) {
 				writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 				return
@@ -475,10 +471,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /install.sh", HandleInstallScript(s.store))
 
 	// 7. Embedded Web UI (Catch-all for SPA)
-	mux.Handle("/", web.HandlerWithAppearance(func() (string, string) {
-		cfg := s.store.GetConfig()
-		return cfg.SiteTheme, cfg.ColorMode
-	}))
+	mux.Handle("/", web.Handler())
 	baseHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		limit := int64(maxRequestBytes)
 		if r.Method == http.MethodPost && r.URL.Path == "/api/admin/upload-icon" {

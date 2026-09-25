@@ -108,8 +108,8 @@ type Config struct {
 	AdminPassword    string                `json:"admin_password"`
 	SiteTitle        string                `json:"site_title"`
 	SiteIcon         string                `json:"site_icon,omitempty"`
-	SiteTheme        string                `json:"site_theme"`
-	ColorMode        string                `json:"color_mode"`
+	SiteTheme        string                `json:"site_theme"` // Legacy backup field; fixed to Hex.
+	ColorMode        string                `json:"color_mode"` // Legacy backup field; fixed to light.
 	AutoDiscoveryKey string                `json:"auto_discovery_key"`
 	PingTargets      []protocol.PingTarget `json:"ping_targets"`
 }
@@ -277,8 +277,8 @@ func (s *Store) load(defaultPassword, username string) error {
 			AdminPassword:    hashedPassword,
 			AdminUsername:    username,
 			SiteTitle:        "VibeMonitor",
-			SiteTheme:        "default",
-			ColorMode:        "dark",
+			SiteTheme:        "hex",
+			ColorMode:        "light",
 			AutoDiscoveryKey: GenerateToken(16),
 			PingTargets:      []protocol.PingTarget{},
 		}

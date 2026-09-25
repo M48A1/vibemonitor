@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func TestSiteAppearanceAdminOnlyAndAtomic(t *testing.T) {
+func TestSettingsCannotSwitchAwayFromHex(t *testing.T) {
 	s, err := New(Options{DataFile: filepath.Join(t.TempDir(), "data.db"), AdminPassword: "old-password"})
 	if err != nil {
 		t.Fatal(err)
@@ -30,20 +30,7 @@ func TestSiteAppearanceAdminOnlyAndAtomic(t *testing.T) {
 	if w := submit(`{"site_theme":"hex","color_mode":"light"}`, false); w.Code != http.StatusUnauthorized {
 		t.Fatalf("visitor can change theme: %d", w.Code)
 	}
-	for _, body := range []string{
-		`{"site_theme":"../../custom","site_title":"changed","new_password":"new-password"}`,
-		`{"site_theme":"hex","color_mode":"auto","site_title":"changed"}`,
-		`{"site_theme":""}`, `{"color_mode":""}`,
-	} {
-		if w := submit(body, true); w.Code != http.StatusBadRequest {
-			t.Fatalf("invalid appearance accepted: %d %s", w.Code, w.Body.String())
-		}
-		cfg := s.store.GetConfig()
-		if cfg.SiteTheme != "default" || cfg.ColorMode != "dark" || cfg.SiteTitle != "VibeMonitor" || !s.store.VerifyAdminPassword("old-password") {
-			t.Fatal("invalid appearance partially changed settings")
-		}
-	}
-	if w := submit(`{"site_theme":"hex","color_mode":"light"}`, true); w.Code != http.StatusOK {
+	if w := submit(`{"site_theme":"hex","color_mode":"dark"}`, true); w.Code != http.StatusOK {
 		t.Fatal(w.Body.String())
 	}
 	if w := submit(`{"site_title":"Renamed"}`, true); w.Code != http.StatusOK {
@@ -55,8 +42,8 @@ func TestSiteAppearanceAdminOnlyAndAtomic(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &public); err != nil {
 		t.Fatal(err)
 	}
-	if public["site_theme"] != "hex" || public["color_mode"] != "light" {
-		t.Fatalf("omitted appearance changed selection: %v", public)
+	if public["site_theme"] != nil || public["color_mode"] != nil {
+		t.Fatalf("removed appearance settings are still public: %v", public)
 	}
 	// Every browser starts with the same selection, including SPA paths.
 	for _, path := range []string{"/", "/index.html", "/dashboard"} {
@@ -70,8 +57,8 @@ func TestSiteAppearanceAdminOnlyAndAtomic(t *testing.T) {
 	if err := s.wsHub.sendNodesTo(client); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(<-client.sendCh), `"site_theme":"hex"`) {
-		t.Fatal("initial websocket payload has no theme")
+	if strings.Contains(string(<-client.sendCh), `"appearance"`) {
+		t.Fatal("initial websocket payload still contains appearance settings")
 	}
 	s.wsHub.mu.Lock()
 	s.wsHub.clients[client] = struct{}{}
@@ -79,9 +66,12 @@ func TestSiteAppearanceAdminOnlyAndAtomic(t *testing.T) {
 	if w := submit(`{"site_theme":"default","color_mode":"dark"}`, true); w.Code != http.StatusOK {
 		t.Fatal(w.Body.String())
 	}
+	if cfg := s.store.GetConfig(); cfg.SiteTheme != "hex" || cfg.ColorMode != "light" {
+		t.Fatal("legacy client changed the fixed appearance")
+	}
 	s.wsHub.forceBroadcastNodes()
-	if !strings.Contains(string(<-client.sendCh), `"site_theme":"default"`) {
-		t.Fatal("broadcast did not synchronize theme")
+	if strings.Contains(string(<-client.sendCh), `"appearance"`) {
+		t.Fatal("broadcast still contains appearance settings")
 	}
 	s.wsHub.mu.Lock()
 	delete(s.wsHub.clients, client)

@@ -7,35 +7,37 @@ import (
 	"testing"
 )
 
-func TestAppearanceInvalidatesHTMLCache(t *testing.T) {
-	theme, mode := "default", "dark"
-	h := HandlerWithAppearance(func() (string, string) { return theme, mode })
-	get := func(etag string) *httptest.ResponseRecorder {
-		r := httptest.NewRequest("GET", "/", nil)
-		r.Header.Set("If-None-Match", etag)
-		w := httptest.NewRecorder()
-		h.ServeHTTP(w, r)
-		return w
-	}
-	first := get("")
-	etag := first.Header().Get("ETag")
-	if get(etag).Code != http.StatusNotModified {
-		t.Fatal("unchanged HTML is not cacheable")
-	}
-	theme, mode = "hex", "light"
-	next := get(etag)
-	if next.Code != http.StatusOK || next.Header().Get("ETag") == etag || !strings.Contains(next.Body.String(), `data-site-theme="hex" data-theme="light"`) {
-		t.Fatal("theme change served stale HTML")
-	}
-	theme, mode = `"><script>`, "unknown"
-	if !strings.Contains(get("").Body.String(), `data-site-theme="default" data-theme="dark"`) {
-		t.Fatal("invalid appearance not normalized")
-	}
-	for _, path := range []string{"/themes.js", "/themes.css"} {
+func TestHexPagesAndAssetsUseCacheValidation(t *testing.T) {
+	h := Handler()
+	for _, path := range []string{"/", "/index.html", "/dashboard", "/themes.js", "/themes.css"} {
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
-		if w.Code != http.StatusOK || strings.Contains(w.Body.String(), "<!DOCTYPE html>") {
-			t.Fatalf("missing embedded asset %s", path)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s: status %d", path, w.Code)
+		}
+		body := w.Body.String()
+		if path == "/" || path == "/index.html" || path == "/dashboard" {
+			if !strings.Contains(body, `data-site-theme="hex" data-theme="light"`) {
+				t.Fatalf("%s: wrong initial appearance", path)
+			}
+			for _, removed := range []string{"settingColorMode", "name=\"siteTheme\"", "nodeSearch", "groupButtons", "newNodeGroup", "editNodeGroup"} {
+				if strings.Contains(body, removed) {
+					t.Fatalf("removed control %s remains", removed)
+				}
+			}
+		} else if strings.Contains(body, "<!DOCTYPE html>") {
+			t.Fatalf("missing asset %s", path)
+		}
+		etag := w.Header().Get("ETag")
+		if etag == "" {
+			t.Fatalf("missing ETag for %s", path)
+		}
+		req := httptest.NewRequest("GET", path, nil)
+		req.Header.Set("If-None-Match", etag)
+		cached := httptest.NewRecorder()
+		h.ServeHTTP(cached, req)
+		if cached.Code != http.StatusNotModified {
+			t.Fatalf("%s: cache validation failed", path)
 		}
 	}
 }

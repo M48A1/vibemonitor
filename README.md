@@ -4,7 +4,7 @@
 
 ## 功能
 
-- 内置默认 / Hex 两套主题，管理员统一管理全站主题及深浅色
+- 仅保留 Hex 主题，固定浅色界面
 - 无插件
 - 无外部通知功能
 - Hex 主题提供节点状态、周期流量、实时网速和高负载总览
@@ -16,16 +16,13 @@
 - 添加节点 / 编辑节点 / 删除节点
 - 测速节点目标手动维护在节点信息内
 
-### 主题管理
+### Hex 主题
 
-登录管理员后，点击右上角 **管理 → 主题管理**，选择主题和全站明暗模式，再点击 **保存**。取消不会改变当前主题。仅管理员可以修改，访客没有个人主题开关；已打开的页面会通过 WebSocket 同步，连接不可用时每 15 秒同步一次设置。
+界面统一使用浅色 Hex，参考 [Monitor HEX](https://github.com/8bitNull/monitor-theme-hex) 的蓝灰配色与紧凑卡片设计，提供总览、在线 / 离线状态筛选，以及桌面多列 / 手机单列布局，使用 VibeMonitor 自身的数据接口。
 
-- **默认主题**：保留原版绿色强调色、宽幅节点卡片及监控功能。
-- **Hex**：参考 [Monitor HEX](https://github.com/8bitNull/monitor-theme-hex) 的蓝灰配色与紧凑卡片设计，提供总览、搜索、状态筛选和桌面多列 / 手机单列布局，使用 VibeMonitor 自身的数据接口。
+管理页保留网站名称、Logo 和管理员密码设置。主题选择、全局明暗模式、搜索框和分组相关界面已移除；旧数据库及备份恢复后统一使用浅色 Hex。
 
-主题与明暗模式保存在 SQLite 中，重启和备份恢复后保留。旧数据库自动使用默认主题、深色模式。此功能提供两套内置主题，不安装上游主题包；地图、表格视图及上游完整偏好系统不在本次适配范围内。
-
-外观扩展文件为 `internal/web/dist/themes.js` 和 `themes.css`，无需前端构建工具或外部 CDN。运行主题及存储回归检查：`go test ./internal/store ./internal/server ./internal/web`；前端行为检查：`node --test internal/web/themes.test.cjs`。参考项目的许可声明随前端打包在 `third-party-notices.txt` 中。
+前端文件为 `internal/web/dist/themes.js` 和 `themes.css`，无需前端构建工具或外部 CDN。运行回归检查：`go test ./internal/store ./internal/server ./internal/web`；前端行为检查：`node --test internal/web/*.cjs`。参考项目的许可声明随前端打包在 `third-party-notices.txt` 中。
   
 ## 安装
 - 粘贴复制选择菜单内容，更新主控菜单里选择10

@@ -5,14 +5,17 @@ import (
 	"testing"
 )
 
-func TestAppearancePersistsAndTravelsWithBackups(t *testing.T) {
+func TestLegacyAppearanceUsesHexAfterRestartAndRestore(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "site.db")
 	s, err := New(path, "password")
 	if err != nil {
 		t.Fatal(err)
 	}
 	theme, mode := "hex", "light"
-	if err := s.UpdateSettingsWithAppearance("", nil, "", nil, &theme, &mode); err != nil {
+	if err := s.UpdateSettings("", nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.sdb.db.Exec(`UPDATE config SET site_theme = 'default', color_mode = 'dark' WHERE id = 1`); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Close(); err != nil {
@@ -44,12 +47,11 @@ func TestAppearancePersistsAndTravelsWithBackups(t *testing.T) {
 	if c := restored.GetConfig(); c.SiteTheme != theme || c.ColorMode != mode {
 		t.Fatal("backup lost appearance")
 	}
-	// A failed disk write must not publish the new theme in memory.
+	// A failed disk write must not publish changed settings in memory.
 	if _, err := restored.sdb.db.Exec(`CREATE TRIGGER reject_theme BEFORE UPDATE ON config BEGIN SELECT RAISE(FAIL, 'blocked'); END`); err != nil {
 		t.Fatal(err)
 	}
-	theme = "default"
-	if err := restored.UpdateSettingsWithAppearance("changed", nil, "", nil, &theme, nil); err == nil {
+	if err := restored.UpdateSettings("changed", nil, ""); err == nil {
 		t.Fatal("disk failure accepted")
 	}
 	if c := restored.GetConfig(); c.SiteTheme != "hex" || c.SiteTitle == "changed" {
@@ -89,11 +91,10 @@ func TestLegacyAppearanceMigrationAndRestore(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if c := upgraded.GetConfig(); c.SiteTheme != "default" || c.ColorMode != "dark" {
-			t.Fatal("legacy appearance changed")
+		if c := upgraded.GetConfig(); c.SiteTheme != "hex" || c.ColorMode != "light" {
+			t.Fatal("legacy database did not upgrade to Hex")
 		}
-		theme := "hex"
-		if err := upgraded.UpdateSettingsWithAppearance("", nil, "", nil, &theme, nil); err != nil {
+		if err := upgraded.UpdateSettings("", nil, ""); err != nil {
 			t.Fatal(err)
 		}
 		upgraded.Close()
