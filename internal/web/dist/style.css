@@ -3,23 +3,52 @@
    Clean, high-contrast, modern flat card UI without blur
    ========================================================= */
 
-.node-management { position: relative; display: inline-block; }
-.node-management > summary { list-style: none; }
+/* Site actions are anchored to the logo, including on small screens. */
+.site-menu { position: relative; flex-shrink: 0; }
+.site-menu-trigger, .node-management > summary { list-style: none; cursor: pointer; }
+.site-menu-trigger::-webkit-details-marker,
 .node-management > summary::-webkit-details-marker { display: none; }
-.node-management-menu {
+.site-menu-trigger { display: block; border-radius: 8px; }
+.site-menu-trigger:hover .brand-icon,
+.site-menu[open] > .site-menu-trigger .brand-icon { border-color: var(--primary); }
+.site-menu-trigger:focus-visible, .site-menu-item:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.site-menu-panel {
   position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 20;
-  display: grid;
-  gap: 6px;
-  min-width: 180px;
-  padding: 8px;
+  top: calc(100% + 10px);
+  left: 0;
+  z-index: 30;
+  width: 200px;
+  max-width: calc(100vw - 28px);
+  padding: 6px;
   background: var(--card-bg);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
   box-shadow: var(--shadow-lg);
 }
+.site-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.site-menu-item:hover { background: var(--card-hover); }
+.site-menu-chevron { font-size: 18px; line-height: 1; }
+.node-management[open] > summary .site-menu-chevron { transform: rotate(90deg); }
+.node-management-menu { margin-left: 12px; border-left: 1px solid var(--border); }
+.node-management-menu .site-menu-item { color: var(--muted-foreground); }
+.site-menu-logout { margin-top: 6px; border-top: 1px solid var(--border); border-radius: 0 0 6px 6px; color: var(--destructive); }
 .node-selection-list { display: grid; gap: 8px; }
 .node-selection-list .btn { justify-content: flex-start; white-space: normal; overflow-wrap: anywhere; text-align: left; }
 
@@ -149,11 +178,6 @@ body {
   letter-spacing: 0.5px;
 }
 
-.nav-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
 
 
 
@@ -708,9 +732,6 @@ body {
     flex-direction: column;
     align-items: stretch;
     padding: 16px 18px;
-  }
-  .nav-actions {
-    justify-content: space-between;
   }
   .controls-bar {
     flex-direction: column;
