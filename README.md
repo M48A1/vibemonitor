@@ -163,24 +163,6 @@ bash install.sh uninstall
 
 卸载删除全部主控配置、账号、节点、监控数据和备份。保留数据更新只在需要时修正标准 unit 的旧数据路径；服务端清空重装会删除旧服务的 drop-in 配置。若 drop-in 改了监听端口，请为更新命令传入对应的 `-p` 端口，以便健康检查。
 
-## 编译与测试
-
-```bash
-make build
-make release-all
-```
-
-均编译 Linux amd64 与 arm64。可在 Mac 上交叉编译，但不能在 Mac 上运行产物。版本号来自 Git 标签或提交；Release 使用标签和提交哈希，可通过 `vibemonitor version` 或 `/api/version` 查询。
-
-在 Linux (x86-64 或 ARM64) 上运行完整测试：
-
-```bash
-go test -race ./...
-node --test internal/web/app_test.cjs
-python3 -m unittest discover -s tests -v
-```
-
-安装器测试使用临时目录和模拟网络、systemd，不会修改真实服务。GitHub Actions 在 main 推送和 PR 时执行这些检查；推送 `v*` 标签会测试、编译并创建 Release。
 
 ## 参数
 
