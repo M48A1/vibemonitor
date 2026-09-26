@@ -15,7 +15,7 @@ func TestSettingsCannotSwitchAwayFromHex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.store.Close()
+	defer s.Close()
 	s.adminTokens.Store("admin", time.Now().Add(time.Hour))
 	h := s.Handler()
 	submit := func(body string, admin bool) *httptest.ResponseRecorder {

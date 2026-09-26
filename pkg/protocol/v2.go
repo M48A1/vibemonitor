@@ -122,11 +122,18 @@ type DiskReport struct {
 }
 
 type NetworkReport struct {
-	Source    string `json:"source,omitempty"` // Counter selection identity; changes reset the billing baseline.
-	Up        int64  `json:"up"`               // Bytes/s
-	Down      int64  `json:"down"`             // Bytes/s
-	TotalUp   int64  `json:"totalUp"`          // Cumulative Bytes
-	TotalDown int64  `json:"totalDown"`        // Cumulative Bytes
+	Source     string                       `json:"source,omitempty"`     // Counter selection identity.
+	BootID     string                       `json:"boot_id,omitempty"`    // Kernel boot identity; a change invalidates raw counter baselines.
+	Up         int64                        `json:"up"`                   // Bytes/s
+	Down       int64                        `json:"down"`                 // Bytes/s
+	TotalUp    int64                        `json:"totalUp"`              // Cumulative Bytes
+	TotalDown  int64                        `json:"totalDown"`            // Cumulative Bytes
+	Interfaces map[string]InterfaceCounters `json:"interfaces,omitempty"` // Per-interface cumulative counters.
+}
+
+type InterfaceCounters struct {
+	Up   int64 `json:"up"`
+	Down int64 `json:"down"`
 }
 
 type ConnectionsReport struct {

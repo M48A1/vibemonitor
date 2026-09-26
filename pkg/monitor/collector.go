@@ -14,10 +14,11 @@ type Collector interface {
 
 // NetTracker tracks cumulative bytes to calculate real-time speeds (bytes/sec)
 type NetTracker struct {
-	mu            sync.Mutex
-	lastTime      time.Time
-	lastTotalUp   int64
-	lastTotalDown int64
+	mu             sync.Mutex
+	lastTime       time.Time
+	lastTotalUp    int64
+	lastTotalDown  int64
+	lastInterfaces map[string]protocol.InterfaceCounters
 }
 
 func (nt *NetTracker) CalculateSpeed(curUp, curDown int64) (upSpeed, downSpeed int64) {
@@ -47,6 +48,39 @@ func (nt *NetTracker) CalculateSpeed(curUp, curDown int64) (upSpeed, downSpeed i
 	nt.lastTime = now
 	nt.lastTotalUp = curUp
 	nt.lastTotalDown = curDown
+	return upSpeed, downSpeed
+}
+
+func (nt *NetTracker) CalculateInterfaceSpeed(current map[string]protocol.InterfaceCounters) (upSpeed, downSpeed int64) {
+	nt.mu.Lock()
+	defer nt.mu.Unlock()
+
+	now := time.Now()
+	if !nt.lastTime.IsZero() {
+		elapsed := now.Sub(nt.lastTime).Seconds()
+		if elapsed > 0 {
+			var up, down int64
+			for name, counters := range current {
+				previous, ok := nt.lastInterfaces[name]
+				if !ok {
+					continue
+				}
+				if counters.Up >= previous.Up {
+					up += counters.Up - previous.Up
+				}
+				if counters.Down >= previous.Down {
+					down += counters.Down - previous.Down
+				}
+			}
+			upSpeed = int64(float64(up) / elapsed)
+			downSpeed = int64(float64(down) / elapsed)
+		}
+	}
+	nt.lastTime = now
+	nt.lastInterfaces = make(map[string]protocol.InterfaceCounters, len(current))
+	for name, counters := range current {
+		nt.lastInterfaces[name] = counters
+	}
 	return upSpeed, downSpeed
 }
 

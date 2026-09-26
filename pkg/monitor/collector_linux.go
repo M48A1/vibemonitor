@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -23,7 +24,6 @@ type LinuxCollector struct {
 	netTracker NetTracker
 	startTime  time.Time
 	interfaces map[string]bool
-	netSource  string
 }
 
 func NewCollector(interfaces ...string) Collector {
@@ -141,20 +141,19 @@ func (c *LinuxCollector) GetReport() (protocol.Report, error) {
 	}
 
 	// 5. Network
-	totalDown, totalUp, source, err := c.readNetDev()
+	totalDown, totalUp, source, counters, err := c.readNetDev()
 	if err != nil {
 		return protocol.Report{}, fmt.Errorf("network counters: %w", err)
 	}
-	if source != c.netSource {
-		c.netTracker = NetTracker{}
-		c.netSource = source
-	}
-	upSpeed, downSpeed := c.netTracker.CalculateSpeed(totalUp, totalDown)
+	report.UpdatedAt = time.Now().UTC()
+	upSpeed, downSpeed := c.netTracker.CalculateInterfaceSpeed(counters)
 	report.Network.Up = upSpeed
 	report.Network.Down = downSpeed
 	report.Network.TotalUp = totalUp
 	report.Network.TotalDown = totalDown
 	report.Network.Source = source
+	report.Network.BootID = readKernelBootID("/proc/sys/kernel/random/boot_id")
+	report.Network.Interfaces = counters
 
 	// 6. Connections & Process
 	report.Connections.TCP = countLinesInFile("/proc/net/tcp") + countLinesInFile("/proc/net/tcp6")
@@ -302,46 +301,79 @@ func readLoadAvg() protocol.LoadReport {
 	}
 }
 
-func (c *LinuxCollector) readNetDev() (totalDown, totalUp int64, source string, err error) {
+func (c *LinuxCollector) readNetDev() (totalDown, totalUp int64, source string, counters map[string]protocol.InterfaceCounters, err error) {
 	data, err := os.ReadFile("/proc/net/dev")
 	if err != nil {
-		return 0, 0, "", err
+		return 0, 0, "", nil, err
 	}
 	seen := make(map[string]bool)
-	totalDown, totalUp, source, err = parseNetworkCounters(data, func(name string) bool {
+	totalDown, totalUp, source, counters, err = parseNetworkCountersDetailed(data, func(name string) bool {
 		if len(c.interfaces) > 0 {
 			if c.interfaces[name] {
 				seen[name] = true
 			}
 			return c.interfaces[name]
 		}
-		if !defaultTrafficInterface(name) {
-			return false
-		}
-		// Exclude renamed L3 tunnels and bridges as well as common interface names.
-		if kind, err := os.ReadFile("/sys/class/net/" + name + "/type"); err == nil && strings.TrimSpace(string(kind)) != "1" {
-			return false
-		}
-		if _, err := os.Stat("/sys/class/net/" + name + "/bridge"); err == nil {
-			return false
-		}
-		if _, err := os.Stat("/sys/class/net/" + name + "/master/bonding"); err == nil {
-			return false
-		}
-		if _, err := os.Stat("/proc/net/vlan/" + name); err == nil {
-			return false
-		}
-		return true
+		return autoTrafficInterface("/sys/class/net", name)
 	})
 	if err != nil {
-		return 0, 0, "", err
+		return 0, 0, "", nil, err
 	}
 	for name := range c.interfaces {
 		if !seen[name] {
-			return 0, 0, "", fmt.Errorf("traffic interface %q not found", name)
+			return 0, 0, "", nil, fmt.Errorf("traffic interface %q not found", name)
 		}
 	}
-	return totalDown, totalUp, source, nil
+	return totalDown, totalUp, source, counters, nil
+}
+
+func readKernelBootID(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+// Prefer the carrier interfaces: stacked devices can report the same bytes
+// already counted by the physical link. Explicit --interfaces overrides this.
+func autoTrafficInterface(sysRoot, name string) bool {
+	if !defaultTrafficInterface(name) || strings.Contains(name, ".") {
+		return false
+	}
+	device := filepath.Join(sysRoot, name)
+	for _, child := range []string{"bridge", "bonding"} {
+		if _, err := os.Stat(filepath.Join(device, child)); err == nil {
+			return false
+		}
+	}
+	if entries, err := os.ReadDir(device); err == nil {
+		for _, entry := range entries {
+			if strings.HasPrefix(entry.Name(), "lower_") {
+				return false
+			}
+		}
+	}
+	if data, err := os.ReadFile(filepath.Join(device, "uevent")); err == nil {
+		for _, line := range strings.Split(string(data), "\n") {
+			switch line {
+			case "DEVTYPE=bridge", "DEVTYPE=bond", "DEVTYPE=vlan", "DEVTYPE=macvlan", "DEVTYPE=vxlan", "DEVTYPE=geneve":
+				return false
+			}
+		}
+	}
+	// A physical bridge or bond port is the carrier, while a virtual port
+	// repeats traffic seen on another link.
+	if _, err := os.Stat(filepath.Join(device, "device")); err == nil {
+		return true
+	}
+	if _, err := os.Stat(filepath.Join(device, "brport")); err == nil {
+		return false
+	}
+	if kind, err := os.ReadFile(filepath.Join(device, "type")); err == nil && strings.TrimSpace(string(kind)) != "1" {
+		return false
+	}
+	return true
 }
 
 var lineBufPool = sync.Pool{
