@@ -61,6 +61,13 @@ func New(opts Options) (*Server, error) {
 	return s, nil
 }
 
+// Close stops background broadcasts before closing their backing store.
+// Call it when a Server created with New is not run via Run.
+func (s *Server) Close() error {
+	s.wsHub.Close()
+	return s.store.Close()
+}
+
 func writeJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
@@ -314,13 +321,18 @@ func (s *Server) Handler() http.Handler {
 			Weight         int                `json:"weight"`
 			TrafficLimitGB float64            `json:"traffic_limit_gb"`
 			ResetDay       int                `json:"reset_day"`
-			InitialUsedGB  float64            `json:"initial_used_gb"`
+			InitialUsedGB  *float64           `json:"initial_used_gb"`
+			CycleUsedGB    *float64           `json:"cycle_used_gb"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSON(w, jsonErrorStatus(err), map[string]any{"error": "invalid or oversized json"})
 			return
 		}
 
+		initialUsedGB := -1.0
+		if req.InitialUsedGB != nil {
+			initialUsedGB = *req.InitialUsedGB
+		}
 		if err := s.store.UpdateNodeWithOptions(uuid, store.NodeOptions{
 			Profile:        req.Profile,
 			Name:           req.Name,
@@ -329,9 +341,14 @@ func (s *Server) Handler() http.Handler {
 			Weight:         req.Weight,
 			TrafficLimitGB: req.TrafficLimitGB,
 			ResetDay:       req.ResetDay,
-			InitialUsedGB:  req.InitialUsedGB,
+			InitialUsedGB:  initialUsedGB,
+			CycleUsedGB:    req.CycleUsedGB,
 		}); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			status := http.StatusInternalServerError
+			if errors.Is(err, store.ErrInvalidCycleUsage) {
+				status = http.StatusBadRequest
+			}
+			writeJSON(w, status, map[string]any{"error": err.Error()})
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"status": "success"})
@@ -558,6 +575,8 @@ func (s *Server) Run(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	runCtx, stop := context.WithCancel(ctx)
+	defer stop()
 
 	handler := s.Handler()
 	httpServer := &http.Server{
@@ -575,7 +594,7 @@ func (s *Server) Run(ctx context.Context) error {
 	go func() {
 		for {
 			select {
-			case <-ctx.Done():
+			case <-runCtx.Done():
 				return
 			case <-cleanupTicker.C:
 				s.pruneExpiredTokens()
@@ -593,19 +612,19 @@ func (s *Server) Run(ctx context.Context) error {
 	}()
 
 	select {
-	case <-ctx.Done():
+	case <-runCtx.Done():
 		log.Printf("[Server] Shutting down gracefully...")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = httpServer.Shutdown(shutdownCtx)
-		if err := s.store.Close(); err != nil {
+		if err := s.Close(); err != nil {
 			log.Printf("[Store] Final save failed: %v", err)
 			return err
 		}
 		log.Printf("[Server] Data flushed and server stopped.")
 		return nil
 	case err := <-errCh:
-		if err := s.store.Close(); err != nil {
+		if err := s.Close(); err != nil {
 			log.Printf("[Store] Final save failed: %v", err)
 			return err
 		}

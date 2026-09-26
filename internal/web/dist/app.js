@@ -798,7 +798,12 @@ window.openEditModal = async function(uuid) {
   document.getElementById('editNodeRegion').value = node.region || '';
   document.getElementById('editNodeTrafficLimit').value = node.traffic_limit > 0 ? (node.traffic_limit / (1024*1024*1024)).toFixed(1) : '';
   document.getElementById('editNodeResetDay').value = node.reset_day > 0 ? node.reset_day : '';
-  document.getElementById('editNodeInitialUsed').value = node.initial_used > 0 ? (node.initial_used / (1024*1024*1024)).toFixed(1) : '';
+  const currentUsed = Math.max(0, Number(node.cycle_total_used) || 0);
+  const sampledAt = node.last_report?.updated_at ? new Date(node.last_report.updated_at) : null;
+  const sampleHint = sampledAt && !Number.isNaN(sampledAt.getTime()) ? `最近采样：${sampledAt.toLocaleString()}` : '尚无探针采样';
+  document.getElementById('editNodeCycleUsed').value = '';
+  document.getElementById('editNodeCycleUsed').placeholder = (currentUsed / (1024*1024*1024)).toFixed(3);
+  document.getElementById('editNodeCycleUsedHint').textContent = `当前已用 ${formatBytes(currentUsed)}；${sampleHint}。留空不修改，填 0 可清零。`;
   fillNodeProfile('edit', profile);
   openModal('editNodeModal');
 };
@@ -816,7 +821,12 @@ document.getElementById('editNodeForm').addEventListener('submit', async (e) => 
   const region = document.getElementById('editNodeRegion').value;
   const trafficLimitGB = parseFloat(document.getElementById('editNodeTrafficLimit').value) || 0;
   const resetDay = parseInt(document.getElementById('editNodeResetDay').value) || 0;
-  const initialUsedGB = parseFloat(document.getElementById('editNodeInitialUsed').value) || 0;
+  const cycleUsedText = document.getElementById('editNodeCycleUsed').value.trim();
+  const cycleUsedGB = cycleUsedText === '' ? null : Number(cycleUsedText);
+  if (cycleUsedGB !== null && (!Number.isFinite(cycleUsedGB) || cycleUsedGB < 0)) {
+    alert('当前周期已用流量必须是非负数字');
+    return;
+  }
   const token = getAdminToken();
 
   try {
@@ -832,7 +842,7 @@ document.getElementById('editNodeForm').addEventListener('submit', async (e) => 
         region,
         traffic_limit_gb: trafficLimitGB,
         reset_day: resetDay,
-        initial_used_gb: initialUsedGB,
+        ...(cycleUsedGB === null ? {} : { cycle_used_gb: cycleUsedGB }),
         profile: readNodeProfile('edit')
       })
     });
@@ -840,7 +850,8 @@ document.getElementById('editNodeForm').addEventListener('submit', async (e) => 
       closeModal('editNodeModal');
       fetchNodes();
     } else {
-      alert('修改失败');
+      const data = await res.json().catch(() => ({}));
+      alert('修改失败: ' + (data.error || '未知错误'));
     }
   } catch (e) {
     alert('请求失败: ' + e.message);

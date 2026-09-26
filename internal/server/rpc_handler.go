@@ -21,15 +21,9 @@ func NewRPCHandler(s *store.Store) *RPCHandler {
 }
 
 func extractToken(r *http.Request) string {
-	// 1. Query parameter
-	if t := r.URL.Query().Get("token"); t != "" {
-		return strings.TrimSpace(t)
-	}
-	// 2. Authorization header
 	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
 		return strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
 	}
-	// 3. X-Token header
 	if x := r.Header.Get("X-Token"); x != "" {
 		return strings.TrimSpace(x)
 	}
@@ -43,10 +37,14 @@ func getClientIP(r *http.Request) string {
 	}
 	if net.ParseIP(host).IsLoopback() {
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			return strings.TrimSpace(strings.Split(xff, ",")[0])
+			if ip := net.ParseIP(strings.TrimSpace(strings.Split(xff, ",")[0])); ip != nil {
+				return ip.String()
+			}
 		}
 		if xrip := r.Header.Get("X-Real-IP"); xrip != "" {
-			return strings.TrimSpace(xrip)
+			if ip := net.ParseIP(strings.TrimSpace(xrip)); ip != nil {
+				return ip.String()
+			}
 		}
 	}
 	return host
@@ -55,6 +53,10 @@ func getClientIP(r *http.Request) string {
 func (h *RPCHandler) HandleV2RPC(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if r.URL.Query().Has("token") {
+		writeJSON(w, http.StatusUnauthorized, protocol.ErrorResponse(nil, -32000, "token in URL is not supported", nil))
 		return
 	}
 

@@ -21,8 +21,12 @@ type wsClient struct {
 type WSHub struct {
 	mu          sync.RWMutex
 	clients     map[*wsClient]struct{}
+	closed      bool
 	store       *store.Store
 	trigger     chan struct{}
+	stop        chan struct{}
+	done        chan struct{}
+	closeOnce   sync.Once
 	lastPayload []byte
 	payloadMu   sync.Mutex
 }
@@ -34,6 +38,8 @@ func NewWSHub(s *store.Store) *WSHub {
 		clients: make(map[*wsClient]struct{}),
 		store:   s,
 		trigger: make(chan struct{}, 1),
+		stop:    make(chan struct{}),
+		done:    make(chan struct{}),
 	}
 	s.SetOnUpdate(func() {
 		select {
@@ -49,6 +55,7 @@ func (h *WSHub) run() {
 	// Periodic check every 3s to detect offline state transitions and keep alive
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
+	defer close(h.done)
 
 	minInterval := 1 * time.Second
 	lastBroadcast := time.Now()
@@ -56,6 +63,8 @@ func (h *WSHub) run() {
 
 	for {
 		select {
+		case <-h.stop:
+			return
 		case <-h.trigger:
 			if time.Since(lastBroadcast) >= minInterval {
 				lastBroadcast = time.Now()
@@ -74,10 +83,35 @@ func (h *WSHub) run() {
 	}
 }
 
+func (h *WSHub) Close() {
+	h.closeOnce.Do(func() {
+		h.mu.Lock()
+		h.closed = true
+		clients := make([]*wsClient, 0, len(h.clients))
+		for client := range h.clients {
+			clients = append(clients, client)
+		}
+		h.mu.Unlock()
+		close(h.stop)
+		for _, client := range clients {
+			if client.conn != nil {
+				_ = client.conn.CloseNow()
+			}
+		}
+		h.store.SetOnUpdate(nil)
+	})
+	<-h.done
+}
+
 func (h *WSHub) HandleWS(w http.ResponseWriter, r *http.Request) {
 	h.mu.RLock()
 	tooMany := len(h.clients) >= maxWSClients
+	closed := h.closed
 	h.mu.RUnlock()
+	if closed {
+		http.Error(w, "server shutting down", http.StatusServiceUnavailable)
+		return
+	}
 	if tooMany {
 		http.Error(w, "too many connections", http.StatusServiceUnavailable)
 		return
@@ -100,6 +134,11 @@ func (h *WSHub) HandleWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.mu.Lock()
+	if h.closed {
+		h.mu.Unlock()
+		_ = conn.CloseNow()
+		return
+	}
 	h.clients[client] = struct{}{}
 	h.mu.Unlock()
 

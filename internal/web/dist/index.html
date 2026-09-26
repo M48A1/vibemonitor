@@ -165,8 +165,8 @@
             <input type="number" class="form-input" id="newNodeTrafficLimit" placeholder="如 1000" min="0" step="any">
           </div>
           <div class="form-group">
-            <label class="form-label">每月重置日 (1-31, 选填)</label>
-            <input type="number" class="form-input" id="newNodeResetDay" placeholder="如 15" min="1" max="31">
+            <label class="form-label">每月重置日 (1-31，留空为 1 日)</label>
+            <input type="number" class="form-input" id="newNodeResetDay" placeholder="默认 1 日" min="1" max="31">
           </div>
         </div>
         <div class="form-group">
@@ -215,13 +215,14 @@
             <input type="number" class="form-input" id="editNodeTrafficLimit" min="0" step="any">
           </div>
           <div class="form-group">
-            <label class="form-label">每月重置日 (1-31)</label>
+            <label class="form-label">每月重置日 (1-31，留空为 1 日)</label>
             <input type="number" class="form-input" id="editNodeResetDay" min="1" max="31">
           </div>
         </div>
         <div class="form-group">
-          <label class="form-label">本周期附加初始已用 (GB)</label>
-          <input type="number" class="form-input" id="editNodeInitialUsed" min="0" step="any">
+          <label class="form-label">手动设置当前周期已用流量 (GB)</label>
+          <input type="number" class="form-input" id="editNodeCycleUsed" min="0" step="any" placeholder="留空不修改">
+          <small id="editNodeCycleUsedHint">留空则继续按探针上报累计。</small>
         </div>
         <div class="form-group">
           <label class="form-label">此节点的 TCP 测试目标</label>

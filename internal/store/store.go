@@ -87,14 +87,15 @@ type Node struct {
 	PingHistory map[string][]PingSample `json:"ping_history,omitempty"`
 
 	// Traffic Billing Quota (sum mode: up + down)
-	TrafficLimit       int64     `json:"traffic_limit"`      // Bytes, 0 = no limit
-	ResetDay           int       `json:"reset_day"`          // 1-31 (day of month)
-	InitialUsed        int64     `json:"initial_used"`       // Bytes, manual offset for current cycle
-	CurrentCycleUsed   int64     `json:"current_cycle_used"` // Bytes, accumulated by agent in current cycle
-	CycleStart         time.Time `json:"cycle_start"`        // Start timestamp of current cycle
-	LastTotalUp        int64     `json:"last_total_up"`      // Last reported raw totalUp
-	TrafficBaselineSet bool      `json:"traffic_baseline_set"`
-	LastTotalDown      int64     `json:"last_total_down"` // Last reported raw totalDown
+	TrafficLimit       int64      `json:"traffic_limit"`               // Bytes, 0 = no limit
+	ResetDay           int        `json:"reset_day"`                   // 1-31 (day of month)
+	InitialUsed        int64      `json:"initial_used"`                // Bytes, manual offset for current cycle
+	CurrentCycleUsed   int64      `json:"current_cycle_used"`          // Bytes, accumulated by agent in current cycle
+	CycleStart         time.Time  `json:"cycle_start"`                 // Start timestamp of current cycle
+	TrafficManualAt    *time.Time `json:"traffic_manual_at,omitempty"` // Last manual correction in this cycle.
+	LastTotalUp        int64      `json:"last_total_up"`               // Last reported raw totalUp
+	TrafficBaselineSet bool       `json:"traffic_baseline_set"`
+	LastTotalDown      int64      `json:"last_total_down"` // Last reported raw totalDown
 
 	// Computed dynamic fields
 	CycleTotalUsed int64   `json:"cycle_total_used"` // InitialUsed + CurrentCycleUsed
@@ -124,6 +125,7 @@ type Store struct {
 	onUpdate   func()            // optional callback when state changes
 	dirty      bool
 	stopFlush  chan struct{}
+	flushDone  chan struct{}
 }
 
 func GenerateToken(length int) string {
@@ -157,6 +159,7 @@ func New(dbPath string, defaultAdminPassword string, usernames ...string) (*Stor
 		nodes:      make(map[string]*Node),
 		tokenIndex: make(map[string]string),
 		stopFlush:  make(chan struct{}),
+		flushDone:  make(chan struct{}),
 	}
 
 	username := "admin"
@@ -190,6 +193,7 @@ func (s *Store) periodicFlusher() {
 	pruneTicker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
 	defer pruneTicker.Stop()
+	defer close(s.flushDone)
 
 	for {
 		select {
@@ -197,12 +201,22 @@ func (s *Store) periodicFlusher() {
 			return
 		case <-ticker.C:
 			s.mu.Lock()
+			var saveErr error
+			var saveDuration time.Duration
+			var nodeCount int
 			if s.dirty {
-				if err := s.saveLocked(); err != nil {
-					log.Printf("[Store] Save failed (will retry): %v", err)
-				}
+				started := time.Now()
+				nodeCount = len(s.nodes)
+				saveErr = s.saveLocked()
+				saveDuration = time.Since(started)
 			}
 			s.mu.Unlock()
+			if saveErr != nil {
+				log.Printf("[Store] Save failed (will retry): %v", saveErr)
+			}
+			if saveDuration >= 200*time.Millisecond {
+				log.Printf("[Store] Periodic save held store lock for %s (%d nodes)", saveDuration.Round(time.Millisecond), nodeCount)
+			}
 		case <-pruneTicker.C:
 			if s.sdb != nil {
 				if _, err := s.sdb.pruneOldPingHistory(time.Now().Unix() - pingHistoryRetentionSec); err != nil {
@@ -221,12 +235,15 @@ func (s *Store) Save() error {
 
 func (s *Store) Close() error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	select {
 	case <-s.stopFlush:
 	default:
 		close(s.stopFlush)
 	}
+	s.mu.Unlock()
+	<-s.flushDone // Keep the flusher, including history cleanup, off a closed DB.
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	var err error
 	if s.dirty {
 		err = s.saveLocked()
@@ -325,6 +342,17 @@ func (s *Store) load(defaultPassword, username string) error {
 		}
 		if err := validateProfile(n.Profile); err != nil {
 			return err
+		}
+		if n.ResetDay == 0 {
+			// Older nodes treated a blank reset day as disabled accounting.
+			// Start tracking from their last reported counters without charging past traffic.
+			n.ResetDay = 1
+			n.CycleStart, _ = GetBillingCycleRange(1, time.Now())
+			if n.LastReport != nil {
+				n.LastTotalUp = n.LastReport.Network.TotalUp
+				n.LastTotalDown = n.LastReport.Network.TotalDown
+				n.TrafficBaselineSet = true
+			}
 		}
 		if !n.TrafficBaselineSet && n.ResetDay > 0 && n.LastReport != nil {
 			n.TrafficBaselineSet = true
@@ -485,6 +513,7 @@ func (n *Node) checkCycleRollover(now time.Time) {
 		n.CycleStart = start
 		n.CurrentCycleUsed = 0
 		n.InitialUsed = 0 // one-time manual offset is cleared on subsequent cycles
+		n.TrafficManualAt = nil
 	}
 }
 
@@ -602,6 +631,7 @@ type NodeOptions struct {
 	TrafficLimitGB float64
 	ResetDay       int
 	InitialUsedGB  float64
+	CycleUsedGB    *float64 // Optional replacement for the current cycle's total usage.
 }
 
 func (s *Store) CreateNode(name, group, region string) (*Node, error) {
@@ -615,6 +645,9 @@ func (s *Store) CreateNode(name, group, region string) (*Node, error) {
 func (s *Store) CreateNodeWithOptions(opts NodeOptions) (*Node, error) {
 	if err := validateProfile(opts.Profile); err != nil {
 		return nil, err
+	}
+	if opts.ResetDay == 0 {
+		opts.ResetDay = 1
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -633,10 +666,7 @@ func (s *Store) CreateNodeWithOptions(opts NodeOptions) (*Node, error) {
 	initialUsedBytes := int64(opts.InitialUsedGB * 1024 * 1024 * 1024)
 
 	now := time.Now()
-	var cycleStart time.Time
-	if opts.ResetDay > 0 {
-		cycleStart, _ = GetBillingCycleRange(opts.ResetDay, now)
-	}
+	cycleStart, _ := GetBillingCycleRange(opts.ResetDay, now)
 
 	node := &Node{
 		Profile:          opts.Profile,
@@ -684,6 +714,14 @@ func (s *Store) UpdateNodeWithOptions(uuid string, opts NodeOptions) error {
 	if err := validateProfile(opts.Profile); err != nil {
 		return err
 	}
+	var cycleUsedBytes int64
+	if opts.CycleUsedGB != nil {
+		var err error
+		cycleUsedBytes, err = trafficGBToBytes(*opts.CycleUsedGB)
+		if err != nil {
+			return err
+		}
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -709,7 +747,10 @@ func (s *Store) UpdateNodeWithOptions(uuid string, opts NodeOptions) error {
 	if opts.TrafficLimitGB >= 0 {
 		n.TrafficLimit = int64(opts.TrafficLimitGB * 1024 * 1024 * 1024)
 	}
-	if opts.ResetDay >= 0 && opts.ResetDay <= 31 {
+	if opts.ResetDay == 0 {
+		opts.ResetDay = 1
+	}
+	if opts.ResetDay > 0 && opts.ResetDay <= 31 {
 		n.ResetDay = opts.ResetDay
 		if n.ResetDay > 0 {
 			n.CycleStart, _ = GetBillingCycleRange(n.ResetDay, time.Now())
@@ -717,6 +758,12 @@ func (s *Store) UpdateNodeWithOptions(uuid string, opts NodeOptions) error {
 	}
 	if opts.InitialUsedGB >= 0 {
 		n.InitialUsed = int64(opts.InitialUsedGB * 1024 * 1024 * 1024)
+	}
+	if opts.CycleUsedGB != nil {
+		n.InitialUsed = cycleUsedBytes
+		n.CurrentCycleUsed = 0
+		correctedAt := time.Now().UTC()
+		n.TrafficManualAt = &correctedAt
 	}
 
 	if err := s.saveLocked(); err != nil {
@@ -774,6 +821,10 @@ func (s *Store) IngestBasicInfo(tokenOrUUID string, info protocol.BasicInfo, cli
 }
 
 func (s *Store) IngestReport(tokenOrUUID string, report protocol.Report, clientIP string) (*Node, error) {
+	return s.ingestReportAt(tokenOrUUID, report, clientIP, time.Now())
+}
+
+func (s *Store) ingestReportAt(tokenOrUUID string, report protocol.Report, clientIP string, now time.Time) (*Node, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -789,13 +840,37 @@ func (s *Store) IngestReport(tokenOrUUID string, report protocol.Report, clientI
 	if report.Network.TotalUp < 0 || report.Network.TotalDown < 0 {
 		return nil, errors.New("negative network counters")
 	}
+	for _, counters := range report.Network.Interfaces {
+		if counters.Up < 0 || counters.Down < 0 {
+			return nil, errors.New("negative interface counters")
+		}
+	}
 	node := s.nodes[uuid]
-	if report.Network.Source != "" && (node.LastReport == nil || node.LastReport.Network.Source != report.Network.Source) {
-		node.TrafficBaselineSet = false // New selection: preserve usage, replace only raw-counter baseline.
+	previousReport := node.LastReport
+	previousSeen := node.LastSeen
+	receivedAt := now.UTC()
+	previousAt := trafficSampleTime(previousReport, previousSeen)
+	currentAt := trafficSampleTime(&report, receivedAt)
+	if previousReport != nil && !report.UpdatedAt.IsZero() && !previousReport.UpdatedAt.IsZero() && !report.UpdatedAt.After(previousReport.UpdatedAt) {
+		copy := *node
+		return &copy, nil // Ignore duplicate or out-of-order counter samples.
+	}
+	if previousReport == nil {
+		node.TrafficBaselineSet = false
+	} else {
+		previousNetwork, currentNetwork := previousReport.Network, report.Network
+		bootChanged := previousNetwork.BootID != currentNetwork.BootID
+		selectionChanged := previousNetwork.Source != currentNetwork.Source && (previousNetwork.Source != "" || currentNetwork.Source != "")
+		bothDetailed := len(previousNetwork.Interfaces) > 0 && len(currentNetwork.Interfaces) > 0
+		// The same boot's per-interface counters remain comparable when another
+		// interface joins or leaves. Aggregate counters cannot make that distinction.
+		if bootChanged || (selectionChanged && !(bothDetailed && currentNetwork.BootID != "")) || (len(currentNetwork.Interfaces) > 0 && len(previousNetwork.Interfaces) == 0) || (len(currentNetwork.Interfaces) == 0 && len(previousNetwork.Interfaces) > 0) {
+			node.TrafficBaselineSet = false
+		}
 	}
 	node.LastReport = &report
 	s.dirty = true
-	node.LastSeen = time.Now().UTC()
+	node.LastSeen = receivedAt
 	node.Online = true
 	if clientIP != "" && node.ClientIP == "" {
 		node.ClientIP = clientIP
@@ -803,23 +878,34 @@ func (s *Store) IngestReport(tokenOrUUID string, report protocol.Report, clientI
 
 	// Traffic delta accounting for billing cycle
 	if node.ResetDay > 0 {
-		node.checkCycleRollover(time.Now())
+		node.checkCycleRollover(currentAt.In(now.Location()))
 
 		curUp := report.Network.TotalUp
 		curDown := report.Network.TotalDown
-
-		if node.TrafficBaselineSet && curUp >= node.LastTotalUp {
-			node.CurrentCycleUsed += (curUp - node.LastTotalUp)
-		} else if node.TrafficBaselineSet && curUp < node.LastTotalUp {
-			// Reboot detected: counter reset to 0 and started afresh
-			node.CurrentCycleUsed += curUp
+		var delta int64
+		if node.TrafficBaselineSet {
+			if len(report.Network.Interfaces) > 0 {
+				for name, current := range report.Network.Interfaces {
+					previous, ok := previousReport.Network.Interfaces[name]
+					if ok {
+						delta += networkCounterDelta(current.Up, previous.Up)
+						delta += networkCounterDelta(current.Down, previous.Down)
+					}
+				}
+			} else {
+				// Compatibility with probes that only send aggregate counters.
+				delta = networkCounterDelta(curUp, node.LastTotalUp) + networkCounterDelta(curDown, node.LastTotalDown)
+			}
 		}
-
-		if node.TrafficBaselineSet && curDown >= node.LastTotalDown {
-			node.CurrentCycleUsed += (curDown - node.LastTotalDown)
-		} else if node.TrafficBaselineSet && curDown < node.LastTotalDown {
-			// Reboot detected
-			node.CurrentCycleUsed += curDown
+		if delta > 0 {
+			start := node.CycleStart
+			if node.TrafficManualAt != nil && node.TrafficManualAt.After(start) {
+				start = *node.TrafficManualAt
+			}
+			node.CurrentCycleUsed += currentCycleDelta(delta, start, previousAt, currentAt)
+		}
+		if node.TrafficManualAt != nil && !currentAt.Before(*node.TrafficManualAt) {
+			node.TrafficManualAt = nil
 		}
 
 		node.TrafficBaselineSet = true
@@ -833,7 +919,7 @@ func (s *Store) IngestReport(tokenOrUUID string, report protocol.Report, clientI
 		ramUsagePct = float64(report.RAM.Used) / float64(report.RAM.Total) * 100.0
 	}
 	hp := HistoryPoint{
-		Timestamp: time.Now().Unix(),
+		Timestamp: receivedAt.Unix(),
 		CPUUsage:  report.CPU.Usage,
 		RAMUsage:  ramUsagePct,
 		NetUp:     report.Network.Up,
@@ -851,7 +937,7 @@ func (s *Store) IngestReport(tokenOrUUID string, report protocol.Report, clientI
 		if node.PingHistory == nil {
 			node.PingHistory = make(map[string][]PingSample)
 		}
-		nowUnix := time.Now().Unix()
+		nowUnix := receivedAt.Unix()
 		for _, p := range report.PingResults {
 			samples := node.PingHistory[p.Name]
 			if len(samples) == 0 || (nowUnix-samples[len(samples)-1].Timestamp) >= PingSampleIntervalSec {
