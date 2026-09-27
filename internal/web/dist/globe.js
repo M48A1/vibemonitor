@@ -138,16 +138,22 @@ window.VibeGlobe = (() => {
       drawCurve(points, centerX, centerY, radius);
     }
 
-    context.fillStyle = '#5b83a5';
+    const landBuckets = [[], [], [], []];
     for (const [latitude, longitude] of landPoints) {
       const point = project(latitude, longitude, centerX, centerY, radius);
       if (point.depth <= 0) continue;
-      context.globalAlpha = 0.28 + point.depth * 0.55;
+      landBuckets[Math.min(3, Math.floor(point.depth * 4))].push(point);
+    }
+    const dotRadius = Math.max(0.7, radius / 105);
+    for (let bucket = 0; bucket < landBuckets.length; bucket++) {
+      context.fillStyle = `rgba(91, 131, 165, ${0.35 + bucket * 0.15})`;
       context.beginPath();
-      context.arc(point.x, point.y, Math.max(0.7, radius / 105), 0, Math.PI * 2);
+      for (const point of landBuckets[bucket]) {
+        context.moveTo(point.x + dotRadius, point.y);
+        context.arc(point.x, point.y, dotRadius, 0, Math.PI * 2);
+      }
       context.fill();
     }
-    context.globalAlpha = 1;
 
     for (const marker of markers) {
       const point = project(marker.latitude, marker.longitude, centerX, centerY, radius);
@@ -182,7 +188,7 @@ window.VibeGlobe = (() => {
   function frame(time) {
     animationFrame = 0;
     if (!shouldAnimate()) return;
-    if (time - lastFrameTime >= 40) {
+    if (time - lastFrameTime >= 66) {
       if (!dragging) centerLongitude = (centerLongitude + 0.14) % 360;
       draw();
       lastFrameTime = time;

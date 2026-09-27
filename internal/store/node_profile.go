@@ -72,8 +72,9 @@ func (s *Store) NodeTargets(uuid string) []protocol.PingTarget {
 }
 func (s *Store) pingPreviewLocked(n *Node) []PingPreview {
 	result := []PingPreview{}
+	cutoff := time.Now().Unix() - 86400
 	for _, target := range s.targetsLocked(n) {
-		preview := PingPreview{Name: target.Name, Host: target.Host, Samples: []PingSample{}}
+		preview := PingPreview{Name: target.Name, Host: target.Host, Samples: make([]PingSample, 0, 24)}
 		samples := n.PingHistory[target.Name]
 		for i := len(samples) - 1; i >= 0; i-- {
 			if samples[i].Host == target.Host {
@@ -82,22 +83,28 @@ func (s *Store) pingPreviewLocked(n *Node) []PingPreview {
 			}
 		}
 		lost, total := 0, 0
-		for _, sample := range samples {
-			if sample.Host != target.Host || sample.Method != preview.Method || sample.Timestamp < time.Now().Unix()-86400 {
+		for i := len(samples) - 1; i >= 0; i-- {
+			sample := samples[i]
+			if sample.Timestamp < cutoff {
+				break
+			}
+			if sample.Host != target.Host || sample.Method != preview.Method {
 				continue
 			}
 			total++
 			if sample.Latency < 0 {
 				lost++
 			}
-			preview.Samples = append(preview.Samples, sample)
+			if len(preview.Samples) < 24 {
+				preview.Samples = append(preview.Samples, sample)
+			}
+		}
+		for left, right := 0, len(preview.Samples)-1; left < right; left, right = left+1, right-1 {
+			preview.Samples[left], preview.Samples[right] = preview.Samples[right], preview.Samples[left]
 		}
 		if total > 0 {
 			loss := math.Round(float64(lost)/float64(total)*1000) / 10
 			preview.Loss = &loss
-		}
-		if len(preview.Samples) > 24 {
-			preview.Samples = preview.Samples[len(preview.Samples)-24:]
 		}
 		result = append(result, preview)
 	}

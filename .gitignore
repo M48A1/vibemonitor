@@ -20,6 +20,7 @@ integration_test.go
 !internal/store/theme_test.go
 !internal/web/embed_test.go
 !internal/store/traffic_test.go
+!internal/store/node_profile_test.go
 !pkg/monitor/traffic_regression_test.go
 !pkg/monitor/traffic_linux_test.go
 !internal/server/traffic_test.go

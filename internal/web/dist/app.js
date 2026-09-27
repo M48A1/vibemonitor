@@ -3,7 +3,10 @@
 let nodes = [];
 let isAdmin = false;
 let ws = null;
+let wsHasData = false;
+let lastWSDataAt = 0;
 let pollTimer = null;
+let lastNodeMarkup = '';
 
 // Helpers: formatting
 function formatBytes(bytes) {
@@ -237,11 +240,12 @@ async function checkAdminAuth() {
 }
 
 function setAdminState(admin) {
+  const changed = isAdmin !== admin;
   isAdmin = admin;
   const quickActions = document.getElementById('adminQuickActions');
   quickActions.style.display = admin ? 'block' : 'none';
   if (!admin) closeSiteMenu();
-  renderNodes();
+  if (changed && nodes.length) renderNodes();
 }
 
 // Global Stats Calculation
@@ -314,15 +318,23 @@ function renderNodes() {
       || (a.uuid || '').localeCompare(b.uuid || '', 'en'));
 
   if (sorted.length === 0) {
-    grid.innerHTML = `
+    const markup = `
       <div style="grid-column: 1 / -1; text-align: center; padding: 60px 20px; color: var(--muted-foreground);">
         暂无监控节点。点击左上角站点图标，登录后通过“节点管理 → 新建节点”开始监控。
       </div>
     `;
+    if (markup !== lastNodeMarkup) {
+      grid.innerHTML = markup;
+      lastNodeMarkup = markup;
+    }
     return;
   }
 
-  grid.innerHTML = sorted.map(VibeHex.renderNode).join('');
+  const markup = sorted.map(VibeHex.renderNode).join('');
+  if (markup !== lastNodeMarkup) {
+    grid.innerHTML = markup;
+    lastNodeMarkup = markup;
+  }
 }
 
 function escapeHtml(str) {
@@ -345,11 +357,16 @@ document.getElementById('nodeGrid').addEventListener('click', (event) => {
 });
 
 // Data Fetching & WebSocket
+function hasFreshWSData() {
+  return wsHasData && ws && ws.readyState === 1 && Date.now() - lastWSDataAt < 10000;
+}
+
 async function fetchNodes() {
+  if (hasFreshWSData()) return;
   try {
     const res = await fetch('/api/nodes');
     const data = await res.json();
-    if (Array.isArray(data)) {
+    if (Array.isArray(data) && !hasFreshWSData()) {
       nodes = data;
       updateGlobalStats();
       renderNodes();
@@ -438,14 +455,14 @@ function connectWebSocket() {
 
   ws.onopen = () => {
     console.log('WebSocket connected to', wsUrl);
-    // Request initial data
-    ws.send('get');
   };
 
   ws.onmessage = (event) => {
     try {
       const msg = JSON.parse(event.data);
       if (msg.nodes) {
+        wsHasData = true;
+        lastWSDataAt = Date.now();
         nodes = msg.nodes;
         updateGlobalStats();
         renderNodes();
@@ -456,6 +473,8 @@ function connectWebSocket() {
   };
 
   ws.onclose = () => {
+    wsHasData = false;
+    lastWSDataAt = 0;
     console.warn('WebSocket disconnected, reconnecting in 3s...');
     setTimeout(connectWebSocket, 3000);
   };
@@ -1346,11 +1365,11 @@ async function fetchVisitorInfo() {
 }
 
 resetPasswordFields();
-fetchVisitorInfo();
-checkAdminAuth();
-fetchPublicSettings();
 fetchNodes();
 connectWebSocket();
+checkAdminAuth();
+fetchPublicSettings();
+fetchVisitorInfo();
 // Periodic fallback polling every 5s
 setInterval(fetchNodes, 5000);
 // Refresh the site title and logo when WebSocket is unavailable.
