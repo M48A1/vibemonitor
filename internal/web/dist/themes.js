@@ -47,6 +47,7 @@ window.VibeHex = (() => {
       <div class="hex-stat"><span>周期已用流量</span><strong>${formatBytes(traffic)}</strong><small>各节点当前计费周期合计</small></div>
       <div class="hex-stat"><span>实时网速</span><strong>${formatSpeed(total('up') + total('down'))}</strong><small class="hex-stat-network"><span>↑ ${formatSpeed(total('up'))}</span><span>↓ ${formatSpeed(total('down'))}</span></small></div>
       <div class="hex-stat"><span>高负载节点</span><strong>${busy}<em> 台</em></strong><small>当前在线节点 CPU ≥ 85%</small></div>`;
+    if (window.VibeGlobe) window.VibeGlobe.setNodes(nodes);
   }
   return Object.freeze({ renderNode, renderOverview });
 })();

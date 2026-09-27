@@ -9,7 +9,7 @@ import (
 
 func TestHexPagesAndAssetsUseCacheValidation(t *testing.T) {
 	h := Handler()
-	for _, path := range []string{"/", "/index.html", "/dashboard", "/themes.js", "/themes.css"} {
+	for _, path := range []string{"/", "/index.html", "/dashboard", "/themes.js", "/themes.css", "/globe.js", "/globe-points.json", "/globe-regions.json"} {
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
 		if w.Code != http.StatusOK {

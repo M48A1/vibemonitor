@@ -26,13 +26,13 @@
             </span>
           </summary>
           <div class="site-menu-panel">
-            <button type="button" class="site-menu-item" id="adminBtn">⚙️ 管理</button>
+            <button type="button" class="site-menu-item site-menu-level-1" id="adminBtn">⚙️ 管理</button>
             <div id="adminQuickActions" style="display: none;">
               <details class="node-management" id="nodeManagementMenu">
-                <summary class="site-menu-item">节点管理 <span class="site-menu-chevron" aria-hidden="true">›</span></summary>
+                <summary class="site-menu-item site-menu-level-2">节点管理</summary>
                 <div class="node-management-menu">
-                  <button type="button" class="site-menu-item" id="editExistingNodeBtn">编辑现有节点</button>
-                  <button type="button" class="site-menu-item" id="addNodeBtn">新建节点</button>
+                  <button type="button" class="site-menu-item site-menu-level-3" id="editExistingNodeBtn">编辑现有节点</button>
+                  <button type="button" class="site-menu-item site-menu-level-3" id="addNodeBtn">新建节点</button>
                 </div>
               </details>
               <button type="button" class="site-menu-item site-menu-logout" id="logoutBtn">退出登录</button>
@@ -51,7 +51,13 @@
     <!-- Stats Bar -->
     <section class="hex-overview" aria-label="实时监控">
       <div class="hex-section-heading"><span class="hex-section-label">实时监控</span></div>
-      <div class="hex-stats" id="statsBanner"></div>
+      <div class="hex-stats">
+        <div class="hex-stats-grid" id="statsBanner"></div>
+        <div class="hex-globe-panel">
+          <span class="hex-globe-label">节点分布</span>
+          <canvas id="overviewGlobe" class="hex-globe-canvas" aria-label="节点分布地球，可拖动旋转"></canvas>
+        </div>
+      </div>
     </section>
 
     <!-- Node Details Heading -->
@@ -68,8 +74,18 @@
 
     <!-- Footer -->
     <footer style="margin-top: 48px; text-align: center; font-size: 12px; color: var(--muted-foreground);">
-      Powered by <strong style="color: var(--primary);">VibeMonitor</strong>
+      Powered by <a class="footer-project-link" href="https://github.com/M48A1/vibemonitor" target="_blank" rel="noopener noreferrer"><strong>VibeMonitor</strong></a>
     </footer>
+  </div>
+
+  <div class="visitor-ip-pill" id="visitorIpPill" aria-label="您的 IP 地址" hidden>
+    <span class="visitor-ip-icon" aria-hidden="true">🌐</span>
+    <span class="visitor-ip-label">Your IP:</span>
+    <strong id="visitorIpValue"></strong>
+    <span class="visitor-ip-separator" id="visitorCountrySeparator" hidden>|</span>
+    <span class="visitor-ip-country" id="visitorCountry" hidden></span>
+    <span class="visitor-ip-separator visitor-ip-network-separator" id="visitorNetworkSeparator" hidden>|</span>
+    <span class="visitor-ip-network" id="visitorNetwork" hidden></span>
   </div>
 
   <!-- Admin Settings Modal -->
@@ -351,6 +367,7 @@
     </div>
   </div>
 
+  <script src="/globe.js"></script>
   <script src="/themes.js"></script>
   <script src="/app.js"></script>
 </body>

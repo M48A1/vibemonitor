@@ -32,6 +32,26 @@ func TestGetClientIPOnlyUsesValidForwardedIPFromLoopback(t *testing.T) {
 	}
 }
 
+func TestVisitorIPEndpointUsesTrustedProxyAddress(t *testing.T) {
+	s, err := New(Options{DataFile: filepath.Join(t.TempDir(), "data.db"), AdminPassword: "test-password"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	r := httptest.NewRequest(http.MethodGet, "/api/visitor-ip", nil)
+	r.RemoteAddr = "127.0.0.1:1234"
+	r.Header.Set("X-Forwarded-For", "198.51.100.7")
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, r)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"ip":"198.51.100.7"`) {
+		t.Fatalf("visitor IP response: status %d, body %q", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("visitor IP cache control = %q", got)
+	}
+}
+
 func TestRPCRejectsQueryToken(t *testing.T) {
 	s, err := New(Options{DataFile: filepath.Join(t.TempDir(), "data.db"), AdminPassword: "test-password"})
 	if err != nil {

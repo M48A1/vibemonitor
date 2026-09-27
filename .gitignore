@@ -3,6 +3,8 @@ vibemonitor-*
 *.exe
 *.tmp
 *.json
+!internal/web/dist/globe-points.json
+!internal/web/dist/globe-regions.json
 !data/
 *.log
 /dist/

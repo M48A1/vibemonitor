@@ -1,7 +1,8 @@
-/* =========================================================
-   VibeMonitor Clean Theme (Solid, Crisp, No Glassmorphism)
-   Clean, high-contrast, modern flat card UI without blur
-   ========================================================= */
+/* VibeMonitor layout and controls; the active appearance is set in themes.css. */
+
+.footer-project-link { color: var(--primary); text-decoration: none; }
+.footer-project-link:hover,
+.footer-project-link:focus-visible { text-decoration: underline; }
 
 /* Site actions are anchored to the logo, including on small screens. */
 .site-menu { position: relative; flex-shrink: 0; }
@@ -27,6 +28,8 @@
   border: 1px solid var(--border);
   border-radius: 12px;
   box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(20px) saturate(145%);
+  -webkit-backdrop-filter: blur(20px) saturate(145%);
 }
 .site-menu-item {
   display: flex;
@@ -44,10 +47,33 @@
   cursor: pointer;
 }
 .site-menu-item:hover { background: var(--card-hover); }
-.site-menu-chevron { font-size: 18px; line-height: 1; }
-.node-management[open] > summary .site-menu-chevron { transform: rotate(90deg); }
-.node-management-menu { margin-left: 12px; border-left: 1px solid var(--border); }
-.node-management-menu .site-menu-item { color: var(--muted-foreground); }
+/* The blue tint fades with each level of the management menu. */
+.site-menu-level-1 {
+  color: var(--primary);
+  font-weight: 600;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--primary) 18%, var(--card-bg)), color-mix(in srgb, var(--primary) 6%, var(--card-bg)));
+}
+.site-menu-level-2 {
+  width: calc(100% - 10px);
+  margin-left: 10px;
+  color: color-mix(in srgb, var(--primary) 65%, var(--foreground));
+  font-weight: 500;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--primary) 12%, var(--card-bg)), color-mix(in srgb, var(--primary) 4%, var(--card-bg)));
+}
+.node-management-menu {
+  margin-left: 22px;
+  padding-left: 8px;
+  border-left: 2px solid color-mix(in srgb, var(--primary) 30%, var(--border));
+}
+.node-management-menu .site-menu-level-3 {
+  color: var(--muted-foreground);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--primary) 7%, var(--card-bg)), color-mix(in srgb, var(--primary) 2%, var(--card-bg)));
+}
+.site-menu-level-1:hover,
+.site-menu-level-2:hover,
+.node-management-menu .site-menu-level-3:hover {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--primary) 22%, var(--card-bg)), color-mix(in srgb, var(--primary) 9%, var(--card-bg)));
+}
 .site-menu-logout { margin-top: 6px; border-top: 1px solid var(--border); border-radius: 0 0 6px 6px; color: var(--destructive); }
 .node-selection-list { display: grid; gap: 8px; }
 .node-selection-list .btn { justify-content: flex-start; white-space: normal; overflow-wrap: anywhere; text-align: left; }
@@ -514,6 +540,8 @@ body {
   transition: transform 0.2s ease;
   max-height: 90vh;
   overflow-y: auto;
+  backdrop-filter: blur(22px) saturate(140%);
+  -webkit-backdrop-filter: blur(22px) saturate(140%);
 }
 
 .modal-overlay.active .modal {

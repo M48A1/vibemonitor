@@ -1276,7 +1276,77 @@ document.addEventListener('click', (e) => {
 });
 
 // Initialize
+function visitorText(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function visitorInfoFromProvider(data, provider) {
+  if (!data || typeof data !== 'object' || data.success === false || data.error === true) return null;
+  const connection = data.connection && typeof data.connection === 'object' ? data.connection : {};
+  const ip = visitorText(data.ip);
+  if (!ip) return null;
+  if (provider === 'ipwho') {
+    return { ip, country: visitorText(data.country), network: visitorText(connection.org || connection.isp || connection.domain) };
+  }
+  if (provider === 'ipapi') {
+    return { ip, country: visitorText(data.country_name), network: visitorText(data.org) };
+  }
+  return { ip, country: visitorText(data.country), network: visitorText(data.organization || data.isp || data.asn_organization) };
+}
+
+async function fetchVisitorProvider(url, provider) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(url, { signal: controller.signal, headers: { Accept: 'application/json' } });
+    if (!response.ok) return null;
+    return visitorInfoFromProvider(await response.json(), provider);
+  } catch (_) {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function showVisitorInfo(info) {
+  document.getElementById('visitorIpValue').textContent = info.ip;
+  const country = document.getElementById('visitorCountry');
+  const network = document.getElementById('visitorNetwork');
+  country.textContent = info.country || '';
+  network.textContent = info.network || '';
+  country.hidden = !info.country;
+  network.hidden = !info.network;
+  document.getElementById('visitorCountrySeparator').hidden = !info.country;
+  document.getElementById('visitorNetworkSeparator').hidden = !info.network;
+  document.getElementById('visitorIpPill').hidden = false;
+}
+
+async function fetchVisitorInfo() {
+  const providers = [
+    ['https://ipwho.is/', 'ipwho'],
+    ['https://ipapi.co/json/', 'ipapi'],
+    ['https://api.ip.sb/geoip', 'ipsb'],
+  ];
+  for (const [url, provider] of providers) {
+    const info = await fetchVisitorProvider(url, provider);
+    if (info) {
+      showVisitorInfo(info);
+      return;
+    }
+  }
+  try {
+    const response = await fetch('/api/visitor-ip', { cache: 'no-store' });
+    if (!response.ok) return;
+    const data = await response.json();
+    const ip = visitorText(data.ip);
+    if (ip) showVisitorInfo({ ip, country: '', network: '' });
+  } catch (error) {
+    console.error('Failed to fetch visitor IP:', error);
+  }
+}
+
 resetPasswordFields();
+fetchVisitorInfo();
 checkAdminAuth();
 fetchPublicSettings();
 fetchNodes();
