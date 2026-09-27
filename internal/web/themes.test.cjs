@@ -21,7 +21,7 @@ function dashboard() {
   const ctx = vm.createContext({ console: { log() {}, warn() {}, error() {} },
     document: { documentElement: root, getElementById: element, createElement: () => element(Symbol()),
       querySelector: () => null, querySelectorAll: () => [], addEventListener() {} },
-    fetch: () => new Promise(() => {}), setInterval() {}, setTimeout() {},
+    fetch: () => new Promise(() => {}), AbortController, setInterval() {}, setTimeout() {}, clearTimeout() {},
     WebSocket: class {}, location: { protocol: 'http:', host: 'localhost' },
     localStorage: { getItem() { throw Error('site theme must not read browser preferences'); } },
   });
