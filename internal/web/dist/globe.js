@@ -26,7 +26,9 @@ window.VibeGlobe = (() => {
   let landPoints = [];
   let regionCoordinates = {};
   let nodes = [];
-  let markers = [];
+  let routes = [];
+  let routeSignature = '';
+  const shanghai = cartesian(31.2304, 121.4737);
   let centerLongitude = 105;
   let centerLatitude = 18;
   let width = 0;
@@ -71,13 +73,40 @@ window.VibeGlobe = (() => {
       const code = regionCode(node.region);
       const position = code && regionCoordinates[code];
       if (!position) continue;
-      const marker = byRegion.get(code) || { point: cartesian(position[0], position[1]), online: 0, offline: 0 };
-      if (node.online) marker.online += 1;
-      else marker.offline += 1;
-      byRegion.set(code, marker);
+      if (!byRegion.has(code)) byRegion.set(code, []);
+      byRegion.get(code).push(node);
     }
-    markers = Array.from(byRegion.values());
+    const signature = Array.from(byRegion, ([code, regionNodes]) =>
+      `${code}:${regionNodes.map(node => `${node.uuid}:${node.online}`).sort().join(',')}`).sort().join('|');
+    if (signature === routeSignature) return;
+    routeSignature = signature;
+    routes = [];
+    for (const [code, regionNodes] of byRegion) {
+      const position = regionCoordinates[code];
+      regionNodes.sort((a, b) => String(a.uuid).localeCompare(String(b.uuid)));
+      for (let index = 0; index < regionNodes.length; index++) {
+        const spread = index === 0 ? 0 : 2.5 + Math.sqrt(index) * 1.4;
+        const angle = index * 2.39996;
+        const latitude = Math.max(-80, Math.min(80, position[0] + Math.sin(angle) * spread));
+        const longitude = position[1] + Math.cos(angle) * spread;
+        const point = cartesian(latitude, longitude);
+        routes.push({ point, online: regionNodes[index].online, path: greatCircle(shanghai, point) });
+      }
+    }
     if (!shouldAnimate()) draw();
+  }
+
+  function greatCircle(from, to) {
+    const angle = Math.acos(Math.max(-1, Math.min(1, from[0] * to[0] + from[1] * to[1] + from[2] * to[2])));
+    const sine = Math.sin(angle);
+    const points = [];
+    for (let index = 0; index <= 28; index++) {
+      const t = index / 28;
+      const a = sine > 0.001 ? Math.sin((1 - t) * angle) / sine : 1 - t;
+      const b = sine > 0.001 ? Math.sin(t * angle) / sine : t;
+      points.push([from[0] * a + to[0] * b, from[1] * a + to[1] * b, from[2] * a + to[2] * b]);
+    }
+    return points;
   }
 
   function measure() {
@@ -115,9 +144,9 @@ window.VibeGlobe = (() => {
   function draw() {
     if (!measure()) return;
     context.clearRect(0, 0, width, height);
-    const radius = Math.min(width * 0.29, height * 0.46, 162);
-    const centerX = width * 0.53;
-    const centerY = height * 0.52;
+    const radius = Math.min(width * 0.38, height * 0.47, 190);
+    const centerX = width * 0.52;
+    const centerY = height * 0.5;
     const longitude = centerLongitude * radians;
     const tilt = centerLatitude * radians;
     const rotation = { sinLon: Math.sin(longitude), cosLon: Math.cos(longitude), sinTilt: Math.sin(tilt), cosTilt: Math.cos(tilt) };
@@ -164,22 +193,60 @@ window.VibeGlobe = (() => {
       context.fill();
     }
 
-    for (const marker of markers) {
-      const point = project(marker.point, centerX, centerY, radius, rotation);
+    context.beginPath();
+    for (const route of routes) {
+      if (!route.online) continue;
+      let drawing = false;
+      for (let index = 0; index < route.path.length; index++) {
+        const point = project(route.path[index], centerX, centerY, radius, rotation);
+        if (point.depth <= 0) {
+          drawing = false;
+          continue;
+        }
+        const lift = 1 + 0.08 * Math.sin(Math.PI * index / (route.path.length - 1));
+        const x = centerX + (point.x - centerX) * lift;
+        const y = centerY + (point.y - centerY) * lift;
+        if (drawing) context.lineTo(x, y);
+        else context.moveTo(x, y);
+        drawing = true;
+      }
+    }
+    context.strokeStyle = 'rgba(224, 48, 68, 0.78)';
+    context.lineWidth = 1.6;
+    context.stroke();
+
+    for (const route of routes) {
+      const point = project(route.point, centerX, centerY, radius, rotation);
       if (point.depth <= 0) continue;
-      const color = marker.online > 0 ? '#167b5a' : '#d7663e';
-      const size = Math.min(7, 3.7 + Math.sqrt(marker.online + marker.offline));
-      context.fillStyle = marker.online > 0 ? 'rgba(22, 123, 90, 0.24)' : 'rgba(215, 102, 62, 0.26)';
+      const color = route.online ? '#e03044' : '#8791a1';
+      const size = 4.2;
+      context.fillStyle = route.online ? 'rgba(224, 48, 68, 0.23)' : 'rgba(135, 145, 161, 0.18)';
       context.beginPath();
-      context.arc(point.x, point.y, size + 5, 0, Math.PI * 2);
+      context.arc(point.x, point.y, size + 4, 0, Math.PI * 2);
       context.fill();
       context.fillStyle = color;
       context.strokeStyle = '#ffffff';
-      context.lineWidth = 2;
+      context.lineWidth = 1.8;
       context.beginPath();
       context.arc(point.x, point.y, size, 0, Math.PI * 2);
       context.fill();
       context.stroke();
+    }
+    if (routes.length) {
+      const origin = project(shanghai, centerX, centerY, radius, rotation);
+      if (origin.depth > 0) {
+        context.fillStyle = 'rgba(224, 48, 68, 0.26)';
+        context.beginPath();
+        context.arc(origin.x, origin.y, 10, 0, Math.PI * 2);
+        context.fill();
+        context.fillStyle = '#e03044';
+        context.strokeStyle = '#ffffff';
+        context.lineWidth = 2;
+        context.beginPath();
+        context.arc(origin.x, origin.y, 5, 0, Math.PI * 2);
+        context.fill();
+        context.stroke();
+      }
     }
     context.restore();
 
@@ -249,7 +316,7 @@ window.VibeGlobe = (() => {
   fetch('/globe-regions.json').then(response => {
     if (!response.ok) throw new Error('globe regions unavailable');
     return response.json();
-  }).then(coordinates => { regionCoordinates = coordinates; updateMarkers(); }).catch(() => {});
+  }).then(coordinates => { regionCoordinates = coordinates; routeSignature = ''; updateMarkers(); }).catch(() => {});
 
   syncAnimation();
   return {

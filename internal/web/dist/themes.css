@@ -69,14 +69,12 @@ body::before {
 .navbar {
   position: relative;
   z-index: 40;
-  padding: 16px 22px;
+  padding: 8px 0;
   margin-bottom: 26px;
-  background: rgba(255, 255, 255, .58);
-  border: 1px solid rgba(255, 255, 255, .7);
-  border-radius: 18px;
-  box-shadow: 0 14px 40px rgba(42, 55, 99, .14), inset 0 1px 0 rgba(255, 255, 255, .7);
-  backdrop-filter: blur(20px) saturate(140%);
-  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 .brand-title { font-size: 19px; }
 .brand-badge { font-size: 10px; font-weight: 500; letter-spacing: 1px; }
@@ -85,8 +83,8 @@ body::before {
 .hex-section-heading { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
 .hex-section-label { font-size: 11px; font-weight: 400; color: var(--success); }
 .hex-section-label::before, .hex-live-dot { content: ''; display: inline-block; width: 6px; height: 6px; background: var(--success); border-radius: 50%; margin-right: 6px; }
-.hex-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); background: rgba(255, 255, 255, .61); border: 1px solid rgba(255, 255, 255, .68); border-radius: 20px; margin-bottom: 24px; overflow: hidden; box-shadow: 0 22px 55px rgba(42, 55, 99, .16), inset 0 1px 0 rgba(255, 255, 255, .72); backdrop-filter: blur(22px) saturate(145%); -webkit-backdrop-filter: blur(22px) saturate(145%); }
-.hex-stats-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); min-width: 0; }
+.hex-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; margin-bottom: 24px; align-items: stretch; }
+.hex-stats-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); min-width: 0; min-height: 360px; overflow: hidden; background: rgba(255, 255, 255, .61); border: 1px solid rgba(255, 255, 255, .68); border-radius: 20px; box-shadow: 0 22px 55px rgba(42, 55, 99, .16), inset 0 1px 0 rgba(255, 255, 255, .72); backdrop-filter: blur(22px) saturate(145%); -webkit-backdrop-filter: blur(22px) saturate(145%); }
 .hex-stat { padding: 20px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .hex-stat:nth-child(even) { border-left: 1px solid rgba(255, 255, 255, .52); }
 .hex-stat:nth-child(n+3) { border-top: 1px solid rgba(255, 255, 255, .52); }
@@ -97,7 +95,7 @@ body::before {
 .hex-stat-network { display: flex; gap: 12px; flex-wrap: wrap; }
 .hex-stat-network span:first-child { color: var(--primary); }
 .hex-stat-network span:last-child { color: var(--success); }
-.hex-globe-panel { position: relative; min-width: 0; height: 254px; border-left: 1px solid rgba(255, 255, 255, .52); background: radial-gradient(circle at 54% 48%, rgba(255, 255, 255, .28), transparent 68%); }
+.hex-globe-panel { position: relative; min-width: 0; height: 360px; background: radial-gradient(circle at 54% 48%, rgba(255, 255, 255, .2), transparent 68%); }
 .hex-globe-canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
 .hex-globe-canvas:active { cursor: grabbing; }
 .controls-bar { justify-content: flex-start; gap: 12px; margin-bottom: 18px; }
@@ -163,16 +161,17 @@ body::before {
 }
 @media (max-width: 900px) {
   .hex-stats { grid-template-columns: minmax(0, 1fr); }
-  .hex-globe-panel { border-left: 0; border-top: 1px solid var(--border); }
+  .hex-globe-panel { height: 330px; }
 }
 @media (max-width: 720px) {
   .container { padding: 14px 14px 92px; }
-  .navbar { gap: 12px; padding: 14px; margin-bottom: 20px; }
+  .navbar { gap: 12px; padding: 6px 0; margin-bottom: 20px; }
   .hex-stats { margin-bottom: 16px; }
+  .hex-stats-grid { min-height: 260px; }
   .hex-stat { padding: 14px; }
   .hex-stat > strong { font-size: 20px; }
   .hex-stat-network { gap: 4px; }
-  .hex-globe-panel { height: 230px; }
+  .hex-globe-panel { height: 300px; }
   .node-grid { grid-template-columns: minmax(0, 1fr); gap: 14px; }
   .hex-card { padding: 18px; }
   .ping-panels { grid-template-columns: repeat(2, minmax(0, 1fr)); }
