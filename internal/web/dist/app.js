@@ -255,6 +255,13 @@ function updateGlobalStats() {
   VibeHex.renderOverview(nodes);
 }
 
+function readNodeOrder(prefix) {
+  const text = document.getElementById(prefix + 'NodeOrder').value.trim();
+  const order = text === '' ? 0 : Number(text);
+  if (!Number.isSafeInteger(order) || order < 0) throw new Error('节点序号必须是非负整数');
+  return order;
+}
+
 function readNodeProfile(prefix) {
   const thresholdText = document.getElementById(prefix+'NodeCPUThreshold').value.trim();
   const cpuThreshold = thresholdText === '' ? null : Number(thresholdText);
@@ -358,11 +365,19 @@ function reconcileNode(current, next) {
 }
 
 // Render Nodes
+function compareNodes(a, b) {
+  const order = node => {
+    const value = Number(node.weight);
+    return Number.isSafeInteger(value) && value > 0 ? value : 0;
+  };
+  return order(a) - order(b)
+    || (a.name || '').trim().localeCompare((b.name || '').trim(), 'en', { sensitivity: 'base', numeric: true })
+    || (a.uuid || '').localeCompare(b.uuid || '', 'en');
+}
+
 function renderNodes() {
   const grid = document.getElementById('nodeGrid');
-  const sorted = [...nodes]
-    .sort((a, b) => (a.name || '').trim().localeCompare((b.name || '').trim(), 'en', { sensitivity: 'base', numeric: true })
-      || (a.uuid || '').localeCompare(b.uuid || '', 'en'));
+  const sorted = [...nodes].sort(compareNodes);
 
   if (sorted.length === 0) {
     const markup = `
@@ -798,7 +813,7 @@ document.getElementById('editExistingNodeBtn').addEventListener('click', () => {
   if (nodes.length === 0) {
     list.textContent = '暂无节点，请先通过“节点管理 → 新建节点”创建。';
   }
-  nodes.forEach(node => {
+  [...nodes].sort(compareNodes).forEach(node => {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'btn';
@@ -817,6 +832,7 @@ if (addNodeBtn) addNodeBtn.addEventListener('click', () => {
   nodeManagementMenu.open = false;
   if (!isAdmin) return;
   document.getElementById('newNodeName').value = '';
+  document.getElementById('newNodeOrder').value = '';
   document.getElementById('newNodeTrafficLimit').value = '';
   document.getElementById('newNodeResetDay').value = '';
   document.getElementById('newNodeInitialUsed').value = '';
@@ -843,6 +859,7 @@ document.getElementById('addNodeForm').addEventListener('submit', async (e) => {
       body: JSON.stringify({
         name,
         region,
+        weight: readNodeOrder('new'),
         traffic_limit_gb: trafficLimitGB,
         reset_day: resetDay,
         initial_used_gb: initialUsedGB,
@@ -879,6 +896,7 @@ window.openEditModal = async function(uuid) {
   }
   document.getElementById('editNodeUUID').value = node.uuid;
   document.getElementById('editNodeName').value = node.name || '';
+  document.getElementById('editNodeOrder').value = node.weight > 0 ? node.weight : '';
   document.getElementById('editNodeRegion').value = node.region || '';
   document.getElementById('editNodeTrafficLimit').value = node.traffic_limit > 0 ? (node.traffic_limit / (1024*1024*1024)).toFixed(1) : '';
   document.getElementById('editNodeResetDay').value = node.reset_day > 0 ? node.reset_day : '';
@@ -924,6 +942,7 @@ document.getElementById('editNodeForm').addEventListener('submit', async (e) => 
         name,
         group,
         region,
+        weight: readNodeOrder('edit'),
         traffic_limit_gb: trafficLimitGB,
         reset_day: resetDay,
         ...(cycleUsedGB === null ? {} : { cycle_used_gb: cycleUsedGB }),

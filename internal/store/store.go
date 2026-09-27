@@ -619,12 +619,14 @@ type NodeOptions struct {
 	Name           string
 	Group          string
 	Region         string
-	Weight         int
+	Weight         int // Node order: 0 sorts before numbered nodes.
 	TrafficLimitGB float64
 	ResetDay       int
 	InitialUsedGB  float64
 	CycleUsedGB    *float64 // Optional replacement for the current cycle's total usage.
 }
+
+var ErrInvalidNodeOrder = errors.New("invalid node order")
 
 func (s *Store) CreateNode(name, group, region string) (*Node, error) {
 	return s.CreateNodeWithOptions(NodeOptions{
@@ -635,6 +637,9 @@ func (s *Store) CreateNode(name, group, region string) (*Node, error) {
 }
 
 func (s *Store) CreateNodeWithOptions(opts NodeOptions) (*Node, error) {
+	if opts.Weight < 0 {
+		return nil, ErrInvalidNodeOrder
+	}
 	if err := validateProfile(opts.Profile); err != nil {
 		return nil, err
 	}
@@ -703,6 +708,9 @@ func (s *Store) UpdateNode(uuid, name, group, region string, weight int) error {
 }
 
 func (s *Store) UpdateNodeWithOptions(uuid string, opts NodeOptions) error {
+	if opts.Weight < 0 {
+		return ErrInvalidNodeOrder
+	}
 	if err := validateProfile(opts.Profile); err != nil {
 		return err
 	}
