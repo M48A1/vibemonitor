@@ -256,7 +256,7 @@ func (c *Client) runPingWorker(ctx context.Context) {
 	case <-ctx.Done():
 		return
 	case <-time.After(2 * time.Second):
-		c.measurePings()
+		c.measurePings(ctx)
 	}
 
 	for {
@@ -264,14 +264,14 @@ func (c *Client) runPingWorker(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-c.pingTrigger:
-			c.measurePings()
+			c.measurePings(ctx)
 		case <-ticker.C:
-			c.measurePings()
+			c.measurePings(ctx)
 		}
 	}
 }
 
-func (c *Client) measurePings() {
+func (c *Client) measurePings(ctx context.Context) {
 	c.mu.RLock()
 	targets := make([]protocol.PingTarget, len(c.pingTargets))
 	copy(targets, c.pingTargets)
@@ -288,12 +288,17 @@ func (c *Client) measurePings() {
 	results := make([]protocol.PingResult, len(targets))
 	sem := make(chan struct{}, maxPingConcurrency)
 	for i, t := range targets {
+		select {
+		case <-ctx.Done():
+			wg.Wait()
+			return
+		case sem <- struct{}{}:
+		}
 		wg.Add(1)
-		sem <- struct{}{}
 		go func(idx int, target protocol.PingTarget) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			latency, method := pingHost(target.Host, 2*time.Second)
+			latency, method := pingHost(ctx, target.Host, 2*time.Second)
 			results[idx] = protocol.PingResult{
 				Name:    target.Name,
 				Host:    target.Host,
@@ -303,13 +308,19 @@ func (c *Client) measurePings() {
 		}(i, t)
 	}
 	wg.Wait()
+	if ctx.Err() != nil {
+		return
+	}
 
 	c.mu.Lock()
 	c.pingResults = results
 	c.mu.Unlock()
 }
 
-func pingHost(host string, timeout time.Duration) (int, string) {
+func pingHost(ctx context.Context, host string, timeout time.Duration) (int, string) {
+	if ctx.Err() != nil {
+		return -1, "tcp"
+	}
 	host = strings.TrimSpace(host)
 	if host == "" {
 		return -1, "tcp"
@@ -318,7 +329,9 @@ func pingHost(host string, timeout time.Duration) (int, string) {
 	// 1. If host has port (e.g. "1.2.3.4:80" or "example.com:443"), do TCP connect
 	if strings.Contains(host, ":") {
 		start := time.Now()
-		conn, err := net.DialTimeout("tcp4", host, timeout)
+		dialCtx, cancel := context.WithTimeout(ctx, timeout)
+		conn, err := (&net.Dialer{}).DialContext(dialCtx, "tcp4", host)
+		cancel()
 		if err == nil {
 			_ = conn.Close()
 			return int(time.Since(start).Milliseconds()), "tcp"
@@ -327,25 +340,33 @@ func pingHost(host string, timeout time.Duration) (int, string) {
 	}
 
 	// 2. Pure IP or hostname without port: Try system ICMP ping first
-	if ms := execSystemPing(host, timeout); ms >= 0 {
+	if ms := execSystemPing(ctx, host, timeout); ms >= 0 {
 		return ms, "icmp"
+	}
+	if ctx.Err() != nil {
+		return -1, "icmp"
 	}
 
 	// Fallback to TCP port 80, then 443
 	for _, port := range []string{"80", "443"} {
 		start := time.Now()
-		conn, err := net.DialTimeout("tcp4", net.JoinHostPort(host, port), timeout)
+		dialCtx, cancel := context.WithTimeout(ctx, timeout)
+		conn, err := (&net.Dialer{}).DialContext(dialCtx, "tcp4", net.JoinHostPort(host, port))
+		cancel()
 		if err == nil {
 			_ = conn.Close()
 			return int(time.Since(start).Milliseconds()), "tcp"
+		}
+		if ctx.Err() != nil {
+			return -1, "tcp"
 		}
 	}
 
 	return -1, "tcp"
 }
 
-func execSystemPing(host string, timeout time.Duration) int {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+func execSystemPing(parent context.Context, host string, timeout time.Duration) int {
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "ping", "-4", "-c", "1", "-W", "2", host)

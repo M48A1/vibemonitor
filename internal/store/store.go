@@ -794,11 +794,11 @@ func (s *Store) DeleteNode(uuid string) error {
 	return nil
 }
 
-func (s *Store) IngestBasicInfo(tokenOrUUID string, info protocol.BasicInfo, clientIP string) (*Node, error) {
+func (s *Store) IngestBasicInfo(token string, info protocol.BasicInfo, clientIP string) (*Node, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	uuid, ok := s.tokenIndex[tokenOrUUID]
+	uuid, ok := s.tokenIndex[token]
 	if !ok {
 		return nil, errors.New("unauthorized client token")
 	}
@@ -812,23 +812,20 @@ func (s *Store) IngestBasicInfo(tokenOrUUID string, info protocol.BasicInfo, cli
 	node.LastSeen = time.Now().UTC()
 	node.Online = true
 
-	if err := s.saveLocked(); err != nil {
-		log.Printf("[Store] Save failed (will retry): %v", err)
-	}
 	s.notifyUpdate()
 	copy := *node
 	return &copy, nil
 }
 
-func (s *Store) IngestReport(tokenOrUUID string, report protocol.Report, clientIP string) (*Node, error) {
-	return s.ingestReportAt(tokenOrUUID, report, clientIP, time.Now())
+func (s *Store) IngestReport(token string, report protocol.Report, clientIP string) (*Node, error) {
+	return s.ingestReportAt(token, report, clientIP, time.Now())
 }
 
-func (s *Store) ingestReportAt(tokenOrUUID string, report protocol.Report, clientIP string, now time.Time) (*Node, error) {
+func (s *Store) ingestReportAt(token string, report protocol.Report, clientIP string, now time.Time) (*Node, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	uuid, ok := s.tokenIndex[tokenOrUUID]
+	uuid, ok := s.tokenIndex[token]
 	if !ok {
 		return nil, errors.New("unauthorized client token")
 	}

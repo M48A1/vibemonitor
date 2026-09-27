@@ -13,7 +13,10 @@ const maxRequestBytes = 1 << 20
 
 func adminToken(r *http.Request) string {
 	if auth := r.Header.Get("Authorization"); auth != "" {
-		return strings.TrimPrefix(auth, "Bearer ")
+		if token, ok := strings.CutPrefix(auth, "Bearer "); ok {
+			return token
+		}
+		return ""
 	}
 	if cookie, err := r.Cookie("admin_token"); err == nil {
 		return cookie.Value
@@ -26,7 +29,8 @@ func requestHTTPS(r *http.Request) bool {
 		return true
 	}
 	host, _, _ := net.SplitHostPort(r.RemoteAddr)
-	return net.ParseIP(host).IsLoopback() && r.Header.Get("X-Forwarded-Proto") == "https"
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback() && r.Header.Get("X-Forwarded-Proto") == "https"
 }
 
 func clearAdminCookie(w http.ResponseWriter, r *http.Request) {
@@ -50,6 +54,22 @@ type loginLimiter struct {
 	clients map[string]loginWindow
 }
 
+const maxLoginClients = 4096
+
+func (l *loginLimiter) pruneExpired() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.pruneExpiredLocked(time.Now())
+}
+
+func (l *loginLimiter) pruneExpiredLocked(now time.Time) {
+	for key, value := range l.clients {
+		if !now.Before(value.expires) {
+			delete(l.clients, key)
+		}
+	}
+}
+
 func (l *loginLimiter) allow(r *http.Request) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -57,20 +77,30 @@ func (l *loginLimiter) allow(r *http.Request) bool {
 	if l.clients == nil {
 		l.clients = make(map[string]loginWindow)
 	}
-	for key, value := range l.clients {
-		if !now.Before(value.expires) {
-			delete(l.clients, key)
-		}
-	}
 	// Do not trust client-supplied forwarding headers for rate limiting.
 	key, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		key = r.RemoteAddr
 	}
 	v, ok := l.clients[key]
+	if ok && !now.Before(v.expires) {
+		delete(l.clients, key)
+		ok = false
+	}
 	if !ok {
-		if len(l.clients) >= 4096 {
-			return false
+		if len(l.clients) >= maxLoginClients {
+			l.pruneExpiredLocked(now)
+		}
+		if len(l.clients) >= maxLoginClients {
+			// Keep the map bounded without locking out every new address.
+			var oldestKey string
+			var oldestExpiry time.Time
+			for candidate, window := range l.clients {
+				if oldestKey == "" || window.expires.Before(oldestExpiry) {
+					oldestKey, oldestExpiry = candidate, window.expires
+				}
+			}
+			delete(l.clients, oldestKey)
 		}
 		v.expires = now.Add(5 * time.Minute)
 	}

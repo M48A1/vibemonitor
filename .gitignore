@@ -26,3 +26,5 @@ integration_test.go
 !internal/server/traffic_test.go
 !internal/server/lifecycle_test.go
 !internal/server/auth_regression_test.go
+!internal/server/security_fixes_test.go
+!internal/agent/ping_cancel_test.go

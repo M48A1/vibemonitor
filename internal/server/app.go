@@ -519,17 +519,24 @@ type gzipResponseWriter struct {
 	http.ResponseWriter
 	gz          *gzip.Writer
 	wroteHeader bool
+	compressing bool
 }
 
 func (w *gzipResponseWriter) WriteHeader(code int) {
+	if code >= 100 && code < 200 {
+		w.ResponseWriter.WriteHeader(code)
+		return
+	}
 	if w.wroteHeader {
 		return
 	}
 	w.wroteHeader = true
-	if code == http.StatusNoContent || code == http.StatusNotModified {
+	if code == http.StatusNoContent || code == http.StatusNotModified || w.Header().Get("Content-Encoding") != "" {
 		w.ResponseWriter.WriteHeader(code)
 		return
 	}
+	w.compressing = true
+	w.gz.Reset(w.ResponseWriter)
 	w.ResponseWriter.Header().Set("Content-Encoding", "gzip")
 	w.ResponseWriter.Header().Del("Content-Length")
 	w.ResponseWriter.Header().Add("Vary", "Accept-Encoding")
@@ -540,14 +547,17 @@ func (w *gzipResponseWriter) Write(b []byte) (int, error) {
 	if !w.wroteHeader {
 		w.WriteHeader(http.StatusOK)
 	}
-	if w.ResponseWriter.Header().Get("Content-Encoding") == "gzip" {
+	if w.compressing {
 		return w.gz.Write(b)
 	}
 	return w.ResponseWriter.Write(b)
 }
 
 func (w *gzipResponseWriter) Flush() {
-	if w.gz != nil && w.wroteHeader && w.ResponseWriter.Header().Get("Content-Encoding") == "gzip" {
+	if !w.wroteHeader {
+		w.WriteHeader(http.StatusOK)
+	}
+	if w.compressing {
 		_ = w.gz.Flush()
 	}
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
@@ -568,10 +578,13 @@ func gzipMiddleware(next http.Handler) http.Handler {
 
 		gz := gzipPool.Get().(*gzip.Writer)
 		defer gzipPool.Put(gz)
-		gz.Reset(w)
-		defer gz.Close()
 
 		gw := &gzipResponseWriter{ResponseWriter: w, gz: gz}
+		defer func() {
+			if gw.compressing {
+				_ = gz.Close()
+			}
+		}()
 		next.ServeHTTP(gw, r)
 	})
 }
@@ -603,6 +616,7 @@ func (s *Server) Run(ctx context.Context) error {
 				return
 			case <-cleanupTicker.C:
 				s.pruneExpiredTokens()
+				s.loginLimit.pruneExpired()
 			}
 		}
 	}()

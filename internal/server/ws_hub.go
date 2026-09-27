@@ -117,6 +117,7 @@ func (h *WSHub) HandleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		// Require the browser Origin to match the request Host, including behind a reverse proxy.
 		InsecureSkipVerify: false,
 	})
 	if err != nil {

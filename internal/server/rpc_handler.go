@@ -66,7 +66,8 @@ func (h *RPCHandler) HandleV2RPC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRequestBytes))
+	// Server.Handler applies the request size limit before routing here.
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		writeJSON(w, jsonErrorStatus(err), protocol.ErrorResponse(nil, -32700, "failed to read body", nil))
 		return
