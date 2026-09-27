@@ -2,6 +2,10 @@
 
 面向 Linux x86-64 / ARM64（aarch64）的轻量服务器监控程序。
 
+## 界面预览
+
+![VibeMonitor 监控面板预览](docs/dashboard-preview.png)
+
 ## 功能
 
 
