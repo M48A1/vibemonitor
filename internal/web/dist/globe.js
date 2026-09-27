@@ -105,17 +105,17 @@ window.VibeGlobe = (() => {
     const centerY = height * 0.52;
 
     const glow = context.createRadialGradient(centerX, centerY, radius * 0.6, centerX, centerY, radius * 1.42);
-    glow.addColorStop(0, 'rgba(53, 109, 204, 0.10)');
-    glow.addColorStop(1, 'rgba(53, 109, 204, 0)');
+    glow.addColorStop(0, 'rgba(33, 113, 210, 0.22)');
+    glow.addColorStop(1, 'rgba(33, 113, 210, 0)');
     context.fillStyle = glow;
     context.beginPath();
     context.arc(centerX, centerY, radius * 1.42, 0, Math.PI * 2);
     context.fill();
 
     const sea = context.createRadialGradient(centerX - radius * 0.35, centerY - radius * 0.4, radius * 0.12, centerX, centerY, radius);
-    sea.addColorStop(0, '#ffffff');
-    sea.addColorStop(0.65, '#edf5fc');
-    sea.addColorStop(1, '#d4e5f3');
+    sea.addColorStop(0, '#74cbf6');
+    sea.addColorStop(0.58, '#328fe0');
+    sea.addColorStop(1, '#1858ba');
     context.fillStyle = sea;
     context.beginPath();
     context.arc(centerX, centerY, radius, 0, Math.PI * 2);
@@ -125,7 +125,7 @@ window.VibeGlobe = (() => {
     context.beginPath();
     context.arc(centerX, centerY, radius, 0, Math.PI * 2);
     context.clip();
-    context.strokeStyle = 'rgba(78, 127, 170, 0.16)';
+    context.strokeStyle = 'rgba(255, 255, 255, 0.15)';
     context.lineWidth = 0.7;
     for (let latitude = -60; latitude <= 60; latitude += 30) {
       const points = [];
@@ -144,9 +144,9 @@ window.VibeGlobe = (() => {
       if (point.depth <= 0) continue;
       landBuckets[Math.min(3, Math.floor(point.depth * 4))].push(point);
     }
-    const dotRadius = Math.max(0.7, radius / 105);
+    const dotRadius = Math.max(1, radius / 70);
     for (let bucket = 0; bucket < landBuckets.length; bucket++) {
-      context.fillStyle = `rgba(91, 131, 165, ${0.35 + bucket * 0.15})`;
+      context.fillStyle = `rgba(255, 207, 69, ${0.7 + bucket * 0.1})`;
       context.beginPath();
       for (const point of landBuckets[bucket]) {
         context.moveTo(point.x + dotRadius, point.y);
@@ -158,9 +158,9 @@ window.VibeGlobe = (() => {
     for (const marker of markers) {
       const point = project(marker.latitude, marker.longitude, centerX, centerY, radius);
       if (point.depth <= 0) continue;
-      const color = marker.online > 0 ? '#238364' : '#c59634';
+      const color = marker.online > 0 ? '#167b5a' : '#d7663e';
       const size = Math.min(7, 3.7 + Math.sqrt(marker.online + marker.offline));
-      context.fillStyle = marker.online > 0 ? 'rgba(35, 131, 100, 0.20)' : 'rgba(197, 150, 52, 0.22)';
+      context.fillStyle = marker.online > 0 ? 'rgba(22, 123, 90, 0.24)' : 'rgba(215, 102, 62, 0.26)';
       context.beginPath();
       context.arc(point.x, point.y, size + 5, 0, Math.PI * 2);
       context.fill();
@@ -174,7 +174,7 @@ window.VibeGlobe = (() => {
     }
     context.restore();
 
-    context.strokeStyle = 'rgba(72, 119, 169, 0.28)';
+    context.strokeStyle = 'rgba(20, 83, 170, 0.38)';
     context.lineWidth = 1;
     context.beginPath();
     context.arc(centerX, centerY, radius, 0, Math.PI * 2);
