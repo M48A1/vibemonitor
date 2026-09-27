@@ -2,10 +2,6 @@
 
 面向 Linux x86-64 / ARM64（aarch64）的轻量服务器监控程序。
 
-## 界面预览
-
-![VibeMonitor 监控面板预览](docs/dashboard-preview.png)
-
 ## 功能
 
 
@@ -19,6 +15,12 @@
 - 探针仅回传/安装命令在管理>编辑现有节点>显示安装命令
 - 添加节点/编辑节点/删除节点
 - 测速节点目标手动维护在节点信息内
+
+## 界面预览
+
+![VibeMonitor 监控面板预览](docs/dashboard-preview.png)
+
+
 
 
   
