@@ -6,6 +6,23 @@ window.VibeGlobe = (() => {
 
   const radians = Math.PI / 180;
   const reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)');
+  function cartesian(latitude, longitude) {
+    const lat = latitude * radians;
+    const lon = longitude * radians;
+    const cosLat = Math.cos(lat);
+    return [cosLat * Math.sin(lon), Math.sin(lat), cosLat * Math.cos(lon)];
+  }
+  const gridCurves = [];
+  for (let latitude = -60; latitude <= 60; latitude += 30) {
+    const curve = [];
+    for (let longitude = -180; longitude <= 180; longitude += 3) curve.push(cartesian(latitude, longitude));
+    gridCurves.push(curve);
+  }
+  for (let longitude = -180; longitude < 180; longitude += 30) {
+    const curve = [];
+    for (let latitude = -90; latitude <= 90; latitude += 3) curve.push(cartesian(latitude, longitude));
+    gridCurves.push(curve);
+  }
   let landPoints = [];
   let regionCoordinates = {};
   let nodes = [];
@@ -21,15 +38,13 @@ window.VibeGlobe = (() => {
   let animationFrame = 0;
   let lastFrameTime = 0;
 
-  function project(latitude, longitude, centerX, centerY, radius) {
-    const lat = latitude * radians;
-    const delta = (longitude - centerLongitude) * radians;
-    const tilt = centerLatitude * radians;
-    const cosLat = Math.cos(lat);
-    const depth = Math.sin(lat) * Math.sin(tilt) + cosLat * Math.cos(delta) * Math.cos(tilt);
+  function project(point, centerX, centerY, radius, rotation) {
+    const facing = point[2] * rotation.cosLon + point[0] * rotation.sinLon;
+    const horizontal = point[0] * rotation.cosLon - point[2] * rotation.sinLon;
+    const depth = point[1] * rotation.sinTilt + facing * rotation.cosTilt;
     return {
-      x: centerX + radius * cosLat * Math.sin(delta),
-      y: centerY - radius * (Math.sin(lat) * Math.cos(tilt) - cosLat * Math.cos(delta) * Math.sin(tilt)),
+      x: centerX + radius * horizontal,
+      y: centerY - radius * (point[1] * rotation.cosTilt - facing * rotation.sinTilt),
       depth,
     };
   }
@@ -56,13 +71,13 @@ window.VibeGlobe = (() => {
       const code = regionCode(node.region);
       const position = code && regionCoordinates[code];
       if (!position) continue;
-      const marker = byRegion.get(code) || { latitude: position[0], longitude: position[1], online: 0, offline: 0 };
+      const marker = byRegion.get(code) || { point: cartesian(position[0], position[1]), online: 0, offline: 0 };
       if (node.online) marker.online += 1;
       else marker.offline += 1;
       byRegion.set(code, marker);
     }
     markers = Array.from(byRegion.values());
-    draw();
+    if (!shouldAnimate()) draw();
   }
 
   function measure() {
@@ -81,11 +96,11 @@ window.VibeGlobe = (() => {
     return true;
   }
 
-  function drawCurve(points, centerX, centerY, radius) {
+  function drawCurve(points, centerX, centerY, radius, rotation) {
     context.beginPath();
     let drawing = false;
-    for (const [latitude, longitude] of points) {
-      const point = project(latitude, longitude, centerX, centerY, radius);
+    for (const coordinates of points) {
+      const point = project(coordinates, centerX, centerY, radius, rotation);
       if (point.depth <= 0) {
         drawing = false;
         continue;
@@ -103,6 +118,9 @@ window.VibeGlobe = (() => {
     const radius = Math.min(width * 0.29, height * 0.46, 162);
     const centerX = width * 0.53;
     const centerY = height * 0.52;
+    const longitude = centerLongitude * radians;
+    const tilt = centerLatitude * radians;
+    const rotation = { sinLon: Math.sin(longitude), cosLon: Math.cos(longitude), sinTilt: Math.sin(tilt), cosTilt: Math.cos(tilt) };
 
     const glow = context.createRadialGradient(centerX, centerY, radius * 0.6, centerX, centerY, radius * 1.42);
     glow.addColorStop(0, 'rgba(33, 113, 210, 0.22)');
@@ -127,20 +145,11 @@ window.VibeGlobe = (() => {
     context.clip();
     context.strokeStyle = 'rgba(255, 255, 255, 0.15)';
     context.lineWidth = 0.7;
-    for (let latitude = -60; latitude <= 60; latitude += 30) {
-      const points = [];
-      for (let longitude = -180; longitude <= 180; longitude += 3) points.push([latitude, longitude]);
-      drawCurve(points, centerX, centerY, radius);
-    }
-    for (let longitude = -180; longitude < 180; longitude += 30) {
-      const points = [];
-      for (let latitude = -90; latitude <= 90; latitude += 3) points.push([latitude, longitude]);
-      drawCurve(points, centerX, centerY, radius);
-    }
+    for (const curve of gridCurves) drawCurve(curve, centerX, centerY, radius, rotation);
 
     const landBuckets = [[], [], [], []];
-    for (const [latitude, longitude] of landPoints) {
-      const point = project(latitude, longitude, centerX, centerY, radius);
+    for (const coordinates of landPoints) {
+      const point = project(coordinates, centerX, centerY, radius, rotation);
       if (point.depth <= 0) continue;
       landBuckets[Math.min(3, Math.floor(point.depth * 4))].push(point);
     }
@@ -156,7 +165,7 @@ window.VibeGlobe = (() => {
     }
 
     for (const marker of markers) {
-      const point = project(marker.latitude, marker.longitude, centerX, centerY, radius);
+      const point = project(marker.point, centerX, centerY, radius, rotation);
       if (point.depth <= 0) continue;
       const color = marker.online > 0 ? '#167b5a' : '#d7663e';
       const size = Math.min(7, 3.7 + Math.sqrt(marker.online + marker.offline));
@@ -236,7 +245,7 @@ window.VibeGlobe = (() => {
   fetch('/globe-points.json').then(response => {
     if (!response.ok) throw new Error('globe points unavailable');
     return response.json();
-  }).then(points => { landPoints = points; draw(); }).catch(() => {});
+  }).then(points => { landPoints = points.map(([latitude, longitude]) => cartesian(latitude, longitude)); draw(); }).catch(() => {});
   fetch('/globe-regions.json').then(response => {
     if (!response.ok) throw new Error('globe regions unavailable');
     return response.json();

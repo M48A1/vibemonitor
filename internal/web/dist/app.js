@@ -7,6 +7,8 @@ let wsHasData = false;
 let lastWSDataAt = 0;
 let pollTimer = null;
 let lastNodeMarkup = '';
+let lastNodeCards = [];
+let lastPublicSettings = '';
 
 // Helpers: formatting
 function formatBytes(bytes) {
@@ -310,6 +312,44 @@ function renderPingPanels(node) {
   }).join('')}</div>`).join('')+'</div>';
 }
 
+// Preserve live card elements so each report does not repaint the entire grid.
+function reconcileNode(current, next) {
+  if (current.nodeType !== next.nodeType || current.nodeName !== next.nodeName) {
+    current.replaceWith(next);
+    return;
+  }
+  if (current.nodeType === 3) {
+    if (current.nodeValue !== next.nodeValue) current.nodeValue = next.nodeValue;
+    return;
+  }
+  if (current.nodeType !== 1) return;
+  for (const attribute of Array.from(current.attributes)) {
+    if (!next.hasAttribute(attribute.name)) current.removeAttribute(attribute.name);
+  }
+  for (const attribute of Array.from(next.attributes)) {
+    if (current.getAttribute(attribute.name) !== attribute.value) current.setAttribute(attribute.name, attribute.value);
+  }
+  let oldChild = current.firstChild;
+  let newChild = next.firstChild;
+  while (oldChild || newChild) {
+    if (!oldChild) {
+      const following = newChild.nextSibling;
+      current.appendChild(newChild);
+      newChild = following;
+    } else if (!newChild) {
+      const following = oldChild.nextSibling;
+      oldChild.remove();
+      oldChild = following;
+    } else {
+      const oldFollowing = oldChild.nextSibling;
+      const newFollowing = newChild.nextSibling;
+      reconcileNode(oldChild, newChild);
+      oldChild = oldFollowing;
+      newChild = newFollowing;
+    }
+  }
+}
+
 // Render Nodes
 function renderNodes() {
   const grid = document.getElementById('nodeGrid');
@@ -326,14 +366,29 @@ function renderNodes() {
     if (markup !== lastNodeMarkup) {
       grid.innerHTML = markup;
       lastNodeMarkup = markup;
+      lastNodeCards = [];
     }
     return;
   }
 
-  const markup = sorted.map(VibeHex.renderNode).join('');
+  const cards = sorted.map(VibeHex.renderNode);
+  const markup = cards.join('');
   if (markup !== lastNodeMarkup) {
-    grid.innerHTML = markup;
+    const canReconcile = grid.children.length === sorted.length
+      && sorted.every((node, index) => grid.children[index].dataset.nodeId === node.uuid)
+      && lastNodeCards.length === cards.length;
+    if (canReconcile) {
+      const template = document.createElement('template');
+      for (let index = 0; index < cards.length; index++) {
+        if (cards[index] === lastNodeCards[index]) continue;
+        template.innerHTML = cards[index];
+        reconcileNode(grid.children[index], template.content.firstElementChild);
+      }
+    } else {
+      grid.innerHTML = markup;
+    }
     lastNodeMarkup = markup;
+    lastNodeCards = cards;
   }
 }
 
@@ -417,6 +472,9 @@ async function fetchPublicSettings() {
     const res = await fetch('/api/public');
     if (!res.ok) throw new Error('无法读取网站设置');
     const data = await res.json();
+    const settings = JSON.stringify([data.site_title || '', data.site_icon || '']);
+    if (settings === lastPublicSettings) return;
+    lastPublicSettings = settings;
     if (data.site_title) {
       document.getElementById('siteTitle').textContent = data.site_title;
       document.title = data.site_title;

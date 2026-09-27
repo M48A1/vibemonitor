@@ -9,7 +9,7 @@ function dashboard() {
   function element(id) {
     if (!elements.has(id)) {
       const classes = new Set();
-      elements.set(id, { id, value: '', innerHTML: '', textContent: '', style: {}, dataset: {}, events: {},
+      elements.set(id, { id, value: '', innerHTML: '', textContent: '', style: {}, dataset: {}, events: {}, children: [],
         classList: { add: c => classes.add(c), remove: c => classes.delete(c), contains: c => classes.has(c) },
         addEventListener(name, callback) { this.events[name] = callback; },
         appendChild() {}, querySelector() { return null; }, focus() {},
@@ -70,4 +70,30 @@ test('Hex shows all nodes regardless of status or legacy groups', () => {
   assert.match(cards, /London/);
   assert.match(cards, /Tokyo/);
   assert.match(d.element('statsBanner').innerHTML, /1 个在线 · 1 个离线/);
+});
+
+test('live card updates preserve existing elements while changing displayed values', () => {
+  const d = dashboard();
+  const textNode = value => ({ nodeType: 3, nodeName: '#text', nodeValue: value, nextSibling: null });
+  const element = (className, child) => {
+    const attrs = new Map([['class', className]]);
+    return {
+      nodeType: 1, nodeName: 'STRONG', firstChild: child, nextSibling: null,
+      get attributes() { return Array.from(attrs, ([name, value]) => ({ name, value })); },
+      hasAttribute(name) { return attrs.has(name); },
+      getAttribute(name) { return attrs.get(name) ?? null; },
+      setAttribute(name, value) { attrs.set(name, value); },
+      removeAttribute(name) { attrs.delete(name); },
+      replaceWith() { throw new Error('existing card element was replaced'); },
+    };
+  };
+  const currentText = textNode('10%');
+  const current = element('normal', currentText);
+  const updated = element('high', textNode('85%'));
+  d.ctx.currentCard = current;
+  d.ctx.updatedCard = updated;
+  d.run('reconcileNode(currentCard, updatedCard)');
+  assert.strictEqual(current.firstChild, currentText);
+  assert.equal(currentText.nodeValue, '85%');
+  assert.equal(current.getAttribute('class'), 'high');
 });

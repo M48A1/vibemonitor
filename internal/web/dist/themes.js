@@ -2,6 +2,7 @@
 window.VibeHex = (() => {
   const number = value => Number.isFinite(Number(value)) && value != null ? Number(value) : null;
   const percent = (used, total) => number(total) > 0 && number(used) != null ? Math.max(0, Math.min(100, Number(used) / Number(total) * 100)) : null;
+  let overviewFields = null;
 
   function metric(label, value, detail) {
     const pct = value == null ? null : Math.max(0, Math.min(100, value));
@@ -20,7 +21,7 @@ window.VibeHex = (() => {
     const used = number(node.cycle_total_used);
     const limit = number(node.traffic_limit);
     const traffic = limit > 0 ? percent(used, limit) : null;
-    return `<article class="node-card hex-card ${node.online ? '' : 'offline'}">
+    return `<article class="node-card hex-card ${node.online ? '' : 'offline'}" data-node-id="${escapeHtml(node.uuid)}">
       <div class="hex-node-header"><div class="hex-node-identity"><span class="hex-region">${getRegionBadge(node.region)}</span><h2>${escapeHtml(node.name)}</h2><span class="hex-system">${escapeHtml(info.os || '等待上报')} ${info.arch ? '· ' + escapeHtml(info.arch) : ''}</span></div><span class="hex-status ${node.online ? 'is-online' : ''}"><i></i>${node.online ? '在线' : '离线'}</span></div>
       <div class="hex-resources">
         ${metric('CPU', live ? number(cpu.usage) : null, `${info.cpu_cores || cpu.cores || '—'} 核`)}
@@ -42,11 +43,30 @@ window.VibeHex = (() => {
     const total = field => live.reduce((sum, n) => sum + (number((n.last_report.network || {})[field]) || 0), 0);
     const busy = live.filter(n => number((n.last_report.cpu || {}).usage) >= 85).length;
     const traffic = nodes.reduce((sum, n) => sum + (number(n.cycle_total_used) || 0), 0);
-    document.getElementById('statsBanner').innerHTML = `
-      <div class="hex-stat"><span>节点状态</span><strong>${online}<em> / ${nodes.length}</em></strong><small><i class="hex-live-dot"></i>${online} 个在线 · ${nodes.length - online} 个离线</small></div>
-      <div class="hex-stat"><span>周期已用流量</span><strong>${formatBytes(traffic)}</strong><small>各节点当前计费周期合计</small></div>
-      <div class="hex-stat"><span>实时网速</span><strong>${formatSpeed(total('up') + total('down'))}</strong><small class="hex-stat-network"><span>↑ ${formatSpeed(total('up'))}</span><span>↓ ${formatSpeed(total('down'))}</span></small></div>
-      <div class="hex-stat"><span>高负载节点</span><strong>${busy}<em> 台</em></strong><small>当前在线节点 CPU ≥ 85%</small></div>`;
+    const up = total('up');
+    const down = total('down');
+    const values = {
+      online: String(online), count: String(nodes.length),
+      status: `${online} 个在线 · ${nodes.length - online} 个离线`,
+      traffic: formatBytes(traffic), speed: formatSpeed(up + down),
+      up: `↑ ${formatSpeed(up)}`, down: `↓ ${formatSpeed(down)}`,
+      busy: String(busy),
+    };
+    const banner = document.getElementById('statsBanner');
+    if (!overviewFields) {
+      banner.innerHTML = `
+        <div class="hex-stat"><span>节点状态</span><strong><span data-stat="online">${values.online}</span><em> / <span data-stat="count">${values.count}</span></em></strong><small><i class="hex-live-dot"></i><span data-stat="status">${values.status}</span></small></div>
+        <div class="hex-stat"><span>周期已用流量</span><strong data-stat="traffic">${values.traffic}</strong><small>各节点当前计费周期合计</small></div>
+        <div class="hex-stat"><span>实时网速</span><strong data-stat="speed">${values.speed}</strong><small class="hex-stat-network"><span data-stat="up">${values.up}</span><span data-stat="down">${values.down}</span></small></div>
+        <div class="hex-stat"><span>高负载节点</span><strong><span data-stat="busy">${values.busy}</span><em> 台</em></strong><small>当前在线节点 CPU ≥ 85%</small></div>`;
+      if (banner.querySelectorAll) {
+        overviewFields = Object.fromEntries(Array.from(banner.querySelectorAll('[data-stat]')).map(element => [element.dataset.stat, element]));
+      }
+    } else {
+      for (const [name, value] of Object.entries(values)) {
+        if (overviewFields[name].textContent !== value) overviewFields[name].textContent = value;
+      }
+    }
     if (window.VibeGlobe) window.VibeGlobe.setNodes(nodes);
   }
   return Object.freeze({ renderNode, renderOverview });
