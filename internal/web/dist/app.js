@@ -256,6 +256,11 @@ function updateGlobalStats() {
 }
 
 function readNodeProfile(prefix) {
+  const thresholdText = document.getElementById(prefix+'NodeCPUThreshold').value.trim();
+  const cpuThreshold = thresholdText === '' ? null : Number(thresholdText);
+  if (cpuThreshold !== null && (!Number.isFinite(cpuThreshold) || cpuThreshold < 0 || cpuThreshold > 100)) {
+    throw new Error('CPU 负载阈值必须在 0 到 100 之间');
+  }
   const targets = document.getElementById(prefix + 'NodeTargets').value.split('\n').filter(l => l.trim()).map(line => {
     const comma = line.indexOf(',');
     const name = (comma < 0 ? line : line.slice(0, comma)).trim();
@@ -272,7 +277,8 @@ function readNodeProfile(prefix) {
   return {targets, due_date: document.getElementById(prefix+'NodeDue').value,
     payment_cycle: document.getElementById(prefix+'NodeCycle').value,
     price: Number(document.getElementById(prefix+'NodePrice').value || 0),
-    currency: document.getElementById(prefix+'NodeCurrency').value};
+    currency: document.getElementById(prefix+'NodeCurrency').value,
+    cpu_threshold: cpuThreshold};
 }
 function fillNodeProfile(prefix, profile) {
   const p = profile || {};
@@ -281,6 +287,7 @@ function fillNodeProfile(prefix, profile) {
   document.getElementById(prefix+'NodeCycle').value = p.payment_cycle || '';
   document.getElementById(prefix+'NodePrice').value = p.price || '';
   document.getElementById(prefix+'NodeCurrency').value = p.currency || 'CNY';
+  document.getElementById(prefix+'NodeCPUThreshold').value = p.cpu_threshold == null ? '' : p.cpu_threshold;
 }
 function billingDisplay(profile) {
   const p = profile || {};

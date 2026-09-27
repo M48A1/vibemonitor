@@ -72,6 +72,33 @@ test('Hex shows all nodes regardless of status or legacy groups', () => {
   assert.match(d.element('statsBanner').innerHTML, /1 个在线 · 1 个离线/);
 });
 
+test('high load count uses each online node threshold and ignores unset thresholds', () => {
+  const d = dashboard();
+  const fixture = [
+    { online: true, profile: { cpu_threshold: 80 }, last_report: { cpu: { usage: 85 } } },
+    { online: true, profile: { cpu_threshold: 90 }, last_report: { cpu: { usage: 85 } } },
+    { online: true, profile: { cpu_threshold: null }, last_report: { cpu: { usage: 99 } } },
+    { online: true, profile: { cpu_threshold: 0 }, last_report: { cpu: { usage: 0 } } },
+    { online: false, profile: { cpu_threshold: 20 }, last_report: { cpu: { usage: 99 } } },
+  ];
+  d.ctx.fixture = fixture;
+  d.run('VibeHex.renderOverview(fixture)');
+  assert.match(d.element('statsBanner').innerHTML, /data-stat="busy">2</);
+  assert.doesNotMatch(d.element('statsBanner').innerHTML, /85%/);
+});
+
+test('node profile form keeps blank and zero CPU thresholds distinct', () => {
+  const d = dashboard();
+  for (const id of ['newNodeTargets', 'newNodeDue', 'newNodeCycle', 'newNodePrice', 'newNodeCurrency', 'newNodeCPUThreshold']) d.element(id);
+  d.run('fillNodeProfile("new", {cpu_threshold: 0})');
+  assert.equal(d.element('newNodeCPUThreshold').value, 0);
+  d.element('newNodeCPUThreshold').value = '0'; // DOM input.value coerces assigned numbers to strings.
+  assert.equal(d.run('readNodeProfile("new").cpu_threshold'), 0);
+  d.run('fillNodeProfile("new", {cpu_threshold: null})');
+  assert.equal(d.element('newNodeCPUThreshold').value, '');
+  assert.equal(d.run('readNodeProfile("new").cpu_threshold'), null);
+});
+
 test('live card updates preserve existing elements while changing displayed values', () => {
   const d = dashboard();
   const textNode = value => ({ nodeType: 3, nodeName: '#text', nodeValue: value, nextSibling: null });

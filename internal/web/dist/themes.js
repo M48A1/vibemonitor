@@ -41,7 +41,11 @@ window.VibeHex = (() => {
     const live = nodes.filter(n => n.online && n.last_report);
     const online = nodes.filter(n => n.online).length;
     const total = field => live.reduce((sum, n) => sum + (number((n.last_report.network || {})[field]) || 0), 0);
-    const busy = live.filter(n => number((n.last_report.cpu || {}).usage) >= 85).length;
+    const busy = live.filter(n => {
+      const threshold = number((n.profile || {}).cpu_threshold);
+      const usage = number((n.last_report.cpu || {}).usage);
+      return threshold != null && usage != null && usage >= threshold;
+    }).length;
     const traffic = nodes.reduce((sum, n) => sum + (number(n.cycle_total_used) || 0), 0);
     const up = total('up');
     const down = total('down');
@@ -58,7 +62,7 @@ window.VibeHex = (() => {
         <div class="hex-stat"><span>节点状态</span><strong><span data-stat="online">${values.online}</span><em> / <span data-stat="count">${values.count}</span></em></strong><small><i class="hex-live-dot"></i><span data-stat="status">${values.status}</span></small></div>
         <div class="hex-stat"><span>周期已用流量</span><strong data-stat="traffic">${values.traffic}</strong><small>各节点当前计费周期合计</small></div>
         <div class="hex-stat"><span>实时网速</span><strong data-stat="speed">${values.speed}</strong><small class="hex-stat-network"><span data-stat="up">${values.up}</span><span data-stat="down">${values.down}</span></small></div>
-        <div class="hex-stat"><span>高负载节点</span><strong><span data-stat="busy">${values.busy}</span><em> 台</em></strong><small>当前在线节点 CPU ≥ 85%</small></div>`;
+        <div class="hex-stat"><span>高负载节点</span><strong><span data-stat="busy">${values.busy}</span><em> 台</em></strong><small>负载阈值请在节点信息内修改</small></div>`;
       if (banner.querySelectorAll) {
         overviewFields = Object.fromEntries(Array.from(banner.querySelectorAll('[data-stat]')).map(element => [element.dataset.stat, element]));
       }

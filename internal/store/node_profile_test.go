@@ -1,11 +1,49 @@
 package store
 
 import (
+	"math"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"vibemonitor/pkg/protocol"
 )
+
+func TestNodeCPUThresholdPersistsAndValidates(t *testing.T) {
+	for _, value := range []float64{-1, 101, math.NaN(), math.Inf(1)} {
+		if err := validateProfile(&NodeProfile{CPUThreshold: &value}); err == nil {
+			t.Fatalf("accepted invalid CPU threshold %v", value)
+		}
+	}
+	path := filepath.Join(t.TempDir(), "data.db")
+	s, err := New(path, "pass")
+	if err != nil {
+		t.Fatal(err)
+	}
+	threshold := 85.5
+	node, err := s.CreateNodeWithOptions(NodeOptions{Name: "threshold", Profile: &NodeProfile{CPUThreshold: &threshold}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = New(path, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	got := s.GetNodes()[0].Profile
+	if got == nil || got.CPUThreshold == nil || *got.CPUThreshold != threshold {
+		t.Fatalf("CPU threshold lost after restart: %+v", got)
+	}
+	if err := s.UpdateNodeWithOptions(node.UUID, NodeOptions{Profile: &NodeProfile{}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.GetNodes()[0].Profile; got == nil || got.CPUThreshold != nil {
+		t.Fatalf("CPU threshold not cleared: %+v", got)
+	}
+}
 
 func TestPingPreviewKeepsLatestSamplesAndFullDayLoss(t *testing.T) {
 	now := time.Now().Unix()

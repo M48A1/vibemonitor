@@ -15,6 +15,7 @@ type NodeProfile struct {
 	PaymentCycle string                `json:"payment_cycle"`
 	Price        float64               `json:"price"`
 	Currency     string                `json:"currency"`
+	CPUThreshold *float64              `json:"cpu_threshold"`
 }
 type PingPreview struct {
 	Name    string       `json:"name"`
@@ -48,6 +49,9 @@ func validateProfile(p *NodeProfile) error {
 	}
 	if math.IsNaN(p.Price) || math.IsInf(p.Price, 0) || p.Price < 0 || p.Price > 1e9 {
 		return errors.New("invalid price")
+	}
+	if p.CPUThreshold != nil && (math.IsNaN(*p.CPUThreshold) || math.IsInf(*p.CPUThreshold, 0) || *p.CPUThreshold < 0 || *p.CPUThreshold > 100) {
+		return errors.New("invalid CPU threshold")
 	}
 	switch p.Currency {
 	case "", "CNY", "USD", "EUR", "HKD", "JPY", "GBP":
