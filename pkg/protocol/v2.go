@@ -50,8 +50,6 @@ type BasicInfo struct {
 	Arch                  string  `json:"arch"`
 	OS                    string  `json:"os"`
 	KernelVersion         string  `json:"kernel_version"`
-	IPv4                  string  `json:"ipv4"`
-	IPv6                  string  `json:"ipv6"`
 	MemTotal              int64   `json:"mem_total"`
 	SwapTotal             int64   `json:"swap_total"`
 	DiskTotal             int64   `json:"disk_total"`

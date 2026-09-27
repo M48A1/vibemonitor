@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -9,30 +10,37 @@ import (
 	"testing"
 )
 
-func TestGetClientIPOnlyUsesValidForwardedIPFromLoopback(t *testing.T) {
-	tests := []struct {
-		name, remote, xff, realIP, want string
-	}{
-		{"trusted proxy", "127.0.0.1:1234", "198.51.100.7, 203.0.113.9", "", "198.51.100.7"},
-		{"invalid XFF falls back", "127.0.0.1:1234", "fake-client", "203.0.113.9", "203.0.113.9"},
-		{"invalid headers use peer", "127.0.0.1:1234", "fake-client", "also-fake", "127.0.0.1"},
-		{"untrusted peer", "192.0.2.10:1234", "198.51.100.7", "203.0.113.9", "192.0.2.10"},
-		{"IPv6 proxy", "[::1]:1234", "2001:db8::12", "", "2001:db8::12"},
+func TestAgentRPCDoesNotRecordConnectionOrReportedIP(t *testing.T) {
+	s, err := New(Options{DataFile: filepath.Join(t.TempDir(), "data.db"), AdminPassword: "test-password"})
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := httptest.NewRequest(http.MethodPost, "/api/clients/v2/rpc", nil)
-			r.RemoteAddr = tt.remote
-			r.Header.Set("X-Forwarded-For", tt.xff)
-			r.Header.Set("X-Real-IP", tt.realIP)
-			if got := getClientIP(r); got != tt.want {
-				t.Fatalf("client IP = %q, want %q", got, tt.want)
-			}
-		})
+	defer s.Close()
+	node, err := s.store.CreateNode("test", "", "JP")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest(http.MethodPost, "/api/clients/v2/rpc", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"agent.basicInfo","params":{"info":{"os":"Linux","ipv4":"203.0.113.9","ipv6":"2001:db8::9"}}}`))
+	r.RemoteAddr = "198.51.100.7:1234"
+	r.Header.Set("X-Forwarded-For", "192.0.2.8")
+	r.Header.Set("Authorization", "Bearer "+node.Token)
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("agent report failed: %d %s", w.Code, w.Body.String())
+	}
+	stored, err := json.Marshal(s.store.GetNode(node.UUID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{"client_ip", "ipv4", "ipv6", "198.51.100.7", "192.0.2.8", "203.0.113.9", "2001:db8::9"} {
+		if strings.Contains(string(stored), value) {
+			t.Fatalf("stored node still contains IP data %q", value)
+		}
 	}
 }
 
-func TestVisitorIPEndpointUsesTrustedProxyAddress(t *testing.T) {
+func TestVisitorIPEndpointRemoved(t *testing.T) {
 	s, err := New(Options{DataFile: filepath.Join(t.TempDir(), "data.db"), AdminPassword: "test-password"})
 	if err != nil {
 		t.Fatal(err)
@@ -40,15 +48,10 @@ func TestVisitorIPEndpointUsesTrustedProxyAddress(t *testing.T) {
 	defer s.Close()
 
 	r := httptest.NewRequest(http.MethodGet, "/api/visitor-ip", nil)
-	r.RemoteAddr = "127.0.0.1:1234"
-	r.Header.Set("X-Forwarded-For", "198.51.100.7")
 	w := httptest.NewRecorder()
 	s.Handler().ServeHTTP(w, r)
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"ip":"198.51.100.7"`) {
-		t.Fatalf("visitor IP response: status %d, body %q", w.Code, w.Body.String())
-	}
-	if got := w.Header().Get("Cache-Control"); got != "no-store" {
-		t.Fatalf("visitor IP cache control = %q", got)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("visitor IP endpoint status = %d, want 404", w.Code)
 	}
 }
 

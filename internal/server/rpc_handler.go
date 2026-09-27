@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"strings"
 
@@ -28,26 +27,6 @@ func extractToken(r *http.Request) string {
 		return strings.TrimSpace(x)
 	}
 	return ""
-}
-
-func getClientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
-	}
-	if net.ParseIP(host).IsLoopback() {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			if ip := net.ParseIP(strings.TrimSpace(strings.Split(xff, ",")[0])); ip != nil {
-				return ip.String()
-			}
-		}
-		if xrip := r.Header.Get("X-Real-IP"); xrip != "" {
-			if ip := net.ParseIP(strings.TrimSpace(xrip)); ip != nil {
-				return ip.String()
-			}
-		}
-	}
-	return host
 }
 
 func (h *RPCHandler) HandleV2RPC(w http.ResponseWriter, r *http.Request) {
@@ -79,8 +58,6 @@ func (h *RPCHandler) HandleV2RPC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	clientIP := getClientIP(r)
-
 	switch req.Method {
 	case protocol.MethodAgentBasicInfo:
 		var params protocol.BasicInfoParams
@@ -88,13 +65,13 @@ func (h *RPCHandler) HandleV2RPC(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, protocol.ErrorResponse(req.ID, -32602, "invalid basic info params", err.Error()))
 			return
 		}
-		node, err := h.store.IngestBasicInfo(token, params.Info, clientIP)
+		node, err := h.store.IngestBasicInfo(token, params.Info)
 		if err != nil {
 			writeJSON(w, http.StatusUnauthorized, protocol.ErrorResponse(req.ID, -32000, err.Error(), nil))
 			return
 		}
 		targets := h.store.NodeTargets(node.UUID)
-		log.Printf("[RPC] BasicInfo reported from node %s (%s)", node.Name, clientIP)
+		log.Printf("[RPC] BasicInfo reported from node %s", node.Name)
 		writeJSON(w, http.StatusOK, protocol.SuccessResponse(req.ID, map[string]any{
 			"status":       "success",
 			"ping_targets": targets,
@@ -106,7 +83,7 @@ func (h *RPCHandler) HandleV2RPC(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, protocol.ErrorResponse(req.ID, -32602, "invalid report params", err.Error()))
 			return
 		}
-		node, err := h.store.IngestReport(token, params.Report, clientIP)
+		node, err := h.store.IngestReport(token, params.Report)
 		if err != nil {
 			writeJSON(w, http.StatusUnauthorized, protocol.ErrorResponse(req.ID, -32000, err.Error(), nil))
 			return

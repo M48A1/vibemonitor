@@ -61,10 +61,10 @@ The globe-land.svg image is generated from Natural Earth 1:110m land polygons
 (public domain):
 https://github.com/nvkelso/natural-earth-vector/blob/master/geojson/ne_110m_land.geojson
 
-Visitor information bar
-=======================
+Floating attribution bar
+========================
 
-The visitor IP lookup order and compact bar are adapted from Theme-Glassmorphism:
+The compact floating bar is adapted from Theme-Glassmorphism:
 https://github.com/Gongsc/Theme-Glassmorphism/blob/main/src/components/VisitorInfo.vue
 
 MIT License

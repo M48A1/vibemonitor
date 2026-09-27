@@ -1,8 +1,8 @@
 /* VibeMonitor layout and controls; the active appearance is set in themes.css. */
 
-.footer-project-link { color: var(--primary); text-decoration: none; }
-.footer-project-link:hover,
-.footer-project-link:focus-visible { text-decoration: underline; }
+.powered-by-link { color: var(--primary); text-decoration: none; }
+.powered-by-link:hover,
+.powered-by-link:focus-visible { text-decoration: underline; }
 
 /* Site actions are anchored to the logo, including on small screens. */
 .site-menu { position: relative; flex-shrink: 0; }

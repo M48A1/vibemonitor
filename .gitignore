@@ -28,3 +28,4 @@ integration_test.go
 !internal/server/auth_regression_test.go
 !internal/server/security_fixes_test.go
 !internal/agent/ping_cancel_test.go
+!internal/store/ip_retirement_test.go

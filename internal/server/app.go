@@ -127,10 +127,7 @@ func (s *Server) Handler() http.Handler {
 		})
 	})
 
-	mux.HandleFunc("GET /api/visitor-ip", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-store")
-		writeJSON(w, http.StatusOK, map[string]string{"ip": getClientIP(r)})
-	})
+	mux.HandleFunc("GET /api/visitor-ip", http.NotFound)
 
 	mux.HandleFunc("GET /api/site-icon", func(w http.ResponseWriter, r *http.Request) {
 		data, contentType, err := s.store.SiteIconData()

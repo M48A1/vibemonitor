@@ -78,7 +78,6 @@ type Node struct {
 	CreatedAt   time.Time           `json:"created_at"`
 	LastSeen    time.Time           `json:"last_seen"`
 	Online      bool                `json:"online"`
-	ClientIP    string              `json:"client_ip,omitempty"`
 	BasicInfo   *protocol.BasicInfo `json:"basic_info,omitempty"`
 	LastReport  *protocol.Report    `json:"last_report,omitempty"`
 	History     []HistoryPoint      `json:"history,omitempty"`
@@ -560,13 +559,6 @@ func (s *Store) GetNodes() []*Node {
 	for _, n := range s.nodes {
 		nodeCopy := *n
 		nodeCopy.Token = "" // Credentials are only available through authenticated management.
-		nodeCopy.ClientIP = ""
-		if n.BasicInfo != nil {
-			basicInfo := *n.BasicInfo
-			basicInfo.IPv4 = ""
-			basicInfo.IPv6 = ""
-			nodeCopy.BasicInfo = &basicInfo
-		}
 		if n.Profile != nil {
 			profile := *n.Profile
 			profile.Targets = append([]protocol.PingTarget(nil), profile.Targets...)
@@ -794,7 +786,7 @@ func (s *Store) DeleteNode(uuid string) error {
 	return nil
 }
 
-func (s *Store) IngestBasicInfo(token string, info protocol.BasicInfo, clientIP string) (*Node, error) {
+func (s *Store) IngestBasicInfo(token string, info protocol.BasicInfo) (*Node, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -806,9 +798,6 @@ func (s *Store) IngestBasicInfo(token string, info protocol.BasicInfo, clientIP 
 	node := s.nodes[uuid]
 	node.BasicInfo = &info
 	s.dirty = true
-	if clientIP != "" {
-		node.ClientIP = clientIP
-	}
 	node.LastSeen = time.Now().UTC()
 	node.Online = true
 
@@ -817,11 +806,11 @@ func (s *Store) IngestBasicInfo(token string, info protocol.BasicInfo, clientIP 
 	return &copy, nil
 }
 
-func (s *Store) IngestReport(token string, report protocol.Report, clientIP string) (*Node, error) {
-	return s.ingestReportAt(token, report, clientIP, time.Now())
+func (s *Store) IngestReport(token string, report protocol.Report) (*Node, error) {
+	return s.ingestReportAt(token, report, time.Now())
 }
 
-func (s *Store) ingestReportAt(token string, report protocol.Report, clientIP string, now time.Time) (*Node, error) {
+func (s *Store) ingestReportAt(token string, report protocol.Report, now time.Time) (*Node, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -869,9 +858,6 @@ func (s *Store) ingestReportAt(token string, report protocol.Report, clientIP st
 	s.dirty = true
 	node.LastSeen = receivedAt
 	node.Online = true
-	if clientIP != "" && node.ClientIP == "" {
-		node.ClientIP = clientIP
-	}
 
 	// Traffic delta accounting for billing cycle
 	if node.ResetDay > 0 {

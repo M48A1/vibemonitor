@@ -45,7 +45,7 @@ func TestIngestReportUsesOneReceiveTime(t *testing.T) {
 	}
 	receivedAt := time.Now().Add(-2 * time.Minute).Truncate(time.Second)
 	report := protocol.Report{PingResults: []protocol.PingResult{{Name: "target", Host: "192.0.2.1:80", Method: "tcp", Latency: 12}}}
-	if _, err := s.ingestReportAt(n.Token, report, "", receivedAt); err != nil {
+	if _, err := s.ingestReportAt(n.Token, report, receivedAt); err != nil {
 		t.Fatal(err)
 	}
 	got := s.GetNode(n.UUID)
@@ -69,7 +69,7 @@ func TestManualCycleUsageReplacesTotalAndContinuesAfterCorrection(t *testing.T) 
 		t.Fatal(err)
 	}
 	for _, total := range []int64{100, 200} {
-		if _, err := s.IngestReport(n.Token, protocol.Report{Network: protocol.NetworkReport{TotalUp: total}}, ""); err != nil {
+		if _, err := s.IngestReport(n.Token, protocol.Report{Network: protocol.NetworkReport{TotalUp: total}}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -103,7 +103,7 @@ func TestManualCycleUsageReplacesTotalAndContinuesAfterCorrection(t *testing.T) 
 	s.nodes[n.UUID].LastSeen = previousAt
 	s.nodes[n.UUID].TrafficManualAt = &manualAt
 	s.mu.Unlock()
-	if _, err := s.IngestReport(n.Token, protocol.Report{Network: protocol.NetworkReport{TotalUp: 300}, UpdatedAt: currentAt}, ""); err != nil {
+	if _, err := s.IngestReport(n.Token, protocol.Report{Network: protocol.NetworkReport{TotalUp: 300}, UpdatedAt: currentAt}); err != nil {
 		t.Fatal(err)
 	}
 	if got := s.GetNode(n.UUID); got.CycleTotalUsed != targetBytes+50 || got.TrafficManualAt != nil {
@@ -152,7 +152,7 @@ func TestTrafficUsesSampleTimestampForRollover(t *testing.T) {
 	s.mu.Unlock()
 	send := func(sampleAt, receivedAt time.Time, total int64) {
 		t.Helper()
-		if _, err := s.ingestReportAt(n.Token, protocol.Report{Network: protocol.NetworkReport{TotalUp: total}, UpdatedAt: sampleAt.UTC()}, "", receivedAt); err != nil {
+		if _, err := s.ingestReportAt(n.Token, protocol.Report{Network: protocol.NetworkReport{TotalUp: total}, UpdatedAt: sampleAt.UTC()}, receivedAt); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -192,7 +192,7 @@ func TestTrafficDefaultsToMonthlyCycle(t *testing.T) {
 		t.Fatalf("blank reset day became %d, want 1", n.ResetDay)
 	}
 	for _, total := range []int64{100, 150} {
-		if _, err := s.IngestReport(n.Token, protocol.Report{Network: protocol.NetworkReport{TotalUp: total, TotalDown: total}}, ""); err != nil {
+		if _, err := s.IngestReport(n.Token, protocol.Report{Network: protocol.NetworkReport{TotalUp: total, TotalDown: total}}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -227,7 +227,7 @@ func TestTrafficMigrationStartsAtLastCounter(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if _, err := s.IngestReport(n.Token, protocol.Report{Network: protocol.NetworkReport{TotalUp: 110, TotalDown: 220}}, ""); err != nil {
+	if _, err := s.IngestReport(n.Token, protocol.Report{Network: protocol.NetworkReport{TotalUp: 110, TotalDown: 220}}); err != nil {
 		t.Fatal(err)
 	}
 	got := s.GetNode(n.UUID)
@@ -261,7 +261,7 @@ func TestTrafficAccountsPerInterfaceAfterReset(t *testing.T) {
 				"eth1": {Up: sample.second},
 			},
 		}}
-		if _, err := s.IngestReport(n.Token, report, ""); err != nil {
+		if _, err := s.IngestReport(n.Token, report); err != nil {
 			t.Fatal(err)
 		}
 		if got := s.GetNode(n.UUID).CurrentCycleUsed; got != sample.want {
@@ -286,7 +286,7 @@ func TestTrafficRebasesAfterBootChangeOrCounterReset(t *testing.T) {
 			BootID: boot, Source: "interfaces-v1:eth0", TotalUp: bytes,
 			Interfaces: map[string]protocol.InterfaceCounters{"eth0": {Up: bytes}},
 		}}
-		if _, err := s.IngestReport(n.Token, report, ""); err != nil {
+		if _, err := s.IngestReport(n.Token, report); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -328,7 +328,7 @@ func TestTrafficKeepsCommonInterfacesWhenSelectionChanges(t *testing.T) {
 			BootID: "one-boot", Source: "interfaces-v1:" + strings.Join(names, ","),
 			TotalUp: total, Interfaces: counters,
 		}}
-		if _, err := s.IngestReport(n.Token, report, ""); err != nil {
+		if _, err := s.IngestReport(n.Token, report); err != nil {
 			t.Fatal(err)
 		}
 		if got := s.GetNode(n.UUID).CurrentCycleUsed; got != want {
@@ -352,7 +352,7 @@ func TestTrafficUpgradeToInterfaceCountersSurvivesRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, total := range []int64{100, 150} {
-		if _, err := s.IngestReport(n.Token, protocol.Report{Network: protocol.NetworkReport{TotalUp: total}}, ""); err != nil {
+		if _, err := s.IngestReport(n.Token, protocol.Report{Network: protocol.NetworkReport{TotalUp: total}}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -364,7 +364,7 @@ func TestTrafficUpgradeToInterfaceCountersSurvivesRestart(t *testing.T) {
 			},
 		}}
 	}
-	if _, err := s.IngestReport(n.Token, report(160), ""); err != nil {
+	if _, err := s.IngestReport(n.Token, report(160)); err != nil {
 		t.Fatal(err)
 	}
 	if got := s.GetNode(n.UUID).CurrentCycleUsed; got != 50 {
@@ -378,7 +378,7 @@ func TestTrafficUpgradeToInterfaceCountersSurvivesRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if _, err := s.IngestReport(n.Token, report(170), ""); err != nil {
+	if _, err := s.IngestReport(n.Token, report(170)); err != nil {
 		t.Fatal(err)
 	}
 	if got := s.GetNode(n.UUID).CurrentCycleUsed; got != 60 {
@@ -420,7 +420,7 @@ func TestTrafficRolloverSplitsSampleInterval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.IngestReport(n.Token, protocol.Report{Network: protocol.NetworkReport{TotalUp: 100}}, ""); err != nil {
+	if _, err := s.IngestReport(n.Token, protocol.Report{Network: protocol.NetworkReport{TotalUp: 100}}); err != nil {
 		t.Fatal(err)
 	}
 	s.mu.Lock()
@@ -432,7 +432,7 @@ func TestTrafficRolloverSplitsSampleInterval(t *testing.T) {
 	stored.LastReport.UpdatedAt = previousAt
 	s.mu.Unlock()
 	currentAt := time.Now().UTC()
-	if _, err := s.IngestReport(n.Token, protocol.Report{Network: protocol.NetworkReport{TotalUp: 200}, UpdatedAt: currentAt}, ""); err != nil {
+	if _, err := s.IngestReport(n.Token, protocol.Report{Network: protocol.NetworkReport{TotalUp: 200}, UpdatedAt: currentAt}); err != nil {
 		t.Fatal(err)
 	}
 	got := s.GetNode(n.UUID)

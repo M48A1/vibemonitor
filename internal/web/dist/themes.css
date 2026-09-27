@@ -24,7 +24,7 @@
 }
 .container { position: relative; z-index: 1; max-width: 1480px; padding: 24px 36px 96px; }
 body { background: var(--background); }
-.visitor-ip-pill {
+.powered-by-pill {
   position: fixed;
   left: 50%;
   bottom: max(20px, env(safe-area-inset-bottom));
@@ -45,13 +45,6 @@ body { background: var(--background); }
   font-size: 12px;
   white-space: nowrap;
 }
-.visitor-ip-pill[hidden] { display: none; }
-.visitor-ip-pill strong { color: var(--foreground); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; }
-.visitor-ip-pill [hidden] { display: none; }
-.visitor-ip-separator { color: rgba(83, 98, 118, .45); }
-.visitor-ip-country { max-width: 115px; overflow: hidden; text-overflow: ellipsis; }
-.visitor-ip-network { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
-.visitor-ip-icon { font-size: 14px; }
 body::before {
   content: '';
   position: fixed;
@@ -175,9 +168,6 @@ body::before {
   .node-grid { grid-template-columns: minmax(0, 1fr); gap: 14px; }
   .hex-card { padding: 18px; }
   .ping-panels { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .visitor-ip-label,
-  .visitor-ip-network-separator,
-  .visitor-ip-network { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::after { transition: none !important; animation: none !important; }

@@ -73,6 +73,7 @@ window.VibeGlobe = (() => {
   function updateMarkers() {
     const byRegion = new Map();
     for (const node of nodes) {
+      // Route destinations use the configured node region, never the connection IP.
       const code = regionCode(node.region);
       const position = code && regionCoordinates[code];
       if (!position) continue;
