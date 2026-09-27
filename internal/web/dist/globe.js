@@ -23,7 +23,10 @@ window.VibeGlobe = (() => {
     for (let latitude = -90; latitude <= 90; latitude += 3) curve.push(cartesian(latitude, longitude));
     gridCurves.push(curve);
   }
-  let landPoints = [];
+  const landCanvas = document.createElement('canvas');
+  const landContext = landCanvas.getContext('2d');
+  let landSource = null;
+  let landGeometry = null;
   let regionCoordinates = {};
   let nodes = [];
   let routes = [];
@@ -141,10 +144,83 @@ window.VibeGlobe = (() => {
     context.stroke();
   }
 
+  function prepareLand(radius) {
+    if (!landSource || !landContext) return null;
+    const size = Math.ceil(radius * 2);
+    if (landGeometry && landGeometry.size === size && landGeometry.tilt === centerLatitude) return landGeometry;
+    landCanvas.width = size;
+    landCanvas.height = size;
+    const imageData = landContext.createImageData(size, size);
+    const capacity = size * size;
+    const offsets = new Uint32Array(capacity);
+    const uBase = new Float32Array(capacity);
+    const row0 = new Uint32Array(capacity);
+    const row1 = new Uint32Array(capacity);
+    const yFraction = new Float32Array(capacity);
+    const shades = new Float32Array(capacity);
+    const tilt = centerLatitude * radians;
+    const sinTilt = Math.sin(tilt);
+    const cosTilt = Math.cos(tilt);
+    const half = size / 2;
+    const textureHeight = landSource.height;
+    let count = 0;
+    for (let y = 0; y < size; y++) {
+      const vertical = (half - y - 0.5) / radius;
+      for (let x = 0; x < size; x++) {
+        const horizontal = (x + 0.5 - half) / radius;
+        const distance = horizontal * horizontal + vertical * vertical;
+        if (distance >= 1) continue;
+        const depth = Math.sqrt(1 - distance);
+        const latitude = Math.asin(vertical * cosTilt + depth * sinTilt);
+        const facing = depth * cosTilt - vertical * sinTilt;
+        const sourceY = Math.max(0, Math.min(textureHeight - 1, (0.5 - latitude / Math.PI) * textureHeight));
+        const top = Math.floor(sourceY);
+        offsets[count] = (y * size + x) * 4;
+        uBase[count] = (0.5 + Math.atan2(horizontal, facing) / (2 * Math.PI)) * landSource.width;
+        row0[count] = top * landSource.width;
+        row1[count] = Math.min(top + 1, textureHeight - 1) * landSource.width;
+        yFraction[count] = sourceY - top;
+        shades[count] = 0.75 + depth * 0.25;
+        count++;
+      }
+    }
+    landGeometry = { size, tilt: centerLatitude, count, offsets, uBase, row0, row1, yFraction, shades, imageData };
+    return landGeometry;
+  }
+
+  function drawLand(centerX, centerY, radius) {
+    const geometry = prepareLand(radius);
+    if (!geometry) return;
+    const { size, count, offsets, uBase, row0, row1, yFraction, shades, imageData } = geometry;
+    const pixels = imageData.data;
+    const source = landSource.alpha;
+    const textureWidth = landSource.width;
+    const shift = ((centerLongitude % 360) + 360) % 360 / 360 * textureWidth;
+    pixels.fill(0);
+    for (let index = 0; index < count; index++) {
+      const u = (uBase[index] + shift) % textureWidth;
+      const left = Math.floor(u);
+      const right = left + 1 === textureWidth ? 0 : left + 1;
+      const xFraction = u - left;
+      const upper = source[row0[index] + left] * (1 - xFraction) + source[row0[index] + right] * xFraction;
+      const lower = source[row1[index] + left] * (1 - xFraction) + source[row1[index] + right] * xFraction;
+      const alpha = upper * (1 - yFraction[index]) + lower * yFraction[index];
+      if (alpha < 1) continue;
+      const offset = offsets[index];
+      const shade = shades[index];
+      pixels[offset] = 255 * shade;
+      pixels[offset + 1] = 212 * shade;
+      pixels[offset + 2] = 91 * shade;
+      pixels[offset + 3] = alpha;
+    }
+    landContext.putImageData(imageData, 0, 0);
+    context.drawImage(landCanvas, centerX - size / 2, centerY - size / 2);
+  }
+
   function draw() {
     if (!measure()) return;
     context.clearRect(0, 0, width, height);
-    const radius = Math.min(width * 0.38, height * 0.47, 190);
+    const radius = Math.min(width * 0.43, height * 0.47, 216);
     const centerX = width * 0.52;
     const centerY = height * 0.5;
     const longitude = centerLongitude * radians;
@@ -176,22 +252,7 @@ window.VibeGlobe = (() => {
     context.lineWidth = 0.7;
     for (const curve of gridCurves) drawCurve(curve, centerX, centerY, radius, rotation);
 
-    const landBuckets = [[], [], [], []];
-    for (const coordinates of landPoints) {
-      const point = project(coordinates, centerX, centerY, radius, rotation);
-      if (point.depth <= 0) continue;
-      landBuckets[Math.min(3, Math.floor(point.depth * 4))].push(point);
-    }
-    const dotRadius = Math.max(1, radius / 70);
-    for (let bucket = 0; bucket < landBuckets.length; bucket++) {
-      context.fillStyle = `rgba(255, 207, 69, ${0.7 + bucket * 0.1})`;
-      context.beginPath();
-      for (const point of landBuckets[bucket]) {
-        context.moveTo(point.x + dotRadius, point.y);
-        context.arc(point.x, point.y, dotRadius, 0, Math.PI * 2);
-      }
-      context.fill();
-    }
+    drawLand(centerX, centerY, radius);
 
     context.beginPath();
     for (const route of routes) {
@@ -309,10 +370,22 @@ window.VibeGlobe = (() => {
   document.addEventListener('visibilitychange', syncAnimation);
   if (reducedMotion) reducedMotion.addEventListener('change', syncAnimation);
 
-  fetch('/globe-points.json').then(response => {
-    if (!response.ok) throw new Error('globe points unavailable');
-    return response.json();
-  }).then(points => { landPoints = points.map(([latitude, longitude]) => cartesian(latitude, longitude)); draw(); }).catch(() => {});
+  const landImage = new Image();
+  landImage.onload = () => {
+    const sourceCanvas = document.createElement('canvas');
+    sourceCanvas.width = landImage.naturalWidth;
+    sourceCanvas.height = landImage.naturalHeight;
+    const sourceContext = sourceCanvas.getContext('2d', { willReadFrequently: true });
+    if (!sourceContext) return;
+    sourceContext.drawImage(landImage, 0, 0);
+    const sourcePixels = sourceContext.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height).data;
+    const alpha = new Uint8Array(sourceCanvas.width * sourceCanvas.height);
+    for (let index = 0; index < alpha.length; index++) alpha[index] = sourcePixels[index * 4 + 3];
+    landSource = { width: sourceCanvas.width, height: sourceCanvas.height, alpha };
+    landGeometry = null;
+    draw();
+  };
+  landImage.src = '/globe-land.svg';
   fetch('/globe-regions.json').then(response => {
     if (!response.ok) throw new Error('globe regions unavailable');
     return response.json();

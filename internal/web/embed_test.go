@@ -9,11 +9,14 @@ import (
 
 func TestHexPagesAndAssetsUseCacheValidation(t *testing.T) {
 	h := Handler()
-	for _, path := range []string{"/", "/index.html", "/dashboard", "/themes.js", "/themes.css", "/globe.js", "/globe-points.json", "/globe-regions.json"} {
+	for _, path := range []string{"/", "/index.html", "/dashboard", "/themes.js", "/themes.css", "/globe.js", "/globe-land.svg", "/globe-regions.json"} {
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
 		if w.Code != http.StatusOK {
 			t.Fatalf("%s: status %d", path, w.Code)
+		}
+		if path == "/globe-land.svg" && !strings.HasPrefix(w.Header().Get("Content-Type"), "image/svg+xml") {
+			t.Fatalf("%s: wrong content type %q", path, w.Header().Get("Content-Type"))
 		}
 		body := w.Body.String()
 		if path == "/" || path == "/index.html" || path == "/dashboard" {

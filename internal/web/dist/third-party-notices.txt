@@ -57,8 +57,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-The land point cloud in globe-points.json is generated from Natural Earth
-1:110m land polygons (public domain):
+The globe-land.svg image is generated from Natural Earth 1:110m land polygons
+(public domain):
 https://github.com/nvkelso/natural-earth-vector/blob/master/geojson/ne_110m_land.geojson
 
 Visitor information bar
