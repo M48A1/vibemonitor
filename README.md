@@ -4,76 +4,46 @@
 
 ## 功能
 
-
-- 无插件
-- 无外部通知功能
-- Hex 主题提供节点状态、周期流量、实时网速和高负载总览
-- 无远程控制及文件管理
-- 账单周期基础功能及流量统计
-- 首个流量周期可以自定义已使用流量
-- 单用户管理员登录/点击站点图标进入管理菜单
-- 探针仅回传/安装命令在管理>编辑现有节点>显示安装命令
-- 添加节点/编辑节点/删除节点
-- 每个节点可单独设置 CPU 负载阈值，留空则不参与首页高负载统计
-- 测速节点目标手动维护在节点信息内
+- 节点状态、实时网速、高负载节点和内存紧张节点总览；内存使用率达到 85% 的在线节点计入内存紧张统计
+- 每个节点可单独设置 CPU 负载阈值；未设置阈值的节点不计入高负载统计
+- 账单周期与流量统计，首个周期可自定义已使用流量
+- 管理员登录后添加、编辑或删除节点，并维护测速目标
+- 探针安装命令在「管理 → 编辑现有节点 → 显示安装命令」中获取
+- 不提供远程控制、文件管理或外部通知功能
 
 ## 界面预览
 
 ![VibeMonitor 监控面板预览](docs/dashboard-preview.png)
 
+## 安装与更新
 
+支持 Linux x86-64 / ARM64，使用 systemd。运行安装脚本后，选择 **1. 安装主控**；以后更新主控选择 **2. 更新主控**，会保留账号、节点和历史数据。
 
-
-  
-## 安装
-- 粘贴复制选择菜单内容，更新主控菜单里选择10
-- 初次安装域名反代下面也有说明
 ```bash
 curl -4 -fsSL -o install.sh https://raw.githubusercontent.com/M48A1/vibemonitor/main/install.sh && bash install.sh
 ```
 
-## 域名反代（Nginx）
+安装主控时填写域名，脚本会配置 Nginx HTTP 反向代理、申请 HTTPS 证书并启用自动续期。留空域名时使用原有的直接端口访问方式。探针填写最终的主控访问地址。
 
-先将域名解析到主控服务器，并准备好 HTTPS 证书。以下示例假设 Nginx 与主控运行在同一台机器，主控端口为 `1314`。
+## 域名与 HTTPS
 
-安装主控后，执行 `sudo systemctl edit vibemonitor-server`，将主控改为只监听本机：
+配置域名前，请将域名的 **A 记录**解析到主控服务器，暂不设置 AAAA 记录，并确保公网 **80 和 443 端口**可访问。安装时可选填证书通知邮箱。配置完成后通过 `https://monitor.example.com` 访问；启用域名的主控仅监听本机地址。
 
-```ini
-[Service]
-ExecStart=
-ExecStart=/usr/local/bin/vibemonitor server --listen 127.0.0.1:1314 --data /etc/vibemonitor/vibemonitor-data.db
+已有主控选择菜单 **3. 设置 / 更换访问域名与 HTTPS**。菜单会显示当前域名并读取主控监听端口；更换域名会保留账号、节点和历史数据。切换成功后，请将各探针的主控地址改为新域名。
+
+也可以使用命令行：
+
+```bash
+# 给已有主控设置或更换域名；脚本通常会自动识别监听端口
+bash install.sh domain -d monitor.example.com
+# 需要指定端口或证书通知邮箱时，可加上 -p 1314 或 -e admin@example.com
+
+# 安装新主控时指定域名（还需填写管理员账号和密码）
+bash install.sh server -u admin -w 'your-password' -d monitor.example.com
 ```
 
-保存后运行 `sudo systemctl daemon-reload && sudo systemctl restart vibemonitor-server`。如果你修改过主控的程序路径、数据路径或启动参数，请按现有服务配置调整上面的 `ExecStart`。
+脚本通过 `apt-get`、`dnf` 或 `yum` 安装 Nginx 和 Certbot。申请证书时，域名的 HTTP 验证路径必须能从公网访问。若接管旧版手工反代配置，脚本会将原文件保存为 `.before-vibemonitor.bak`。
 
-将以下示例保存为 Nginx 站点配置（例如 `/etc/nginx/conf.d/vibemonitor.conf`），并替换域名和证书路径：
+更换域名后，旧证书仍保留在 Certbot 中。确认旧证书不再被使用后，选择菜单 **12. 删除旧域名证书**，再选择证书并输入名称确认。该列表可能包含同一服务器上其他站点的证书；当前域名证书不会列出，脚本还会检查 Nginx 和常见服务配置中的引用。删除前仍需自行确认其他程序没有使用该证书。
 
-```nginx
-server {
-    listen 80;
-    server_name monitor.example.com;
-    return 301 https://monitor.example.com$request_uri;
-}
-
-server {
-    listen 443 ssl;
-    server_name monitor.example.com;
-    ssl_certificate /etc/nginx/certs/monitor.example.com.fullchain.pem;
-    ssl_certificate_key /etc/nginx/certs/monitor.example.com.key;
-    client_max_body_size 3m;
-
-    location / {
-        proxy_pass http://127.0.0.1:1314;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-For $remote_addr;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_read_timeout 90s;
-    }
-}
-```
-
-保存 Nginx 配置后运行 `sudo nginx -t && sudo systemctl reload nginx`，再通过 `https://monitor.example.com` 访问主控，探针也填写这个 HTTPS 地址。反代应覆盖客户端传来的 `X-Forwarded-For` 和 `X-Real-IP`；动态探针安装链接含节点 Token，不要公开分享。
+动态探针安装链接包含节点 Token，请勿公开分享。

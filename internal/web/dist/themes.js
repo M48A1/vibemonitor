@@ -41,18 +41,24 @@ window.VibeHex = (() => {
     const live = nodes.filter(n => n.online && n.last_report);
     const online = nodes.filter(n => n.online).length;
     const total = field => live.reduce((sum, n) => sum + (number((n.last_report.network || {})[field]) || 0), 0);
+    const memoryUsages = live.map(n => {
+      const ram = n.last_report.ram || {};
+      return percent(ram.used, ram.total);
+    }).filter(usage => usage != null);
+    const memoryBusy = memoryUsages.filter(usage => usage >= 85).length;
     const busy = live.filter(n => {
       const threshold = number((n.profile || {}).cpu_threshold);
       const usage = number((n.last_report.cpu || {}).usage);
       return threshold != null && usage != null && usage >= threshold;
     }).length;
-    const traffic = nodes.reduce((sum, n) => sum + (number(n.cycle_total_used) || 0), 0);
     const up = total('up');
     const down = total('down');
     const values = {
       online: String(online), count: String(nodes.length),
       status: `${online} 个在线 · ${nodes.length - online} 个离线`,
-      traffic: formatBytes(traffic), speed: formatSpeed(up + down),
+      memoryBusy: String(memoryBusy),
+      memoryStatus: memoryUsages.length ? `内存使用率 ≥ 85% · 已监测 ${memoryUsages.length} 台` : '暂无内存数据',
+      speed: formatSpeed(up + down),
       up: `↑ ${formatSpeed(up)}`, down: `↓ ${formatSpeed(down)}`,
       busy: String(busy),
     };
@@ -60,7 +66,7 @@ window.VibeHex = (() => {
     if (!overviewFields) {
       banner.innerHTML = `
         <div class="hex-stat"><span>节点状态</span><strong><span data-stat="online">${values.online}</span><em> / <span data-stat="count">${values.count}</span></em></strong><small><i class="hex-live-dot"></i><span data-stat="status">${values.status}</span></small></div>
-        <div class="hex-stat"><span>周期已用流量</span><strong data-stat="traffic">${values.traffic}</strong><small>各节点当前计费周期合计</small></div>
+        <div class="hex-stat"><span>内存紧张节点</span><strong><span data-stat="memoryBusy">${values.memoryBusy}</span><em> 台</em></strong><small data-stat="memoryStatus">${values.memoryStatus}</small></div>
         <div class="hex-stat"><span>实时网速</span><strong data-stat="speed">${values.speed}</strong><small class="hex-stat-network"><span data-stat="up">${values.up}</span><span data-stat="down">${values.down}</span></small></div>
         <div class="hex-stat"><span>高负载节点</span><strong><span data-stat="busy">${values.busy}</span><em> 台</em></strong><small>负载阈值请在节点信息内修改</small></div>`;
       if (banner.querySelectorAll) {
