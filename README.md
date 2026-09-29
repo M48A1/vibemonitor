@@ -44,6 +44,8 @@ bash install.sh server -u admin -w 'your-password' -d monitor.example.com
 
 脚本通过 `apt-get`、`dnf` 或 `yum` 安装 Nginx 和 Certbot。申请证书时，域名的 HTTP 验证路径必须能从公网访问。若接管旧版手工反代配置，脚本会将原文件保存为 `.before-vibemonitor.bak`。
 
+如果脚本提示「HTTP 验证路径不可用」，请检查 `nginx -T` 是否加载了 `/etc/nginx/conf.d/vibemonitor.conf`、是否有同域名的旧站点，以及 `ss -lntp '( sport = :80 )'` 显示的 80 端口监听服务。域名的公网 80 端口也必须转发到这台服务器的 Nginx。脚本会在失败时恢复原有站点配置。
+
 更换域名后，旧证书仍保留在 Certbot 中。确认旧证书不再被使用后，选择菜单 **12. 删除旧域名证书**，再选择证书并输入名称确认。该列表可能包含同一服务器上其他站点的证书；当前域名证书不会列出，脚本还会检查 Nginx 和常见服务配置中的引用。删除前仍需自行确认其他程序没有使用该证书。
 
 动态探针安装链接包含节点 Token，请勿公开分享。

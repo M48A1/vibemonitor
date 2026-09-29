@@ -87,7 +87,9 @@ cleanup_update() {
     trap - EXIT
     if [ "$UPDATE_COMMITTED" != 1 ] && { [ "$BINARY_REPLACED" = 1 ] || [ "$UNIT_TOUCHED" = 1 ]; }; then
         warn "操作失败；正在恢复原有程序和服务配置。"
-        systemctl stop "$UPDATE_SERVICE" >/dev/null 2>&1 || rollback_failed=1
+        if [ "$WAS_ACTIVE" = 1 ]; then
+            systemctl stop "$UPDATE_SERVICE" >/dev/null 2>&1 || rollback_failed=1
+        fi
         if [ "$BINARY_REPLACED" = 1 ]; then
             if [ -f "$UPDATE_DIR/previous-binary" ]; then
                 # Keep the recovery copy until every rollback step has succeeded.
@@ -99,13 +101,15 @@ cleanup_update() {
                 rm -f "$INSTALL_BIN" || rollback_failed=1
             fi
         fi
-        if [ -f "$UPDATE_DIR/previous-unit" ]; then
-            cp -p "$UPDATE_DIR/previous-unit" "$UNIT_DIR/$UPDATE_SERVICE.service" || rollback_failed=1
-        else
-            rm -f "$UNIT_DIR/$UPDATE_SERVICE.service" || rollback_failed=1
+        if [ "$UNIT_TOUCHED" = 1 ]; then
+            if [ -f "$UPDATE_DIR/previous-unit" ]; then
+                cp -p "$UPDATE_DIR/previous-unit" "$UNIT_DIR/$UPDATE_SERVICE.service" || rollback_failed=1
+            else
+                rm -f "$UNIT_DIR/$UPDATE_SERVICE.service" || rollback_failed=1
+            fi
+            if [ "$WAS_ENABLED" = 0 ]; then systemctl disable "$UPDATE_SERVICE" >/dev/null 2>&1 || rollback_failed=1; fi
+            systemctl daemon-reload || rollback_failed=1
         fi
-        if [ "$WAS_ENABLED" = 0 ]; then systemctl disable "$UPDATE_SERVICE" >/dev/null 2>&1 || rollback_failed=1; fi
-        systemctl daemon-reload || rollback_failed=1
         if [ "$WAS_ACTIVE" = 1 ]; then systemctl restart "$UPDATE_SERVICE" || rollback_failed=1; fi
         result=1
     fi
@@ -516,7 +520,7 @@ EOF
 }
 
 configure_domain_proxy() {
-    local domain="$1" port="$2" email="${3:-}" probe result old_domain
+    local domain="$1" port="$2" email="${3:-}" probe probe_url result old_domain status
     local certbot_contact=(--register-unsafely-without-email)
     validate_domain "$domain"
     (( 10#$port != 80 && 10#$port != 443 )) || error "域名反代时，主控监听端口不能使用 80 或 443。"
@@ -557,9 +561,24 @@ configure_domain_proxy() {
     probe=$(mktemp "$ACME_WEBROOT/.well-known/acme-challenge/vibemonitor.XXXXXX")
     printf 'vibemonitor-check\n' > "$probe"
     chmod 644 "$probe"
-    result=$(curl -4 -fsS --noproxy '*' --max-time 5 --resolve "$domain:80:127.0.0.1" "http://$domain/.well-known/acme-challenge/${probe##*/}") || result=''
+    probe_url="http://$domain/.well-known/acme-challenge/${probe##*/}"
+    result=$(curl -4 -fsS --noproxy '*' --max-time 5 --resolve "$domain:80:127.0.0.1" "$probe_url" 2>"$UPDATE_DIR/acme-probe-error") || result=''
+    if [ "$result" != vibemonitor-check ]; then
+        status=$(curl -4 -sS --noproxy '*' --max-time 5 --resolve "$domain:80:127.0.0.1" -o /dev/null -w '%{http_code}' "$probe_url" 2>/dev/null) || status=unavailable
+        rm -f "$probe"
+        warn "本机 HTTP 验证请求未命中安装脚本创建的站点（HTTP ${status:-unavailable}）。"
+        if [ -s "$UPDATE_DIR/acme-probe-error" ]; then cat "$UPDATE_DIR/acme-probe-error" >&2; fi
+        if nginx -T >"$UPDATE_DIR/nginx-expanded.conf" 2>"$UPDATE_DIR/nginx-expanded-error"; then
+            if ! grep -Fq "# configuration file $NGINX_CONF:" "$UPDATE_DIR/nginx-expanded.conf"; then
+                warn "Nginx 未加载 $NGINX_CONF；请检查 nginx.conf 的 conf.d 引用。"
+            fi
+            if grep -iq 'conflicting server name' "$UPDATE_DIR/nginx-expanded-error"; then
+                warn "Nginx 检测到重复的 server_name；请检查旧站点是否占用了 $domain:80。"
+            fi
+        fi
+        error "域名的 HTTP 验证路径不可用；请检查 Nginx 的 80 端口监听和同域名站点。"
+    fi
     rm -f "$probe"
-    [ "$result" = vibemonitor-check ] || error "域名的 HTTP 验证路径不可用；请检查 Nginx 站点和 80 端口。"
     info "正在为 $domain 申请 HTTPS 证书…"
     certbot certonly --webroot -w "$ACME_WEBROOT" -d "$domain" --cert-name "$domain" \
         --non-interactive --agree-tos "${certbot_contact[@]}" --keep-until-expiring || \
@@ -602,8 +621,8 @@ install_server() {
     check_root; detect_arch; check_dependencies
     confirm_full_cleanup || return 0
     begin_update "$SERVER_SERVICE"
-    download_binary
     if [ -n "$domain" ]; then configure_domain_proxy "$domain" "$port" "$email"; fi
+    download_binary
     clear_server_data
     WAS_ACTIVE=0 # Deleted data cannot be recovered; do not restart old credentials on failure.
     mkdir -p "$CONFIG_DIR"
@@ -616,6 +635,7 @@ install_server() {
     fi
     args="$args --admin-username $(unit_arg "$username")"
     if [ -n "$password" ]; then args="$args --admin-password $(unit_arg "$password")"; fi
+    UNIT_TOUCHED=1
     cat > "$UNIT_DIR/$SERVER_SERVICE.service" <<EOF
 [Unit]
 Description=VibeMonitor Server
