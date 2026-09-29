@@ -104,14 +104,22 @@ type Node struct {
 }
 
 type Config struct {
-	AdminUsername    string                `json:"admin_username"`
-	AdminPassword    string                `json:"admin_password"`
-	SiteTitle        string                `json:"site_title"`
-	SiteIcon         string                `json:"site_icon,omitempty"`
-	SiteTheme        string                `json:"site_theme"` // Legacy backup field; fixed to Hex.
-	ColorMode        string                `json:"color_mode"` // Legacy backup field; fixed to light.
-	AutoDiscoveryKey string                `json:"auto_discovery_key"`
-	PingTargets      []protocol.PingTarget `json:"ping_targets"`
+	AdminUsername               string                `json:"admin_username"`
+	AdminPassword               string                `json:"admin_password"`
+	SiteTitle                   string                `json:"site_title"`
+	SiteIcon                    string                `json:"site_icon,omitempty"`
+	SiteTheme                   string                `json:"site_theme"` // Legacy backup field; fixed to Hex.
+	ColorMode                   string                `json:"color_mode"` // Legacy backup field; fixed to light.
+	AutoDiscoveryKey            string                `json:"auto_discovery_key"`
+	PingTargets                 []protocol.PingTarget `json:"ping_targets"`
+	TelegramBotToken            string                `json:"telegram_bot_token,omitempty"`
+	TelegramChatID              string                `json:"telegram_chat_id,omitempty"`
+	TelegramEnabled             bool                  `json:"telegram_enabled,omitempty"`
+	TelegramOfflineDelaySeconds int                   `json:"telegram_offline_delay_seconds,omitempty"`
+	TelegramReminderDays        int                   `json:"telegram_reminder_days,omitempty"`
+	TelegramReminderHour        int                   `json:"telegram_reminder_hour,omitempty"`
+	TelegramReminderTimezone    string                `json:"telegram_reminder_timezone,omitempty"`
+	TelegramAlertEpoch          string                `json:"telegram_alert_epoch,omitempty"`
 }
 
 type Store struct {
@@ -290,13 +298,17 @@ func (s *Store) load(defaultPassword, username string) error {
 			return err
 		}
 		s.config = Config{
-			AdminPassword:    hashedPassword,
-			AdminUsername:    username,
-			SiteTitle:        "VibeMonitor",
-			SiteTheme:        "hex",
-			ColorMode:        "light",
-			AutoDiscoveryKey: GenerateToken(16),
-			PingTargets:      []protocol.PingTarget{},
+			AdminPassword:               hashedPassword,
+			AdminUsername:               username,
+			SiteTitle:                   "VibeMonitor",
+			SiteTheme:                   "hex",
+			ColorMode:                   "light",
+			AutoDiscoveryKey:            GenerateToken(16),
+			PingTargets:                 []protocol.PingTarget{},
+			TelegramOfflineDelaySeconds: 60,
+			TelegramReminderDays:        7,
+			TelegramReminderHour:        9,
+			TelegramReminderTimezone:    "Asia/Shanghai",
 		}
 		if err := s.sdb.saveSnapshot(s.config, s.nodes); err != nil {
 			return err
@@ -585,6 +597,26 @@ func (s *Store) GetNodes() []*Node {
 		}
 		nodeCopy.calculateDynamicFields(now)
 		list = append(list, &nodeCopy)
+	}
+	return list
+}
+
+// GetAlertNodes returns only fields needed for server-side alert evaluation.
+func (s *Store) GetAlertNodes() []*Node {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	now := time.Now()
+	list := make([]*Node, 0, len(s.nodes))
+	for _, n := range s.nodes {
+		copy := &Node{
+			UUID: n.UUID, Name: n.Name, Profile: n.Profile,
+			LastSeen: n.LastSeen, BasicInfo: n.BasicInfo, LastReport: n.LastReport,
+			ResetDay: n.ResetDay, CycleStart: n.CycleStart,
+			TrafficLimit: n.TrafficLimit, InitialUsed: n.InitialUsed,
+			CurrentCycleUsed: n.CurrentCycleUsed,
+		}
+		copy.calculateDynamicFields(now)
+		list = append(list, copy)
 	}
 	return list
 }

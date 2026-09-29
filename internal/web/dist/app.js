@@ -9,6 +9,7 @@ let pollTimer = null;
 let lastNodeMarkup = '';
 let lastNodeCards = [];
 let lastPublicSettings = '';
+let pendingAdminAction = null;
 
 // Helpers: formatting
 function formatBytes(bytes) {
@@ -117,15 +118,20 @@ window.closeModal = function(id) {
   const modalId = (m && m.id) || id;
   if (modalId === 'loginModal') {
     resetLoginPasswordFields();
+    pendingAdminAction = null;
   }
   if (modalId === 'settingsModal') {
     resetSettingsPasswordFields();
+  }
+  if (modalId === 'externalSettingsModal') {
+    document.getElementById('telegramBotToken').value = '';
   }
 };
 
 // Bind modal overlay backdrop click to close
 const modalOverlayIds = [
   'settingsModal',
+  'externalSettingsModal',
   'loginModal',
   'selectNodeModal',
   'addNodeModal',
@@ -148,6 +154,7 @@ modalOverlayIds.forEach(id => {
 const modalCloseBtnBindings = [
   { id: 'closeSettingsModalBtn', modalId: 'settingsModal' },
   { id: 'cancelSettingsModalBtn', modalId: 'settingsModal' },
+  { id: 'closeExternalSettingsModalBtn', modalId: 'externalSettingsModal' },
   { id: 'closeLoginModalBtn', modalId: 'loginModal' },
   { id: 'cancelLoginModalBtn', modalId: 'loginModal' },
   { id: 'closeSelectNodeModalBtn', modalId: 'selectNodeModal' },
@@ -285,7 +292,8 @@ function readNodeProfile(prefix) {
     payment_cycle: document.getElementById(prefix+'NodeCycle').value,
     price: Number(document.getElementById(prefix+'NodePrice').value || 0),
     currency: document.getElementById(prefix+'NodeCurrency').value,
-    cpu_threshold: cpuThreshold};
+    cpu_threshold: cpuThreshold,
+    alerts_disabled: document.getElementById(prefix+'NodeAlertsDisabled').checked};
 }
 function fillNodeProfile(prefix, profile) {
   const p = profile || {};
@@ -295,6 +303,7 @@ function fillNodeProfile(prefix, profile) {
   document.getElementById(prefix+'NodePrice').value = p.price || '';
   document.getElementById(prefix+'NodeCurrency').value = p.currency || 'CNY';
   document.getElementById(prefix+'NodeCPUThreshold').value = p.cpu_threshold == null ? '' : p.cpu_threshold;
+  document.getElementById(prefix+'NodeAlertsDisabled').checked = !!p.alerts_disabled;
 }
 function billingDisplay(profile) {
   const p = profile || {};
@@ -382,7 +391,7 @@ function renderNodes() {
   if (sorted.length === 0) {
     const markup = `
       <div style="grid-column: 1 / -1; text-align: center; padding: 60px 20px; color: var(--muted-foreground);">
-        暂无监控节点。点击左上角站点图标，登录后通过“节点管理 → 新建节点”开始监控。
+        暂无监控节点。点击左上角网站标题，登录后通过“节点管理 → 新建节点”开始监控。
       </div>
     `;
     if (markup !== lastNodeMarkup) {
@@ -453,39 +462,23 @@ async function fetchNodes() {
   }
 }
 
-const DEFAULT_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22">
-  <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/>
-  <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"/>
-  <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 10.04 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
-  <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
-</svg>`;
+const DEFAULT_SITE_ICON_URL = document.getElementById('siteIcon').getAttribute('href');
 
-function updateLogoDisplay(iconUrl) {
-  const brandIcon = document.getElementById('brandIcon');
+function updateSiteIconDisplay(iconUrl) {
   const preview = document.getElementById('logoPreviewContent');
   const siteIcon = document.getElementById('siteIcon');
-  if (iconUrl) {
-    const escapedUrl = escapeHtml(iconUrl);
-    const imgHtml = `<img src="${escapedUrl}" alt="Logo" width="28" height="28">`;
-    if (brandIcon) {
-      brandIcon.innerHTML = imgHtml;
-      const img = brandIcon.querySelector('img');
-      if (img) {
-        img.onerror = () => { brandIcon.innerHTML = DEFAULT_LOGO_SVG; };
-      }
+  const effectiveUrl = iconUrl || DEFAULT_SITE_ICON_URL;
+  if (siteIcon) siteIcon.href = effectiveUrl;
+  if (preview) {
+    preview.innerHTML = `<img src="${escapeHtml(effectiveUrl)}" alt="网站图标预览" width="28" height="28">`;
+    const img = preview.querySelector('img');
+    if (img && iconUrl) {
+      img.onerror = () => {
+        img.onerror = null;
+        img.src = DEFAULT_SITE_ICON_URL;
+        if (siteIcon) siteIcon.href = DEFAULT_SITE_ICON_URL;
+      };
     }
-    if (preview) {
-      preview.innerHTML = `<img src="${escapedUrl}" alt="Preview" width="28" height="28">`;
-      const pImg = preview.querySelector('img');
-      if (pImg) {
-        pImg.onerror = () => { preview.innerHTML = DEFAULT_LOGO_SVG; };
-      }
-    }
-    if (siteIcon) siteIcon.href = iconUrl;
-  } else {
-    if (brandIcon) brandIcon.innerHTML = DEFAULT_LOGO_SVG;
-    if (preview) preview.innerHTML = DEFAULT_LOGO_SVG;
-    if (siteIcon) siteIcon.href = "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='10' fill='%230d9488'/></svg>";
   }
 }
 
@@ -501,13 +494,13 @@ async function fetchPublicSettings() {
       document.getElementById('siteTitle').textContent = data.site_title;
       document.title = data.site_title;
     }
-    updateLogoDisplay(data.site_icon || '');
+    updateSiteIconDisplay(data.site_icon || '');
   } catch (e) {
     console.error('Failed to fetch public settings:', e);
   }
 }
 
-async function fetchSettingsForAdmin() {
+async function fetchBasicSettingsForAdmin() {
   const submit = document.querySelector('#settingsForm button[type="submit"]');
   submit.disabled = true;
   try {
@@ -518,12 +511,96 @@ async function fetchSettingsForAdmin() {
     if (titleInput) titleInput.value = data.site_title || '';
     const pwInput = document.getElementById('settingNewPassword');
     if (pwInput) pwInput.value = '';
-    updateLogoDisplay(data.site_icon || '');
+    updateSiteIconDisplay(data.site_icon || '');
     const status = document.getElementById('logoUploadStatus');
     if (status) status.textContent = '';
-    submit.disabled = false;
   } catch (e) { alert(e.message); }
+  finally { submit.disabled = false; }
 }
+
+async function fetchExternalSettingsForAdmin() {
+  try {
+    const res = await fetch('/api/admin/telegram', { credentials: 'same-origin' });
+    if (!res.ok) throw new Error('无法读取 Telegram 配置，请关闭后重试');
+    const telegram = await res.json();
+    document.getElementById('telegramEnabled').checked = !!telegram.enabled;
+    document.getElementById('telegramChatID').value = telegram.chat_id || '';
+    document.getElementById('telegramOfflineDelay').value = telegram.offline_delay_seconds ?? 60;
+    document.getElementById('telegramReminderDays').value = telegram.reminder_days ?? 7;
+    document.getElementById('telegramReminderHour').value = telegram.reminder_hour ?? 9;
+    document.getElementById('telegramReminderTimezone').value = telegram.reminder_timezone || 'Asia/Shanghai';
+    const tokenInput = document.getElementById('telegramBotToken');
+    tokenInput.value = '';
+    tokenInput.placeholder = telegram.token_configured ? '已配置；留空保留原 Token' : '填写 BotFather 提供的 Token';
+    return true;
+  } catch (e) { alert(e.message); return false; }
+}
+
+document.getElementById('saveTelegramBtn').addEventListener('click', async () => {
+  const button = document.getElementById('saveTelegramBtn');
+  button.disabled = true;
+  try {
+    if (['telegramOfflineDelay', 'telegramReminderDays', 'telegramReminderHour'].some(id => document.getElementById(id).value.trim() === '')) {
+      throw new Error('请填写离线等待时间和到期提醒设置');
+    }
+    const offlineDelay = Number(document.getElementById('telegramOfflineDelay').value);
+    const reminderDays = Number(document.getElementById('telegramReminderDays').value);
+    const reminderHour = Number(document.getElementById('telegramReminderHour').value);
+    if (!Number.isInteger(offlineDelay) || offlineDelay < 0 || offlineDelay > 3600 ||
+        !Number.isInteger(reminderDays) || reminderDays < 0 || reminderDays > 7 ||
+        !Number.isInteger(reminderHour) || reminderHour < 0 || reminderHour > 23) {
+      throw new Error('请检查离线等待时间和到期提醒设置');
+    }
+    const res = await fetch('/api/admin/telegram', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        enabled: document.getElementById('telegramEnabled').checked,
+        bot_token: document.getElementById('telegramBotToken').value.trim(),
+        chat_id: document.getElementById('telegramChatID').value.trim(),
+        offline_delay_seconds: offlineDelay,
+        reminder_days: reminderDays,
+        reminder_hour: reminderHour,
+        reminder_timezone: document.getElementById('telegramReminderTimezone').value.trim()
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '保存失败');
+    document.getElementById('telegramBotToken').value = '';
+    document.getElementById('telegramBotToken').placeholder = '已配置；留空保留原 Token';
+    alert('Telegram 配置已保存');
+  } catch (e) { alert(e.message); }
+  finally { button.disabled = false; }
+});
+
+document.getElementById('testTelegramBtn').addEventListener('click', async () => {
+  const button = document.getElementById('testTelegramBtn');
+  button.disabled = true;
+  try {
+    const res = await fetch('/api/admin/telegram/test', { method: 'POST', credentials: 'same-origin' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '发送失败');
+    alert('测试消息已发送');
+  } catch (e) { alert(e.message); }
+  finally { button.disabled = false; }
+});
+
+document.getElementById('clearTelegramBtn').addEventListener('click', async () => {
+  if (!confirm('清除 Telegram Bot Token、Chat ID 并关闭告警？')) return;
+  try {
+    const res = await fetch('/api/admin/telegram', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clear: true })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '清除失败');
+    document.getElementById('telegramEnabled').checked = false;
+    document.getElementById('telegramChatID').value = '';
+    document.getElementById('telegramBotToken').value = '';
+    document.getElementById('telegramBotToken').placeholder = '填写 BotFather 提供的 Token';
+    alert('Telegram 配置已清除');
+  } catch (e) { alert(e.message); }
+});
 
 function connectWebSocket() {
   if (ws) {
@@ -611,34 +688,42 @@ window.deleteNode = async function(uuid) {
 };
 
 // Event Listeners
-document.getElementById('adminBtn').addEventListener('click', () => {
+function requireAdmin(action) {
   if (isAdmin) {
-    const spInput = document.getElementById('settingNewPassword');
-    if (spInput) {
-      spInput.type = 'password';
-      spInput.autocomplete = 'new-password';
-    }
-    const spToggleBtn = document.querySelector('.btn-toggle-pwd[data-target="settingNewPassword"]');
-    if (spToggleBtn) { spToggleBtn.textContent = '👁️'; spToggleBtn.title = '显示密码'; }
-    openModal('settingsModal');
-    fetchSettingsForAdmin();
-  } else {
-    document.getElementById('loginError').style.display = 'none';
-    const pwInput = document.getElementById('loginPassword');
-    if (pwInput) {
-      pwInput.value = '';
-      pwInput.type = 'password';
-      pwInput.autocomplete = 'current-password';
-    }
-    const pwToggleBtn = document.querySelector('.btn-toggle-pwd[data-target="loginPassword"]');
-    if (pwToggleBtn) { pwToggleBtn.textContent = '👁️'; pwToggleBtn.title = '显示密码'; }
-    const unInput = document.getElementById('loginUsername');
-    if (unInput) {
-      unInput.autocomplete = 'username';
-    }
-    openModal('loginModal');
+    action();
+    return;
   }
-});
+  pendingAdminAction = action;
+  const error = document.getElementById('loginError');
+  error.style.display = 'none';
+  error.textContent = '账号或密码错误';
+  const pwInput = document.getElementById('loginPassword');
+  pwInput.value = '';
+  pwInput.type = 'password';
+  pwInput.autocomplete = 'current-password';
+  const pwToggleBtn = document.querySelector('.btn-toggle-pwd[data-target="loginPassword"]');
+  if (pwToggleBtn) { pwToggleBtn.textContent = '👁️'; pwToggleBtn.title = '显示密码'; }
+  const unInput = document.getElementById('loginUsername');
+  if (unInput) unInput.autocomplete = 'username';
+  openModal('loginModal');
+}
+
+function openBasicSettings() {
+  const spInput = document.getElementById('settingNewPassword');
+  spInput.type = 'password';
+  spInput.autocomplete = 'new-password';
+  const spToggleBtn = document.querySelector('.btn-toggle-pwd[data-target="settingNewPassword"]');
+  if (spToggleBtn) { spToggleBtn.textContent = '👁️'; spToggleBtn.title = '显示密码'; }
+  openModal('settingsModal');
+  fetchBasicSettingsForAdmin();
+}
+
+async function openExternalSettings() {
+  if (await fetchExternalSettingsForAdmin()) openModal('externalSettingsModal');
+}
+
+document.getElementById('adminBtn').addEventListener('click', () => requireAdmin(openBasicSettings));
+document.getElementById('externalSettingsBtn').addEventListener('click', () => requireAdmin(openExternalSettings));
 
 document.getElementById('loginForm').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -652,7 +737,9 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
     const data = await res.json();
     if (data.token) {
       setAdminState(true);
+      const action = pendingAdminAction;
       closeModal('loginModal');
+      if (action) action();
     } else {
       document.getElementById('loginError').style.display = 'block';
     }
@@ -681,7 +768,7 @@ async function handleLogout() {
 const logoutBtn = document.getElementById('logoutBtn');
 if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
 
-// Logo upload & reset button handling
+// Favicon upload & reset button handling
 const btnSelectLogo = document.getElementById('btnSelectLogo');
 const fileInput = document.getElementById('settingSiteIconFile');
 const btnResetLogo = document.getElementById('btnResetLogo');
@@ -711,9 +798,9 @@ if (btnSelectLogo && fileInput) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '上传失败');
-      updateLogoDisplay(data.url);
+      updateSiteIconDisplay(data.url);
       if (uploadStatus) {
-        uploadStatus.textContent = 'Logo 已成功保存并更新';
+        uploadStatus.textContent = '网站图标已保存并更新';
         uploadStatus.style.color = 'var(--success)';
       }
     } catch (err) {
@@ -721,7 +808,7 @@ if (btnSelectLogo && fileInput) {
         uploadStatus.textContent = '上传失败: ' + err.message;
         uploadStatus.style.color = 'var(--destructive)';
       }
-      alert('Logo 上传失败: ' + err.message);
+      alert('网站图标上传失败: ' + err.message);
     } finally {
       fileInput.value = '';
     }
@@ -730,14 +817,14 @@ if (btnSelectLogo && fileInput) {
 
 if (btnResetLogo) {
   btnResetLogo.addEventListener('click', async () => {
-    if (!confirm('确定要恢复默认 Logo 图标吗？')) return;
+    if (!confirm('确定要恢复默认网站图标吗？')) return;
     try {
       const res = await fetch('/api/admin/delete-icon', {
         method: 'POST',
         credentials: 'same-origin'
       });
       if (!res.ok) throw new Error('操作失败');
-      updateLogoDisplay('');
+      updateSiteIconDisplay('');
       if (uploadStatus) {
         uploadStatus.textContent = '已恢复默认图标';
         uploadStatus.style.color = 'var(--success)';
@@ -807,37 +894,39 @@ document.addEventListener('click', (event) => {
 });
 document.getElementById('editExistingNodeBtn').addEventListener('click', () => {
   nodeManagementMenu.open = false;
-  if (!isAdmin) return;
-  const list = document.getElementById('nodeSelectionList');
-  list.innerHTML = '';
-  if (nodes.length === 0) {
-    list.textContent = '暂无节点，请先通过“节点管理 → 新建节点”创建。';
-  }
-  [...nodes].sort(compareNodes).forEach(node => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'btn';
-    button.textContent = node.name || node.uuid;
-    button.addEventListener('click', async () => {
-      closeModal('selectNodeModal');
-      await openEditModal(node.uuid);
+  requireAdmin(() => {
+    const list = document.getElementById('nodeSelectionList');
+    list.innerHTML = '';
+    if (nodes.length === 0) {
+      list.textContent = '暂无节点，请先通过“节点管理 → 新建节点”创建。';
+    }
+    [...nodes].sort(compareNodes).forEach(node => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn';
+      button.textContent = node.name || node.uuid;
+      button.addEventListener('click', async () => {
+        closeModal('selectNodeModal');
+        await openEditModal(node.uuid);
+      });
+      list.appendChild(button);
     });
-    list.appendChild(button);
+    openModal('selectNodeModal');
   });
-  openModal('selectNodeModal');
 });
 
 const addNodeBtn = document.getElementById('addNodeBtn');
 if (addNodeBtn) addNodeBtn.addEventListener('click', () => {
   nodeManagementMenu.open = false;
-  if (!isAdmin) return;
-  document.getElementById('newNodeName').value = '';
-  document.getElementById('newNodeOrder').value = '';
-  document.getElementById('newNodeTrafficLimit').value = '';
-  document.getElementById('newNodeResetDay').value = '';
-  document.getElementById('newNodeInitialUsed').value = '';
-  fillNodeProfile('new', {});
-  openModal('addNodeModal');
+  requireAdmin(() => {
+    document.getElementById('newNodeName').value = '';
+    document.getElementById('newNodeOrder').value = '';
+    document.getElementById('newNodeTrafficLimit').value = '';
+    document.getElementById('newNodeResetDay').value = '';
+    document.getElementById('newNodeInitialUsed').value = '';
+    fillNodeProfile('new', {});
+    openModal('addNodeModal');
+  });
 });
 
 document.getElementById('addNodeForm').addEventListener('submit', async (e) => {
@@ -1386,5 +1475,5 @@ checkAdminAuth();
 fetchPublicSettings();
 // Periodic fallback polling every 5s
 setInterval(fetchNodes, 5000);
-// Refresh the site title and logo when WebSocket is unavailable.
+// Refresh the site title and favicon when WebSocket is unavailable.
 setInterval(fetchPublicSettings, 15000);

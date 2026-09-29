@@ -10,12 +10,13 @@ import (
 
 // A nil profile preserves the global targets of legacy nodes.
 type NodeProfile struct {
-	Targets      []protocol.PingTarget `json:"targets"`
-	DueDate      string                `json:"due_date"`
-	PaymentCycle string                `json:"payment_cycle"`
-	Price        float64               `json:"price"`
-	Currency     string                `json:"currency"`
-	CPUThreshold *float64              `json:"cpu_threshold"`
+	Targets        []protocol.PingTarget `json:"targets"`
+	DueDate        string                `json:"due_date"`
+	PaymentCycle   string                `json:"payment_cycle"`
+	Price          float64               `json:"price"`
+	Currency       string                `json:"currency"`
+	CPUThreshold   *float64              `json:"cpu_threshold"`
+	AlertsDisabled bool                  `json:"alerts_disabled,omitempty"`
 }
 type PingPreview struct {
 	Name    string       `json:"name"`

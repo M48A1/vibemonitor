@@ -20,6 +20,9 @@ func (s *sqliteDB) saveSnapshot(config Config, nodes map[string]*Node) error {
 	if err = w.saveAllNodes(nodes); err != nil {
 		return err
 	}
+	if _, err = tx.Exec("DELETE FROM telegram_alert_state WHERE node_uuid NOT IN (SELECT uuid FROM nodes)"); err != nil {
+		return err
+	}
 	if s.nodeCache == nil {
 		if _, err = tx.Exec("DELETE FROM ping_history WHERE node_uuid NOT IN (SELECT uuid FROM nodes)"); err != nil {
 			return err

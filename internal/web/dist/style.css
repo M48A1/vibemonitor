@@ -4,14 +4,14 @@
 .powered-by-link:hover,
 .powered-by-link:focus-visible { text-decoration: underline; }
 
-/* Site actions are anchored to the logo, including on small screens. */
+/* The site title opens the management menu, including on small screens. */
 .site-menu { position: relative; flex-shrink: 0; }
 .site-menu-trigger, .node-management > summary { list-style: none; cursor: pointer; }
 .site-menu-trigger::-webkit-details-marker,
 .node-management > summary::-webkit-details-marker { display: none; }
 .site-menu-trigger { display: block; border-radius: 8px; }
-.site-menu-trigger:hover .brand-icon,
-.site-menu[open] > .site-menu-trigger .brand-icon { border-color: var(--primary); }
+.site-menu-trigger:hover .brand-title,
+.site-menu[open] > .site-menu-trigger .brand-title { color: var(--primary); }
 .site-menu-trigger:focus-visible, .site-menu-item:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
@@ -54,24 +54,22 @@
   background: linear-gradient(90deg, color-mix(in srgb, var(--primary) 18%, var(--card-bg)), color-mix(in srgb, var(--primary) 6%, var(--card-bg)));
 }
 .site-menu-level-2 {
-  width: calc(100% - 10px);
-  margin-left: 10px;
   color: color-mix(in srgb, var(--primary) 65%, var(--foreground));
   font-weight: 500;
   background: linear-gradient(90deg, color-mix(in srgb, var(--primary) 12%, var(--card-bg)), color-mix(in srgb, var(--primary) 4%, var(--card-bg)));
 }
 .node-management-menu {
-  margin-left: 22px;
+  margin-left: 10px;
   padding-left: 8px;
   border-left: 2px solid color-mix(in srgb, var(--primary) 30%, var(--border));
 }
-.node-management-menu .site-menu-level-3 {
+.node-management-menu .site-menu-level-2 {
   color: var(--muted-foreground);
   background: linear-gradient(90deg, color-mix(in srgb, var(--primary) 7%, var(--card-bg)), color-mix(in srgb, var(--primary) 2%, var(--card-bg)));
 }
 .site-menu-level-1:hover,
 .site-menu-level-2:hover,
-.node-management-menu .site-menu-level-3:hover {
+.node-management-menu .site-menu-level-2:hover {
   background: linear-gradient(90deg, color-mix(in srgb, var(--primary) 22%, var(--card-bg)), color-mix(in srgb, var(--primary) 9%, var(--card-bg)));
 }
 .site-menu-logout { margin-top: 6px; border-top: 1px solid var(--border); border-radius: 0 0 6px 6px; color: var(--destructive); }
@@ -124,7 +122,7 @@ body {
 .brand {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 8px;
 }
 
 .brand-icon {

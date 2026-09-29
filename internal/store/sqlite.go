@@ -102,7 +102,20 @@ func (s *sqliteDB) initSchema() error {
 		site_title TEXT NOT NULL DEFAULT 'VibeMonitor',
 		site_icon TEXT NOT NULL DEFAULT '',
 		auto_discovery_key TEXT NOT NULL DEFAULT '',
-		ping_targets_json TEXT NOT NULL DEFAULT '[]'
+		ping_targets_json TEXT NOT NULL DEFAULT '[]',
+		telegram_bot_token TEXT NOT NULL DEFAULT '',
+		telegram_chat_id TEXT NOT NULL DEFAULT '',
+		telegram_enabled INTEGER NOT NULL DEFAULT 0,
+		telegram_offline_delay_seconds INTEGER NOT NULL DEFAULT 60,
+		telegram_reminder_days INTEGER NOT NULL DEFAULT 7,
+		telegram_reminder_hour INTEGER NOT NULL DEFAULT 9,
+		telegram_reminder_timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
+		telegram_alert_epoch TEXT NOT NULL DEFAULT ''
+	);
+	CREATE TABLE IF NOT EXISTS telegram_alert_state (
+		node_uuid TEXT PRIMARY KEY,
+		config_epoch TEXT NOT NULL,
+		state_json TEXT NOT NULL
 	);
 
 	CREATE TABLE IF NOT EXISTS nodes (
@@ -137,13 +150,37 @@ func (s *sqliteDB) initSchema() error {
 	}
 	// 兼容已有旧测试创建的数据库，确保 data_json 列存在
 	_, _ = s.db.Exec("ALTER TABLE nodes ADD COLUMN data_json TEXT DEFAULT ''")
-	for _, column := range []struct{ name, fallback string }{{"site_theme", "hex"}, {"color_mode", "light"}} {
+	for _, column := range []struct{ name, fallback string }{{"site_theme", "hex"}, {"color_mode", "light"}, {"telegram_bot_token", ""}, {"telegram_chat_id", ""}} {
 		exists, err := s.hasConfigColumn(column.name)
 		if err != nil {
 			return err
 		}
 		if !exists {
 			if _, err := s.db.Exec("ALTER TABLE config ADD COLUMN " + column.name + " TEXT NOT NULL DEFAULT '" + column.fallback + "'"); err != nil {
+				return err
+			}
+		}
+	}
+	if exists, err := s.hasConfigColumn("telegram_enabled"); err != nil {
+		return err
+	} else if !exists {
+		if _, err := s.db.Exec("ALTER TABLE config ADD COLUMN telegram_enabled INTEGER NOT NULL DEFAULT 0"); err != nil {
+			return err
+		}
+	}
+	for _, column := range []struct{ name, definition string }{
+		{"telegram_offline_delay_seconds", "INTEGER NOT NULL DEFAULT 60"},
+		{"telegram_reminder_days", "INTEGER NOT NULL DEFAULT 7"},
+		{"telegram_reminder_hour", "INTEGER NOT NULL DEFAULT 9"},
+		{"telegram_reminder_timezone", "TEXT NOT NULL DEFAULT 'Asia/Shanghai'"},
+		{"telegram_alert_epoch", "TEXT NOT NULL DEFAULT ''"},
+	} {
+		exists, err := s.hasConfigColumn(column.name)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			if _, err := s.db.Exec("ALTER TABLE config ADD COLUMN " + column.name + " " + column.definition); err != nil {
 				return err
 			}
 		}
@@ -174,10 +211,29 @@ func (s *sqliteDB) pruneNodePing(nodeUUID string, allowedTargets []protocol.Ping
 }
 
 func (s *sqliteDB) loadConfig() (*Config, error) {
-	row := s.db.QueryRow("SELECT admin_username, admin_password, site_title, site_icon, auto_discovery_key, ping_targets_json FROM config WHERE id = 1")
+	fields := []string{"admin_username", "admin_password", "site_title", "site_icon", "auto_discovery_key", "ping_targets_json"}
+	for _, field := range []struct{ name, fallback string }{
+		{"telegram_bot_token", "''"}, {"telegram_chat_id", "''"}, {"telegram_enabled", "0"},
+		{"telegram_offline_delay_seconds", "60"}, {"telegram_reminder_days", "7"},
+		{"telegram_reminder_hour", "9"}, {"telegram_reminder_timezone", "'Asia/Shanghai'"},
+		{"telegram_alert_epoch", "''"},
+	} {
+		exists, err := s.hasConfigColumn(field.name)
+		if err != nil {
+			return nil, err
+		}
+		if exists {
+			fields = append(fields, field.name)
+		} else {
+			fields = append(fields, field.fallback)
+		}
+	}
+	row := s.db.QueryRow("SELECT " + strings.Join(fields, ", ") + " FROM config WHERE id = 1")
 	var c Config
 	var targetsJSON string
-	err := row.Scan(&c.AdminUsername, &c.AdminPassword, &c.SiteTitle, &c.SiteIcon, &c.AutoDiscoveryKey, &targetsJSON)
+	err := row.Scan(&c.AdminUsername, &c.AdminPassword, &c.SiteTitle, &c.SiteIcon, &c.AutoDiscoveryKey, &targetsJSON,
+		&c.TelegramBotToken, &c.TelegramChatID, &c.TelegramEnabled, &c.TelegramOfflineDelaySeconds,
+		&c.TelegramReminderDays, &c.TelegramReminderHour, &c.TelegramReminderTimezone, &c.TelegramAlertEpoch)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil // 未初始化
@@ -203,8 +259,8 @@ func (s *sqliteDB) saveConfig(c *Config) error {
 		return err
 	}
 	query := `
-	INSERT INTO config (id, admin_username, admin_password, site_title, site_icon, auto_discovery_key, ping_targets_json, site_theme, color_mode)
-	VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+	INSERT INTO config (id, admin_username, admin_password, site_title, site_icon, auto_discovery_key, ping_targets_json, site_theme, color_mode, telegram_bot_token, telegram_chat_id, telegram_enabled, telegram_offline_delay_seconds, telegram_reminder_days, telegram_reminder_hour, telegram_reminder_timezone, telegram_alert_epoch)
+	VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT(id) DO UPDATE SET
 		admin_username = excluded.admin_username,
 		admin_password = excluded.admin_password,
@@ -213,9 +269,19 @@ func (s *sqliteDB) saveConfig(c *Config) error {
 		auto_discovery_key = excluded.auto_discovery_key,
 		ping_targets_json = excluded.ping_targets_json,
 		site_theme = excluded.site_theme,
-		color_mode = excluded.color_mode;
+		color_mode = excluded.color_mode,
+		telegram_bot_token = excluded.telegram_bot_token,
+		telegram_chat_id = excluded.telegram_chat_id,
+		telegram_enabled = excluded.telegram_enabled,
+		telegram_offline_delay_seconds = excluded.telegram_offline_delay_seconds,
+		telegram_reminder_days = excluded.telegram_reminder_days,
+		telegram_reminder_hour = excluded.telegram_reminder_hour,
+		telegram_reminder_timezone = excluded.telegram_reminder_timezone,
+		telegram_alert_epoch = excluded.telegram_alert_epoch;
 	`
-	_, err = s.exec(query, c.AdminUsername, c.AdminPassword, c.SiteTitle, c.SiteIcon, c.AutoDiscoveryKey, string(targetsJSON), c.SiteTheme, c.ColorMode)
+	_, err = s.exec(query, c.AdminUsername, c.AdminPassword, c.SiteTitle, c.SiteIcon, c.AutoDiscoveryKey, string(targetsJSON), c.SiteTheme, c.ColorMode,
+		c.TelegramBotToken, c.TelegramChatID, c.TelegramEnabled, c.TelegramOfflineDelaySeconds, c.TelegramReminderDays,
+		c.TelegramReminderHour, c.TelegramReminderTimezone, c.TelegramAlertEpoch)
 	return err
 }
 

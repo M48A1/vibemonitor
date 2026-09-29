@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -18,6 +19,12 @@ var backupTables = []struct{ name, columns string }{
 	{"config", "id,admin_username,admin_password,site_title,site_icon,auto_discovery_key,ping_targets_json"},
 	{"nodes", "uuid,name,token,group_name,region,online,last_seen,created_at,data_json"},
 	{"ping_history", "id,node_uuid,target_name,host,method,timestamp,latency"},
+}
+
+var telegramConfigColumns = []string{
+	"telegram_bot_token", "telegram_chat_id", "telegram_enabled",
+	"telegram_offline_delay_seconds", "telegram_reminder_days", "telegram_reminder_hour",
+	"telegram_reminder_timezone", "telegram_alert_epoch",
 }
 
 func validateDatabasePath(path string) error {
@@ -104,7 +111,6 @@ func ValidateBackup(path string) error {
 		if err != nil {
 			return err
 		}
-		defer rows.Close()
 		for rows.Next() {
 			var id, size int
 			var kind string
@@ -113,6 +119,32 @@ func ValidateBackup(path string) error {
 			}
 			if id != 1 || size <= 0 || size > MaxIconBytes || !validIconType(kind) {
 				return errors.New("invalid embedded site icon")
+			}
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+	}
+	var alertTables int
+	if err := db.db.QueryRow("SELECT count(*) FROM sqlite_schema WHERE name='telegram_alert_state' AND type='table'").Scan(&alertTables); err != nil {
+		return err
+	}
+	if alertTables > 0 {
+		rows, err := db.db.Query("SELECT node_uuid, config_epoch, state_json FROM telegram_alert_state")
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var id, epoch, raw string
+			if err := rows.Scan(&id, &epoch, &raw); err != nil {
+				return err
+			}
+			var state TelegramAlertState
+			if id == "" || !json.Valid([]byte(raw)) || json.Unmarshal([]byte(raw), &state) != nil {
+				return errors.New("invalid Telegram alert state in backup")
 			}
 		}
 		if err := rows.Err(); err != nil {
@@ -133,6 +165,9 @@ func ValidateBackup(path string) error {
 		return errors.New("backup has no valid password hash")
 	}
 	if err := validatePingTargets(config.PingTargets); err != nil {
+		return err
+	}
+	if err := validateTelegramConfig(*config); err != nil {
 		return err
 	}
 	nodes, err := db.loadNodes()
@@ -250,6 +285,15 @@ func RestoreData(source, destination string) error {
 		return err
 	}
 	config, err := sourceDB.loadConfig()
+	telegramColumns := make(map[string]bool)
+	if err == nil {
+		for _, name := range telegramConfigColumns {
+			telegramColumns[name], err = sourceDB.hasConfigColumn(name)
+			if err != nil {
+				break
+			}
+		}
+	}
 	closeErr := sourceDB.Close()
 	if err != nil {
 		return err
@@ -287,6 +331,18 @@ func RestoreData(source, destination string) error {
 			return err
 		}
 	}
+	if _, err := tx.Exec("DELETE FROM main.telegram_alert_state"); err != nil {
+		return err
+	}
+	var alertTables int
+	if err := tx.QueryRow("SELECT count(*) FROM restore_source.sqlite_schema WHERE name='telegram_alert_state' AND type='table'").Scan(&alertTables); err != nil {
+		return err
+	}
+	if alertTables > 0 {
+		if _, err := tx.Exec("INSERT INTO main.telegram_alert_state(node_uuid,config_epoch,state_json) SELECT node_uuid,config_epoch,state_json FROM restore_source.telegram_alert_state"); err != nil {
+			return err
+		}
+	}
 	for i := len(backupTables) - 1; i >= 0; i-- {
 		if _, err := tx.Exec("DELETE FROM " + backupTables[i].name); err != nil {
 			return err
@@ -296,6 +352,13 @@ func RestoreData(source, destination string) error {
 		query := "INSERT INTO main." + table.name + " (" + table.columns + ") SELECT " + table.columns + " FROM restore_source." + table.name
 		if _, err := tx.Exec(query); err != nil {
 			return err
+		}
+	}
+	for _, name := range telegramConfigColumns {
+		if telegramColumns[name] {
+			if _, err := tx.Exec("UPDATE main.config SET " + name + " = (SELECT " + name + " FROM restore_source.config WHERE id = 1) WHERE id = 1"); err != nil {
+				return err
+			}
 		}
 	}
 	if _, err := tx.Exec("UPDATE main.config SET site_theme = ?, color_mode = ? WHERE id = 1", config.SiteTheme, config.ColorMode); err != nil {

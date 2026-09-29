@@ -189,6 +189,72 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/clients/register", s.rpc.HandleRegister)
 
 	// 5. Admin Authentication & Management
+	mux.HandleFunc("GET /api/admin/telegram", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		if !s.checkAdmin(r) {
+			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
+			return
+		}
+		cfg := s.store.GetConfig()
+		writeJSON(w, http.StatusOK, map[string]any{
+			"enabled": cfg.TelegramEnabled, "chat_id": cfg.TelegramChatID,
+			"token_configured":      cfg.TelegramBotToken != "",
+			"offline_delay_seconds": cfg.TelegramOfflineDelaySeconds,
+			"reminder_days":         cfg.TelegramReminderDays,
+			"reminder_hour":         cfg.TelegramReminderHour,
+			"reminder_timezone":     cfg.TelegramReminderTimezone,
+		})
+	})
+	mux.HandleFunc("POST /api/admin/telegram", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		if !s.checkAdmin(r) {
+			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
+			return
+		}
+		var req struct {
+			BotToken            string  `json:"bot_token"`
+			ChatID              string  `json:"chat_id"`
+			Enabled             bool    `json:"enabled"`
+			Clear               bool    `json:"clear"`
+			OfflineDelaySeconds *int    `json:"offline_delay_seconds"`
+			ReminderDays        *int    `json:"reminder_days"`
+			ReminderHour        *int    `json:"reminder_hour"`
+			ReminderTimezone    *string `json:"reminder_timezone"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, jsonErrorStatus(err), map[string]any{"error": "invalid or oversized json"})
+			return
+		}
+		if err := s.store.UpdateTelegramOptions(store.TelegramOptions{
+			BotToken: req.BotToken, ChatID: req.ChatID, Enabled: req.Enabled, Clear: req.Clear,
+			OfflineDelaySeconds: req.OfflineDelaySeconds, ReminderDays: req.ReminderDays,
+			ReminderHour: req.ReminderHour, ReminderTimezone: req.ReminderTimezone,
+		}); err != nil {
+			if errors.Is(err, store.ErrInvalidSettings) {
+				writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+			} else {
+				log.Printf("[Store] Telegram settings save failed: %v", err)
+				writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "could not save Telegram settings"})
+			}
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"status": "success"})
+	})
+	mux.HandleFunc("POST /api/admin/telegram/test", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		if !s.checkAdmin(r) {
+			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
+			return
+		}
+		cfg := s.store.GetConfig()
+		client := telegramHTTPClient()
+		if err := sendTelegramMessage(r.Context(), client, cfg, "✅ VibeMonitor Telegram 告警测试成功"); err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"status": "success"})
+	})
+
 	mux.HandleFunc("POST /api/admin/login", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		if !s.loginLimit.allow(r) {
@@ -610,6 +676,11 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 
 	// Periodic expired admin tokens cleaner
+	alertsDone := make(chan struct{})
+	go func() {
+		defer close(alertsDone)
+		s.runTelegramAlerts(runCtx)
+	}()
 	cleanupTicker := time.NewTicker(15 * time.Minute)
 	defer cleanupTicker.Stop()
 	go func() {
@@ -636,6 +707,7 @@ func (s *Server) Run(ctx context.Context) error {
 	select {
 	case <-runCtx.Done():
 		log.Printf("[Server] Shutting down gracefully...")
+		<-alertsDone
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = httpServer.Shutdown(shutdownCtx)
@@ -646,6 +718,8 @@ func (s *Server) Run(ctx context.Context) error {
 		log.Printf("[Server] Data flushed and server stopped.")
 		return nil
 	case err := <-errCh:
+		stop()
+		<-alertsDone
 		if err := s.Close(); err != nil {
 			log.Printf("[Store] Final save failed: %v", err)
 			return err
