@@ -16,7 +16,6 @@
 - 节点按自定义顺序排序;
 - 无主题管理,建议fork自己加;
 
-
 ## 界面预览
 
 ![VibeMonitor 监控面板预览](docs/dashboard-preview.png)
