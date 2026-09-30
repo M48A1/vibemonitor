@@ -30,12 +30,3 @@ curl -4 -fsSL -o install.sh https://raw.githubusercontent.com/M48A1/vibemonitor/
 
 安装主控时填写域名，脚本会配置 Nginx HTTP 反向代理、申请 HTTPS 证书并启用自动续期。留空域名时使用原有的直接端口访问方式。探针填写最终的主控访问地址。
 
-## 安全与反向代理
-
-管理员登录会设置最长有效期为 7 天的 session Cookie。session 仅保存在主控进程内存中，因此每次重启或更新主控后都需要重新登录；修改管理员密码也会注销全部 session。
-
-同机 Nginx/Caddy 从 loopback 地址转发时，主控会识别其 `X-Forwarded-Proto: https`。反代位于其他机器、Docker 网络或 K8s Pod 时，使用 `--trusted-proxy` 或 `VIBEMONITOR_TRUSTED_PROXY` 指定**直接连接主控的代理** IP 或 CIDR（多个条目用逗号分隔），例如 `VIBEMONITOR_TRUSTED_PROXY=172.18.0.5/32`。主控只接受这些来源的 `X-Forwarded-Proto`，代理必须覆盖客户端传入的同名请求头，并限制客户端直接访问主控端口。配置错误会使主控启动失败。
-
-节点安装命令包含通信 token，`/install.sh?token=...` 响应也会嵌入 token。跨机器安装探针时请使用 HTTPS 主控地址，避免 token 在 HTTP 传输中暴露。
-
-源码构建 Linux ARM64 二进制可运行 `make build-arm64`；`make release-all` 会同时构建 AMD64 和 ARM64。
