@@ -34,6 +34,32 @@ func (s *Store) prunePingDataLocked() {
 		s.pruneNodePingLocked(node)
 	}
 }
+
+func (s *Store) pruneExpiredPingPreviewsLocked(cutoff int64) {
+	if s.sdb != nil {
+		for key, sample := range s.sdb.pingCache {
+			if sample.Timestamp < cutoff {
+				delete(s.sdb.pingCache, key)
+			}
+		}
+	}
+	for _, node := range s.nodes {
+		for name, samples := range node.PingHistory {
+			kept := make([]PingSample, 0, len(samples))
+			for _, sample := range samples {
+				if sample.Timestamp >= cutoff {
+					kept = append(kept, sample)
+				}
+			}
+			if len(kept) == 0 {
+				delete(node.PingHistory, name)
+			} else {
+				node.PingHistory[name] = kept
+			}
+		}
+	}
+}
+
 func (s *Store) pruneNodePingLocked(node *Node) {
 	allowed := make(map[string]string, len(s.targetsLocked(node)))
 	for _, target := range s.targetsLocked(node) {

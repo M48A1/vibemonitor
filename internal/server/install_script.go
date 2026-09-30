@@ -3,12 +3,13 @@ package server
 import (
 	"encoding/hex"
 	"net/http"
+	"net/netip"
 	"strings"
 
 	"vibemonitor/internal/store"
 )
 
-func HandleInstallScript(s *store.Store) http.HandlerFunc {
+func HandleInstallScript(s *store.Store, trustedProxies ...netip.Prefix) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := r.URL.Query().Get("token")
 		if token == "" {
@@ -21,7 +22,7 @@ func HandleInstallScript(s *store.Store) http.HandlerFunc {
 		}
 
 		scheme := "http"
-		if requestHTTPS(r) {
+		if requestHTTPS(r, trustedProxies...) {
 			scheme = "https"
 		}
 		host := r.Host

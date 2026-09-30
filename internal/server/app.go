@@ -12,6 +12,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
@@ -23,13 +24,14 @@ import (
 )
 
 type Server struct {
-	addr        string
-	store       *store.Store
-	wsHub       *WSHub
-	rpc         *RPCHandler
-	adminTokens sync.Map // token -> time.Time
-	authMu      sync.RWMutex
-	loginLimit  loginLimiter
+	addr           string
+	store          *store.Store
+	wsHub          *WSHub
+	rpc            *RPCHandler
+	adminTokens    sync.Map // token -> time.Time
+	authMu         sync.RWMutex
+	loginLimit     loginLimiter
+	trustedProxies []netip.Prefix
 }
 
 type Options struct {
@@ -37,9 +39,14 @@ type Options struct {
 	DataFile      string
 	AdminUsername string
 	AdminPassword string
+	TrustedProxy  string // Comma-separated IP addresses or CIDR ranges of immediate reverse proxies.
 }
 
 func New(opts Options) (*Server, error) {
+	trustedProxies, err := parseTrustedProxies(opts.TrustedProxy)
+	if err != nil {
+		return nil, err
+	}
 	if opts.ListenAddr == "" {
 		opts.ListenAddr = "[::]:1314"
 	}
@@ -53,10 +60,11 @@ func New(opts Options) (*Server, error) {
 	}
 
 	s := &Server{
-		addr:  opts.ListenAddr,
-		store: st,
-		wsHub: NewWSHub(st),
-		rpc:   NewRPCHandler(st),
+		addr:           opts.ListenAddr,
+		store:          st,
+		wsHub:          NewWSHub(st),
+		rpc:            NewRPCHandler(st),
+		trustedProxies: trustedProxies,
 	}
 	return s, nil
 }
@@ -292,8 +300,6 @@ func (s *Server) Handler() http.Handler {
 			writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "too many login attempts; retry in 5 minutes"})
 			return
 		}
-		s.authMu.RLock()
-		defer s.authMu.RUnlock()
 		var req struct {
 			Username string `json:"username"`
 			Password string `json:"password"`
@@ -303,8 +309,18 @@ func (s *Server) Handler() http.Handler {
 			return
 		}
 
+		// Keep bcrypt outside authMu, then ensure the credentials did not change
+		// before issuing a session. Password changes clear all existing sessions.
+		credentials := s.store.GetConfig()
 		if !s.store.VerifyAdmin(req.Username, req.Password) {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "invalid username or password"})
+			return
+		}
+		s.authMu.RLock()
+		defer s.authMu.RUnlock()
+		current := s.store.GetConfig()
+		if credentials.AdminUsername != current.AdminUsername || credentials.AdminPassword != current.AdminPassword {
+			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "credentials changed; retry login"})
 			return
 		}
 
@@ -317,7 +333,7 @@ func (s *Server) Handler() http.Handler {
 			Value:    token,
 			Path:     "/",
 			HttpOnly: true,
-			Secure:   requestHTTPS(r),
+			Secure:   requestHTTPS(r, s.trustedProxies...),
 			SameSite: http.SameSiteStrictMode,
 			MaxAge:   7 * 86400,
 		})
@@ -337,7 +353,7 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("POST /api/admin/logout", func(w http.ResponseWriter, r *http.Request) {
 		s.adminTokens.Delete(adminToken(r))
-		clearAdminCookie(w, r)
+		clearAdminCookie(w, r, s.trustedProxies...)
 		writeJSON(w, http.StatusOK, map[string]any{"status": "success"})
 	})
 
@@ -527,6 +543,7 @@ func (s *Server) Handler() http.Handler {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 			return
 		}
+		s.wsHub.forceBroadcastNodes()
 
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status": "success",
@@ -543,6 +560,7 @@ func (s *Server) Handler() http.Handler {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 			return
 		}
+		s.wsHub.forceBroadcastNodes()
 		writeJSON(w, http.StatusOK, map[string]any{"status": "success"})
 	})
 
@@ -583,13 +601,14 @@ func (s *Server) Handler() http.Handler {
 		}
 		if req.NewPassword != "" {
 			s.adminTokens.Clear()
-			clearAdminCookie(w, r)
+			clearAdminCookie(w, r, s.trustedProxies...)
 		}
+		s.wsHub.forceBroadcastNodes()
 		writeJSON(w, http.StatusOK, map[string]any{"status": "success"})
 	})
 
 	// 6. Dynamic Installer
-	mux.HandleFunc("GET /install.sh", HandleInstallScript(s.store))
+	mux.HandleFunc("GET /install.sh", HandleInstallScript(s.store, s.trustedProxies...))
 
 	// 7. Embedded Web UI (Catch-all for SPA)
 	mux.Handle("/", web.Handler())
@@ -631,6 +650,14 @@ func (w *gzipResponseWriter) WriteHeader(code int) {
 	}
 	w.wroteHeader = true
 	if code == http.StatusNoContent || code == http.StatusNotModified || w.Header().Get("Content-Encoding") != "" {
+		w.ResponseWriter.WriteHeader(code)
+		return
+	}
+	contentType := strings.ToLower(w.Header().Get("Content-Type"))
+	if strings.HasPrefix(contentType, "image/") || strings.HasPrefix(contentType, "audio/") ||
+		strings.HasPrefix(contentType, "video/") || strings.HasPrefix(contentType, "font/") ||
+		strings.HasPrefix(contentType, "application/zip") || strings.HasPrefix(contentType, "application/gzip") ||
+		strings.HasPrefix(contentType, "application/pdf") {
 		w.ResponseWriter.WriteHeader(code)
 		return
 	}

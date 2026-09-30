@@ -162,6 +162,8 @@ func daysUntilDue(due string, now time.Time) (int, bool) {
 	if err != nil {
 		return 0, false
 	}
+	// Compare civil dates in UTC so a local daylight-saving transition cannot
+	// turn one calendar day into a 23- or 25-hour interval.
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	return int(date.Sub(today).Hours() / 24), true
 }

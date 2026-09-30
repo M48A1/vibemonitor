@@ -46,6 +46,7 @@ Server Options:
   --data, -d              Path to data storage file (default: vibemonitor-data.db, env: VIBEMONITOR_DATA)
   --admin-username       Initial admin username (default: admin, env: VIBEMONITOR_ADMIN_USERNAME)
   --admin-password, -p    Initial admin password (first run only, env: VIBEMONITOR_ADMIN_PASSWORD)
+  --trusted-proxy        Trusted reverse proxy IP/CIDR list (env: VIBEMONITOR_TRUSTED_PROXY)
 
 Agent Options:
   --server, -s            VibeMonitor server URL (required, e.g. http://127.0.0.1:1314, env: VIBEMONITOR_SERVER)
@@ -71,6 +72,7 @@ func runServer(args []string) {
 	adminUser := fs.String("admin-username", getEnv("VIBEMONITOR_ADMIN_USERNAME", "admin"), "Initial admin username (first run only)")
 	adminPass := fs.String("admin-password", getEnv("VIBEMONITOR_ADMIN_PASSWORD", ""), "Initial admin password (first run only)")
 	fs.StringVar(adminPass, "p", *adminPass, "Admin password (shorthand)")
+	trustedProxy := fs.String("trusted-proxy", getEnv("VIBEMONITOR_TRUSTED_PROXY", ""), "Trusted reverse proxy IP/CIDR list")
 
 	_ = fs.Parse(args)
 
@@ -79,6 +81,7 @@ func runServer(args []string) {
 		DataFile:      *data,
 		AdminPassword: *adminPass,
 		AdminUsername: *adminUser,
+		TrustedProxy:  *trustedProxy,
 	})
 	if err != nil {
 		log.Fatalf("Failed to initialize server: %v", err)

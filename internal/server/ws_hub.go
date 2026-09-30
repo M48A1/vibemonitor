@@ -187,11 +187,7 @@ func (h *WSHub) HandleWS(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *WSHub) sendNodesTo(client *wsClient) error {
-	nodes := h.store.GetNodes()
-	payload, err := json.Marshal(map[string]any{
-		"nodes":  nodes,
-		"status": "success",
-	})
+	payload, err := h.nodesPayload()
 	if err != nil {
 		return err
 	}
@@ -210,16 +206,24 @@ func (h *WSHub) sendNodesTo(client *wsClient) error {
 	return nil
 }
 
-// broadcastNodes sends the current node+appearance state to all connected clients.
+func (h *WSHub) nodesPayload() ([]byte, error) {
+	cfg := h.store.GetConfig()
+	return json.Marshal(map[string]any{
+		"nodes":      h.store.GetNodes(),
+		"site_title": cfg.SiteTitle,
+		"site_icon":  cfg.SiteIcon,
+		"status":     "success",
+	})
+}
+
+// broadcastNodes sends the current node and public appearance state to clients.
 // If the serialised payload is identical to the previous broadcast it is skipped
 // (deduplication), which prevents redundant writes on high-frequency ticks.
 func (h *WSHub) broadcastNodes() {
 	h.doBroadcastNodes(false)
 }
 
-// forceBroadcastNodes sends the current state to all clients unconditionally,
-// bypassing payload deduplication.  Use this after a settings change to ensure
-// clients receive the update even if the node list itself did not change.
+// forceBroadcastNodes immediately sends a fresh payload after a settings change.
 func (h *WSHub) forceBroadcastNodes() {
 	h.doBroadcastNodes(true)
 }
@@ -236,11 +240,7 @@ func (h *WSHub) doBroadcastNodes(force bool) {
 		return
 	}
 
-	nodes := h.store.GetNodes()
-	payload, err := json.Marshal(map[string]any{
-		"nodes":  nodes,
-		"status": "success",
-	})
+	payload, err := h.nodesPayload()
 	if err != nil {
 		return
 	}

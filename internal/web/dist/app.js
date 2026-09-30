@@ -491,19 +491,22 @@ function updateSiteIconDisplay(iconUrl) {
   }
 }
 
+function applyPublicSettings(data) {
+  const settings = JSON.stringify([data.site_title || '', data.site_icon || '']);
+  if (settings === lastPublicSettings) return;
+  lastPublicSettings = settings;
+  if (data.site_title) {
+    document.getElementById('siteTitle').textContent = data.site_title;
+    document.title = data.site_title;
+  }
+  updateSiteIconDisplay(data.site_icon || '');
+}
+
 async function fetchPublicSettings() {
   try {
     const res = await fetch('/api/public');
     if (!res.ok) throw new Error('无法读取网站设置');
-    const data = await res.json();
-    const settings = JSON.stringify([data.site_title || '', data.site_icon || '']);
-    if (settings === lastPublicSettings) return;
-    lastPublicSettings = settings;
-    if (data.site_title) {
-      document.getElementById('siteTitle').textContent = data.site_title;
-      document.title = data.site_title;
-    }
-    updateSiteIconDisplay(data.site_icon || '');
+    applyPublicSettings(await res.json());
   } catch (e) {
     console.error('Failed to fetch public settings:', e);
   }
@@ -626,6 +629,9 @@ function connectWebSocket() {
   ws.onmessage = (event) => {
     try {
       const msg = JSON.parse(event.data);
+      if (Object.hasOwn(msg, 'site_title') && Object.hasOwn(msg, 'site_icon')) {
+        applyPublicSettings(msg);
+      }
       if (msg.nodes) {
         wsHasData = true;
         lastWSDataAt = Date.now();

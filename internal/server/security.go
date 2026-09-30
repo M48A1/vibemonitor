@@ -2,8 +2,10 @@ package server
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
@@ -24,17 +26,55 @@ func adminToken(r *http.Request) string {
 	return ""
 }
 
-func requestHTTPS(r *http.Request) bool {
+func parseTrustedProxies(value string) ([]netip.Prefix, error) {
+	if strings.TrimSpace(value) == "" {
+		return nil, nil
+	}
+	var proxies []netip.Prefix
+	for _, entry := range strings.Split(value, ",") {
+		entry = strings.TrimSpace(entry)
+		prefix, err := netip.ParsePrefix(entry)
+		if err != nil {
+			addr, addrErr := netip.ParseAddr(entry)
+			if addrErr != nil {
+				return nil, fmt.Errorf("invalid trusted proxy %q: expected IP address or CIDR", entry)
+			}
+			prefix = netip.PrefixFrom(addr, addr.BitLen())
+		}
+		proxies = append(proxies, prefix.Masked())
+	}
+	return proxies, nil
+}
+
+func requestHTTPS(r *http.Request, trustedProxies ...netip.Prefix) bool {
 	if r.TLS != nil {
 		return true
 	}
-	host, _, _ := net.SplitHostPort(r.RemoteAddr)
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback() && r.Header.Get("X-Forwarded-Proto") == "https"
+	if r.Header.Get("X-Forwarded-Proto") != "https" {
+		return false
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return false
+	}
+	ip, err := netip.ParseAddr(host)
+	if err != nil {
+		return false
+	}
+	ip = ip.Unmap()
+	if ip.IsLoopback() {
+		return true
+	}
+	for _, proxy := range trustedProxies {
+		if proxy.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
-func clearAdminCookie(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{Name: "admin_token", Path: "/", MaxAge: -1, HttpOnly: true, Secure: requestHTTPS(r), SameSite: http.SameSiteStrictMode})
+func clearAdminCookie(w http.ResponseWriter, r *http.Request, trustedProxies ...netip.Prefix) {
+	http.SetCookie(w, &http.Cookie{Name: "admin_token", Path: "/", MaxAge: -1, HttpOnly: true, Secure: requestHTTPS(r, trustedProxies...), SameSite: http.SameSiteStrictMode})
 }
 
 func jsonErrorStatus(err error) int {

@@ -17,7 +17,8 @@ func (s *sqliteDB) saveSnapshot(config Config, nodes map[string]*Node) error {
 	if err = w.saveConfig(&config); err != nil {
 		return err
 	}
-	if err = w.saveAllNodes(nodes); err != nil {
+	nextNodes, err := w.saveAllNodes(nodes)
+	if err != nil {
 		return err
 	}
 	if _, err = tx.Exec("DELETE FROM telegram_alert_state WHERE node_uuid NOT IN (SELECT uuid FROM nodes)"); err != nil {
@@ -42,7 +43,6 @@ func (s *sqliteDB) saveSnapshot(config Config, nodes map[string]*Node) error {
 			}
 		}
 	}
-	nextNodes := make(map[string]string, len(nodes))
 	nextTargets := make(map[string]string, len(nodes))
 	nextPings := make(map[string]PingSample)
 	stmt, err := tx.Prepare(`INSERT INTO ping_history(node_uuid,target_name,host,method,timestamp,latency)
@@ -53,13 +53,6 @@ func (s *sqliteDB) saveSnapshot(config Config, nodes map[string]*Node) error {
 	}
 	defer stmt.Close()
 	for id, n := range nodes {
-		clone := *n
-		clone.PingHistory = nil
-		raw, err := json.Marshal(clone)
-		if err != nil {
-			return err
-		}
-		nextNodes[id] = string(raw)
 		targets := config.PingTargets
 		if n.Profile != nil {
 			targets = n.Profile.Targets

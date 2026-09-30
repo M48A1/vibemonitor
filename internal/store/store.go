@@ -228,6 +228,9 @@ func (s *Store) periodicFlusher() {
 				log.Printf("[Store] Periodic save held store lock for %s (%d nodes)", saveDuration.Round(time.Millisecond), nodeCount)
 			}
 		case <-pruneTicker.C:
+			s.mu.Lock()
+			s.pruneExpiredPingPreviewsLocked(time.Now().Unix() - 86400)
+			s.mu.Unlock()
 			if s.sdb != nil {
 				if _, err := s.sdb.pruneOldPingHistory(time.Now().Unix() - pingHistoryRetentionSec); err != nil {
 					log.Printf("[Store] History cleanup failed: %v", err)
@@ -412,9 +415,10 @@ func (s *Store) saveLocked() error {
 }
 
 func (s *Store) VerifyAdminPassword(pwd string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.verifyAdminPasswordLocked(pwd)
+	s.mu.RLock()
+	hash := s.config.AdminPassword
+	s.mu.RUnlock()
+	return verifyAdminPasswordHash(hash, pwd)
 }
 
 func hashAdminPassword(password string) (string, error) {
@@ -423,11 +427,11 @@ func hashAdminPassword(password string) (string, error) {
 }
 
 // Only bcrypt hashes are accepted; password verification never writes storage.
-func (s *Store) verifyAdminPasswordLocked(pwd string) bool {
+func verifyAdminPasswordHash(hash, pwd string) bool {
 	if pwd == "" {
 		return false
 	}
-	return bcrypt.CompareHashAndPassword([]byte(s.config.AdminPassword), []byte(pwd)) == nil
+	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(pwd)) == nil
 }
 
 func (s *Store) SetAdminPassword(newPwd string) error {
@@ -1287,10 +1291,12 @@ func downsamplePingSamples(samples []PingSample, maxPoints int) []PingSample {
 }
 
 func (s *Store) VerifyAdmin(username, password string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if username != s.config.AdminUsername || password == "" {
+	s.mu.RLock()
+	matches := username == s.config.AdminUsername
+	hash := s.config.AdminPassword
+	s.mu.RUnlock()
+	if !matches {
 		return false
 	}
-	return s.verifyAdminPasswordLocked(password)
+	return verifyAdminPasswordHash(hash, password)
 }

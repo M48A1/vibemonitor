@@ -337,10 +337,10 @@ func (s *sqliteDB) deleteNode(uuid string) error {
 	return tx.Commit()
 }
 
-func (s *sqliteDB) saveAllNodes(nodes map[string]*Node) error {
+func (s *sqliteDB) saveAllNodes(nodes map[string]*Node) (map[string]string, error) {
 	tx := s.tx
 	if tx == nil {
-		return errors.New("node writes require a transaction")
+		return nil, errors.New("node writes require a transaction")
 	}
 
 	// 清理不在当前集合的节点
@@ -352,11 +352,11 @@ func (s *sqliteDB) saveAllNodes(nodes map[string]*Node) error {
 			args = append(args, id)
 		}
 		if _, err := tx.Exec("DELETE FROM nodes WHERE uuid NOT IN ("+placeholders+")", args...); err != nil {
-			return err
+			return nil, err
 		}
 	} else {
 		if _, err := tx.Exec("DELETE FROM nodes"); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -375,30 +375,33 @@ func (s *sqliteDB) saveAllNodes(nodes map[string]*Node) error {
 	`
 	stmt, err := tx.Prepare(query)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer stmt.Close()
 
+	nextNodes := make(map[string]string, len(nodes))
 	for _, n := range nodes {
 		clone := *n
 		clone.PingHistory = nil
 		nodeBytes, err := json.Marshal(&clone)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		if s.nodeCache[n.UUID] == string(nodeBytes) {
+		nodeJSON := string(nodeBytes)
+		nextNodes[n.UUID] = nodeJSON
+		if s.nodeCache[n.UUID] == nodeJSON {
 			continue
 		}
 		onlineInt := 0
 		if n.Online {
 			onlineInt = 1
 		}
-		_, err = stmt.Exec(n.UUID, n.Name, n.Token, n.Group, n.Region, onlineInt, n.LastSeen.Unix(), n.CreatedAt.Unix(), string(nodeBytes))
+		_, err = stmt.Exec(n.UUID, n.Name, n.Token, n.Group, n.Region, onlineInt, n.LastSeen.Unix(), n.CreatedAt.Unix(), nodeJSON)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
-	return nil
+	return nextNodes, nil
 }
 
 func (s *sqliteDB) recordPingSample(nodeUUID, targetName, host, method string, timestamp int64, latency int) error {

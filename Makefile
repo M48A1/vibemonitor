@@ -1,14 +1,18 @@
-.PHONY: all build test clean release-all
+.PHONY: all build build-arm64 test clean release-all
 
 BINARY_NAME=vibemonitor
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 LDFLAGS=-s -w -X vibemonitor/internal/version.Version=$(VERSION) -X vibemonitor/internal/version.Commit=$(COMMIT)
+GOARCH ?= amd64
 
 all: build
 
 build:
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="$(LDFLAGS)" -o $(BINARY_NAME) .
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -ldflags="$(LDFLAGS)" -o $(BINARY_NAME) .
+
+build-arm64:
+	$(MAKE) build GOARCH=arm64
 
 test:
 	@case "$$(uname -s)/$$(uname -m)" in Linux/x86_64|Linux/aarch64|Linux/arm64) ;; *) echo "Full tests require Linux (x86-64 or arm64)."; exit 1 ;; esac
