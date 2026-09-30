@@ -1,6 +1,6 @@
 # VibeMonitor
 
-面向 Linux x86-64 / ARM64（aarch64）的轻量服务器监控程序。
+面向IPV4 & Linux x86-64/ARM64的轻量服务器监控程序。
 
 ## 功能
 
