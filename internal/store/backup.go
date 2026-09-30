@@ -25,6 +25,7 @@ var telegramConfigColumns = []string{
 	"telegram_bot_token", "telegram_chat_id", "telegram_enabled",
 	"telegram_offline_delay_seconds", "telegram_reminder_days", "telegram_reminder_hour",
 	"telegram_reminder_timezone", "telegram_alert_epoch",
+	"telegram_templates_json",
 }
 
 func validateDatabasePath(path string) error {
@@ -106,7 +107,15 @@ func ValidateBackup(path string) error {
 		return err
 	}
 	if resourceTables > 0 {
-		rows, err := db.db.Query("SELECT node_uuid,timestamp,cpu_usage,ram_usage FROM resource_history LIMIT 0")
+		columns := "node_uuid,timestamp,cpu_usage,ram_usage"
+		hasNetworkRate, err := db.hasResourceColumn("network_rate")
+		if err != nil {
+			return err
+		}
+		if hasNetworkRate {
+			columns += ",network_rate"
+		}
+		rows, err := db.db.Query("SELECT " + columns + " FROM resource_history LIMIT 0")
 		if err != nil {
 			return err
 		}
@@ -299,12 +308,16 @@ func RestoreData(source, destination string) error {
 	}
 	config, err := sourceDB.loadConfig()
 	telegramColumns := make(map[string]bool)
+	resourceRateColumn := false
 	if err == nil {
 		for _, name := range telegramConfigColumns {
 			telegramColumns[name], err = sourceDB.hasConfigColumn(name)
 			if err != nil {
 				break
 			}
+		}
+		if err == nil {
+			resourceRateColumn, err = sourceDB.hasResourceColumn("network_rate")
 		}
 	}
 	closeErr := sourceDB.Close()
@@ -375,8 +388,11 @@ func RestoreData(source, destination string) error {
 		return err
 	}
 	if resourceTables > 0 {
-		if _, err := tx.Exec(`INSERT INTO main.resource_history(node_uuid,timestamp,cpu_usage,ram_usage)
-			SELECT node_uuid,timestamp,cpu_usage,ram_usage FROM restore_source.resource_history`); err != nil {
+		columns := "node_uuid,timestamp,cpu_usage,ram_usage"
+		if resourceRateColumn {
+			columns += ",network_rate"
+		}
+		if _, err := tx.Exec("INSERT INTO main.resource_history(" + columns + ") SELECT " + columns + " FROM restore_source.resource_history"); err != nil {
 			return err
 		}
 	}

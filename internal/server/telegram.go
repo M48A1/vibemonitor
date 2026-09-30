@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"vibemonitor/internal/store"
@@ -69,6 +70,7 @@ func (a *telegramAlerts) check(ctx context.Context, cfg store.Config, nodes []*s
 		return
 	}
 	localNow := now.In(location)
+	templates := cfg.TelegramTemplates.Effective()
 	active := make(map[string]bool, len(nodes))
 	for _, node := range nodes {
 		if ctx.Err() != nil {
@@ -84,31 +86,46 @@ func (a *telegramAlerts) check(ctx context.Context, cfg store.Config, nodes []*s
 		state.Seen = true
 		state.Online = node.Online
 		if !node.Online && !node.LastSeen.IsZero() && now.Sub(node.LastSeen) >= time.Duration(cfg.TelegramOfflineDelaySeconds)*time.Second && !state.OfflineAlerted {
-			if a.deliver(ctx, cfg, fmt.Sprintf("🔴 VibeMonitor 节点离线：%s（最后上报：%s）", label, node.LastSeen.In(location).Format("2006-01-02 15:04:05"))) {
+			message := renderTelegramTemplate(templates.Offline, map[string]string{
+				"node": label, "last_seen": node.LastSeen.In(location).Format("2006-01-02 15:04:05"),
+			})
+			if a.deliver(ctx, cfg, message) {
 				state.OfflineAlerted = true
 			}
 		} else if node.Online && state.OfflineAlerted {
-			if a.deliver(ctx, cfg, fmt.Sprintf("🟢 VibeMonitor 节点恢复：%s", label)) {
+			if a.deliver(ctx, cfg, renderTelegramTemplate(templates.Recovery, map[string]string{"node": label})) {
 				state.OfflineAlerted = false
 			}
 		}
 		if node.Online && node.LastReport != nil {
 			if node.Profile != nil && node.Profile.CPUThreshold != nil {
 				cpuHigh := node.LastReport.CPU.Usage >= *node.Profile.CPUThreshold
-				state.CPU = a.threshold(ctx, cfg, state.CPU, cpuHigh, fmt.Sprintf("⚠️ VibeMonitor CPU 告警：%s，当前 %.1f%%，阈值 %.1f%%", label, node.LastReport.CPU.Usage, *node.Profile.CPUThreshold))
+				message := renderTelegramTemplate(templates.CPU, map[string]string{
+					"node": label, "cpu": fmt.Sprintf("%.1f", node.LastReport.CPU.Usage), "cpu_threshold": fmt.Sprintf("%.1f", *node.Profile.CPUThreshold),
+				})
+				state.CPU = a.threshold(ctx, cfg, state.CPU, cpuHigh, message)
 			} else {
 				state.CPU = false
 			}
 			memoryHigh := node.LastReport.RAM.Total > 0 && float64(node.LastReport.RAM.Used)/float64(node.LastReport.RAM.Total) >= 0.85
-			state.Memory = a.threshold(ctx, cfg, state.Memory, memoryHigh, fmt.Sprintf("⚠️ VibeMonitor 内存告警：%s，使用率 %.1f%%，阈值 85%%", label, memoryPercent(node)))
+			memoryMessage := renderTelegramTemplate(templates.Memory, map[string]string{
+				"node": label, "memory": fmt.Sprintf("%.1f", memoryPercent(node)), "memory_threshold": "85",
+			})
+			state.Memory = a.threshold(ctx, cfg, state.Memory, memoryHigh, memoryMessage)
 		}
 		trafficHigh := node.TrafficLimit > 0 && node.CycleTotalUsed >= node.TrafficLimit
-		state.Traffic = a.threshold(ctx, cfg, state.Traffic, trafficHigh, fmt.Sprintf("⚠️ VibeMonitor 流量告警：%s，本周期已用 %.2f GiB，额度 %.2f GiB", label, gib(node.CycleTotalUsed), gib(node.TrafficLimit)))
+		trafficMessage := renderTelegramTemplate(templates.Traffic, map[string]string{
+			"node": label, "used_gib": fmt.Sprintf("%.2f", gib(node.CycleTotalUsed)), "limit_gib": fmt.Sprintf("%.2f", gib(node.TrafficLimit)),
+		})
+		state.Traffic = a.threshold(ctx, cfg, state.Traffic, trafficHigh, trafficMessage)
 		if cfg.TelegramReminderDays > 0 && node.Profile != nil && node.Profile.DueDate != "" && localNow.Hour() >= cfg.TelegramReminderHour {
 			if days, ok := daysUntilDue(node.Profile.DueDate, localNow); ok && days >= 0 && days <= cfg.TelegramReminderDays {
 				today := localNow.Format("2006-01-02")
 				if state.ReminderDate != today || state.ReminderFor != node.Profile.DueDate {
-					if a.deliver(ctx, cfg, fmt.Sprintf("📅 VibeMonitor 到期提醒：%s，%s 到期（剩余 %d 天）", label, node.Profile.DueDate, days)) {
+					message := renderTelegramTemplate(templates.Due, map[string]string{
+						"node": label, "due_date": node.Profile.DueDate, "days": fmt.Sprint(days),
+					})
+					if a.deliver(ctx, cfg, message) {
 						state.ReminderDate, state.ReminderFor = today, node.Profile.DueDate
 					}
 				}
@@ -122,6 +139,14 @@ func (a *telegramAlerts) check(ctx context.Context, cfg store.Config, nodes []*s
 			a.deleteState(id)
 		}
 	}
+}
+
+func renderTelegramTemplate(template string, values map[string]string) string {
+	replacements := make([]string, 0, len(values)*2)
+	for name, value := range values {
+		replacements = append(replacements, "{"+name+"}", value)
+	}
+	return strings.NewReplacer(replacements...).Replace(template)
 }
 
 func telegramAlertEpoch(cfg store.Config) string {

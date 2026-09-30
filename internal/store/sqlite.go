@@ -110,7 +110,8 @@ func (s *sqliteDB) initSchema() error {
 		telegram_reminder_days INTEGER NOT NULL DEFAULT 7,
 		telegram_reminder_hour INTEGER NOT NULL DEFAULT 9,
 		telegram_reminder_timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
-		telegram_alert_epoch TEXT NOT NULL DEFAULT ''
+		telegram_alert_epoch TEXT NOT NULL DEFAULT '',
+		telegram_templates_json TEXT NOT NULL DEFAULT '{}'
 	);
 	CREATE TABLE IF NOT EXISTS telegram_alert_state (
 		node_uuid TEXT PRIMARY KEY,
@@ -144,6 +145,7 @@ func (s *sqliteDB) initSchema() error {
 		timestamp INTEGER NOT NULL,
 		cpu_usage REAL,
 		ram_usage REAL,
+		network_rate INTEGER,
 		PRIMARY KEY (node_uuid, timestamp)
 	);
 	CREATE INDEX IF NOT EXISTS idx_resource_history_time ON resource_history(timestamp);
@@ -155,6 +157,15 @@ func (s *sqliteDB) initSchema() error {
 	_, err := s.db.Exec(schema)
 	if err != nil {
 		return err
+	}
+	hasNetworkRate, err := s.hasResourceColumn("network_rate")
+	if err != nil {
+		return err
+	}
+	if !hasNetworkRate {
+		if _, err := s.db.Exec("ALTER TABLE resource_history ADD COLUMN network_rate INTEGER"); err != nil {
+			return err
+		}
 	}
 	// 兼容已有旧测试创建的数据库，确保 data_json 列存在
 	_, _ = s.db.Exec("ALTER TABLE nodes ADD COLUMN data_json TEXT DEFAULT ''")
@@ -182,6 +193,7 @@ func (s *sqliteDB) initSchema() error {
 		{"telegram_reminder_hour", "INTEGER NOT NULL DEFAULT 9"},
 		{"telegram_reminder_timezone", "TEXT NOT NULL DEFAULT 'Asia/Shanghai'"},
 		{"telegram_alert_epoch", "TEXT NOT NULL DEFAULT ''"},
+		{"telegram_templates_json", "TEXT NOT NULL DEFAULT '{}'"},
 	} {
 		exists, err := s.hasConfigColumn(column.name)
 		if err != nil {
@@ -199,6 +211,12 @@ func (s *sqliteDB) initSchema() error {
 func (s *sqliteDB) hasConfigColumn(name string) (bool, error) {
 	var count int
 	err := s.db.QueryRow("SELECT count(*) FROM pragma_table_info('config') WHERE name = ?", name).Scan(&count)
+	return count > 0, err
+}
+
+func (s *sqliteDB) hasResourceColumn(name string) (bool, error) {
+	var count int
+	err := s.db.QueryRow("SELECT count(*) FROM pragma_table_info('resource_history') WHERE name = ?", name).Scan(&count)
 	return count > 0, err
 }
 
@@ -225,6 +243,7 @@ func (s *sqliteDB) loadConfig() (*Config, error) {
 		{"telegram_offline_delay_seconds", "60"}, {"telegram_reminder_days", "7"},
 		{"telegram_reminder_hour", "9"}, {"telegram_reminder_timezone", "'Asia/Shanghai'"},
 		{"telegram_alert_epoch", "''"},
+		{"telegram_templates_json", "'{}'"},
 	} {
 		exists, err := s.hasConfigColumn(field.name)
 		if err != nil {
@@ -239,9 +258,10 @@ func (s *sqliteDB) loadConfig() (*Config, error) {
 	row := s.db.QueryRow("SELECT " + strings.Join(fields, ", ") + " FROM config WHERE id = 1")
 	var c Config
 	var targetsJSON string
+	var templatesJSON string
 	err := row.Scan(&c.AdminUsername, &c.AdminPassword, &c.SiteTitle, &c.SiteIcon, &c.AutoDiscoveryKey, &targetsJSON,
 		&c.TelegramBotToken, &c.TelegramChatID, &c.TelegramEnabled, &c.TelegramOfflineDelaySeconds,
-		&c.TelegramReminderDays, &c.TelegramReminderHour, &c.TelegramReminderTimezone, &c.TelegramAlertEpoch)
+		&c.TelegramReminderDays, &c.TelegramReminderHour, &c.TelegramReminderTimezone, &c.TelegramAlertEpoch, &templatesJSON)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil // 未初始化
@@ -256,6 +276,9 @@ func (s *sqliteDB) loadConfig() (*Config, error) {
 	if c.PingTargets == nil {
 		c.PingTargets = []protocol.PingTarget{}
 	}
+	if err := json.Unmarshal([]byte(templatesJSON), &c.TelegramTemplates); err != nil {
+		return nil, fmt.Errorf("invalid stored Telegram templates: %w", err)
+	}
 	// Legacy columns remain compatible with backups; appearance is fixed.
 	c.SiteTheme, c.ColorMode = "hex", "light"
 	return &c, nil
@@ -266,9 +289,13 @@ func (s *sqliteDB) saveConfig(c *Config) error {
 	if err != nil {
 		return err
 	}
+	templatesJSON, err := json.Marshal(c.TelegramTemplates)
+	if err != nil {
+		return err
+	}
 	query := `
-	INSERT INTO config (id, admin_username, admin_password, site_title, site_icon, auto_discovery_key, ping_targets_json, site_theme, color_mode, telegram_bot_token, telegram_chat_id, telegram_enabled, telegram_offline_delay_seconds, telegram_reminder_days, telegram_reminder_hour, telegram_reminder_timezone, telegram_alert_epoch)
-	VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	INSERT INTO config (id, admin_username, admin_password, site_title, site_icon, auto_discovery_key, ping_targets_json, site_theme, color_mode, telegram_bot_token, telegram_chat_id, telegram_enabled, telegram_offline_delay_seconds, telegram_reminder_days, telegram_reminder_hour, telegram_reminder_timezone, telegram_alert_epoch, telegram_templates_json)
+	VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT(id) DO UPDATE SET
 		admin_username = excluded.admin_username,
 		admin_password = excluded.admin_password,
@@ -285,11 +312,12 @@ func (s *sqliteDB) saveConfig(c *Config) error {
 		telegram_reminder_days = excluded.telegram_reminder_days,
 		telegram_reminder_hour = excluded.telegram_reminder_hour,
 		telegram_reminder_timezone = excluded.telegram_reminder_timezone,
-		telegram_alert_epoch = excluded.telegram_alert_epoch;
+		telegram_alert_epoch = excluded.telegram_alert_epoch,
+		telegram_templates_json = excluded.telegram_templates_json;
 	`
 	_, err = s.exec(query, c.AdminUsername, c.AdminPassword, c.SiteTitle, c.SiteIcon, c.AutoDiscoveryKey, string(targetsJSON), c.SiteTheme, c.ColorMode,
 		c.TelegramBotToken, c.TelegramChatID, c.TelegramEnabled, c.TelegramOfflineDelaySeconds, c.TelegramReminderDays,
-		c.TelegramReminderHour, c.TelegramReminderTimezone, c.TelegramAlertEpoch)
+		c.TelegramReminderHour, c.TelegramReminderTimezone, c.TelegramAlertEpoch, string(templatesJSON))
 	return err
 }
 

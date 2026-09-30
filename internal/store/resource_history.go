@@ -37,16 +37,23 @@ func validResourcePercent(value float64) bool {
 	return !math.IsNaN(value) && !math.IsInf(value, 0) && value >= 0 && value <= 100
 }
 
+func totalNetworkRate(up, down int64) (int64, bool) {
+	if up < 0 || down < 0 || up > math.MaxInt64-down {
+		return 0, false
+	}
+	return up + down, true
+}
+
 func (s *sqliteDB) latestResourceSampleTime(uuid string) (int64, error) {
 	var timestamp sql.NullInt64
 	err := s.db.QueryRow("SELECT MAX(timestamp) FROM resource_history WHERE node_uuid = ?", uuid).Scan(&timestamp)
 	return timestamp.Int64, err
 }
 
-func (s *sqliteDB) recordResourceSample(uuid string, timestamp int64, cpu, ram sql.NullFloat64) error {
-	_, err := s.db.Exec(`INSERT INTO resource_history(node_uuid,timestamp,cpu_usage,ram_usage)
-		VALUES(?,?,?,?) ON CONFLICT(node_uuid,timestamp) DO UPDATE SET
-		cpu_usage=excluded.cpu_usage,ram_usage=excluded.ram_usage`, uuid, timestamp, cpu, ram)
+func (s *sqliteDB) recordResourceSample(uuid string, timestamp int64, cpu, ram sql.NullFloat64, network sql.NullInt64) error {
+	_, err := s.db.Exec(`INSERT INTO resource_history(node_uuid,timestamp,cpu_usage,ram_usage,network_rate)
+		VALUES(?,?,?,?,?) ON CONFLICT(node_uuid,timestamp) DO UPDATE SET
+		cpu_usage=excluded.cpu_usage,ram_usage=excluded.ram_usage,network_rate=excluded.network_rate`, uuid, timestamp, cpu, ram, network)
 	return err
 }
 
@@ -74,7 +81,7 @@ func resourceDuration(name string) (int64, bool) {
 }
 
 func (s *Store) GetResourceHistory(uuid, metric, timeRange string) (*ResourceHistoryResponse, error) {
-	if metric != "cpu" && metric != "memory" {
+	if metric != "cpu" && metric != "memory" && metric != "network" {
 		return nil, errors.New("invalid resource metric")
 	}
 	duration, ok := resourceDuration(timeRange)
@@ -91,8 +98,11 @@ func (s *Store) GetResourceHistory(uuid, metric, timeRange string) (*ResourceHis
 	// Keep at most about 720 buckets in long ranges, aligned to whole minutes.
 	step := ((duration+719)/720 + 59) / 60 * 60
 	column := "cpu_usage"
-	if metric == "memory" {
+	switch metric {
+	case "memory":
 		column = "ram_usage"
+	case "network":
+		column = "network_rate"
 	}
 	response := &ResourceHistoryResponse{
 		UUID: uuid, Metric: metric, Range: timeRange, StartTime: start,

@@ -21,6 +21,7 @@ window.VibeHex = (() => {
     const bill = billingDisplay(node.profile);
     const capacity = data => number(data.total) > 0 ? (live && number(data.used) != null ? `${formatBytes(data.used)} / ` : '容量 ') + formatBytes(data.total) : '等待上报';
     const speed = value => live && number(value) != null ? formatSpeed(value) : '—';
+    const totalRate = number(net.up) != null && number(net.down) != null ? number(net.up) + number(net.down) : null;
     const used = number(node.cycle_total_used);
     const limit = number(node.traffic_limit);
     const traffic = limit > 0 ? percent(used, limit) : null;
@@ -32,7 +33,7 @@ window.VibeHex = (() => {
         ${metric('硬盘', live ? percent(disk.used, disk.total) : null, capacity(disk))}
         ${metric('周期流量', traffic, limit > 0 ? `${formatBytes(used)} / ${formatBytes(limit)}` : '未设置流量配额')}
       </div>
-      <div class="hex-network"><div><span>↑ 上行</span><strong>${speed(net.up)}</strong></div><div><span>↓ 下行</span><strong>${speed(net.down)}</strong></div></div>
+      <div class="hex-network"><div><span>↑ 上行</span><strong>${speed(net.up)}</strong></div><button class="hex-network-total" type="button" data-action="resource" data-uuid="${escapeHtml(node.uuid)}" data-metric="network" title="查看实时速率历史曲线" aria-label="查看实时速率历史曲线"><span>实时速率</span><strong>${speed(totalRate)}</strong></button><div><span>↓ 下行</span><strong>${speed(net.down)}</strong></div></div>
       <div class="hex-facts"><div><span>累计上传</span><strong>${number(net.totalUp) == null ? '—' : formatBytes(net.totalUp)}</strong></div><div><span>累计下载</span><strong>${number(net.totalDown) == null ? '—' : formatBytes(net.totalDown)}</strong></div><div><span>在线时长</span><strong>${live && number(r.uptime) != null ? formatUptime(r.uptime) : '—'}</strong></div></div>
       <div class="hex-probes">${renderPingPanels(node)}</div>
       <div class="hex-billing"><div><span>到期时间</span><strong>${bill.date}</strong><small>${bill.remaining}</small></div><div><span>流量重置</span><strong>${node.reset_day > 0 ? '每月 ' + node.reset_day + ' 日' : '未设置'}</strong><small>${node.reset_day > 0 && node.days_until_reset != null ? (node.days_until_reset === 0 ? '今日重置' : '剩余 ' + node.days_until_reset + ' 天') : '按节点账期统计'}</small></div></div>

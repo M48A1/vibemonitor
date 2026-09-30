@@ -32,7 +32,6 @@
             </div>
           </div>
         </details>
-        <span class="brand-badge">Probe</span>
       </div>
     </header>
 
@@ -113,10 +112,23 @@
         <div class="form-group"><label class="form-label" for="telegramReminderDays">到期提醒提前天数</label><input type="number" class="form-input" id="telegramReminderDays" min="0" max="7" step="1" value="7"><small>到期前每天提醒一次，0 表示关闭到期提醒。</small></div>
         <div class="form-group"><label class="form-label" for="telegramReminderHour">每日提醒时间（0–23 时）</label><input type="number" class="form-input" id="telegramReminderHour" min="0" max="23" step="1" value="9"></div>
         <div class="form-group"><label class="form-label" for="telegramReminderTimezone">提醒时区</label><input class="form-input" id="telegramReminderTimezone" value="Asia/Shanghai" placeholder="例如 Asia/Shanghai"></div>
+        <details class="telegram-template-section" id="telegramTemplateDetails">
+          <summary>报警消息模板</summary>
+          <p>可编辑每类告警正文。变量会在发送时替换；清空单项并保存会使用默认文案。每项最多 2048 字节。</p>
+          <div class="telegram-template-fields">
+            <div class="form-group"><label class="form-label" for="telegramTemplateOffline">节点离线</label><textarea class="form-input" id="telegramTemplateOffline" rows="2"></textarea><small>变量：<code>{node}</code> 节点名、<code>{last_seen}</code> 最后上报时间</small></div>
+            <div class="form-group"><label class="form-label" for="telegramTemplateRecovery">节点恢复</label><textarea class="form-input" id="telegramTemplateRecovery" rows="2"></textarea><small>变量：<code>{node}</code> 节点名</small></div>
+            <div class="form-group"><label class="form-label" for="telegramTemplateCPU">CPU 告警</label><textarea class="form-input" id="telegramTemplateCPU" rows="2"></textarea><small>变量：<code>{node}</code>、<code>{cpu}</code> 当前使用率、<code>{cpu_threshold}</code> 阈值</small></div>
+            <div class="form-group"><label class="form-label" for="telegramTemplateMemory">内存告警</label><textarea class="form-input" id="telegramTemplateMemory" rows="2"></textarea><small>变量：<code>{node}</code>、<code>{memory}</code> 当前使用率、<code>{memory_threshold}</code> 阈值</small></div>
+            <div class="form-group"><label class="form-label" for="telegramTemplateTraffic">流量告警</label><textarea class="form-input" id="telegramTemplateTraffic" rows="2"></textarea><small>变量：<code>{node}</code>、<code>{used_gib}</code> 本周期已用 GiB、<code>{limit_gib}</code> 额度 GiB</small></div>
+            <div class="form-group"><label class="form-label" for="telegramTemplateDue">到期提醒</label><textarea class="form-input" id="telegramTemplateDue" rows="2"></textarea><small>变量：<code>{node}</code>、<code>{due_date}</code> 到期日期、<code>{days}</code> 剩余天数</small></div>
+          </div>
+          <button type="button" class="btn" id="resetTelegramTemplatesBtn">填入全部默认文案</button>
+        </details>
         <div class="logo-upload-actions">
           <button type="button" class="btn btn-primary" id="saveTelegramBtn">保存 Telegram 配置</button>
-          <button type="button" class="btn" id="testTelegramBtn">发送测试消息</button>
-          <button type="button" class="btn" id="clearTelegramBtn">清除配置</button>
+          <button type="button" class="btn" id="testTelegramBtn">测试 Telegram 连接</button>
+          <button type="button" class="btn" id="clearTelegramBtn">清除凭据并关闭告警</button>
         </div>
       </div>
     </div>
@@ -413,10 +425,10 @@
           </div>
         </div>
         <div class="ping-stats-grid resource-stats-grid">
-          <div class="ping-stat-card"><div class="ping-stat-label">最新记录</div><div class="ping-stat-value" id="resourceStatCurrent">--</div></div>
-          <div class="ping-stat-card"><div class="ping-stat-label">平均占用</div><div class="ping-stat-value" id="resourceStatAvg">--</div></div>
-          <div class="ping-stat-card"><div class="ping-stat-label">最低占用</div><div class="ping-stat-value" id="resourceStatMin">--</div></div>
-          <div class="ping-stat-card"><div class="ping-stat-label">最高占用</div><div class="ping-stat-value" id="resourceStatMax">--</div></div>
+          <div class="ping-stat-card"><div class="ping-stat-label" id="resourceLabelCurrent">最新记录</div><div class="ping-stat-value" id="resourceStatCurrent">--</div></div>
+          <div class="ping-stat-card"><div class="ping-stat-label" id="resourceLabelAvg">平均占用</div><div class="ping-stat-value" id="resourceStatAvg">--</div></div>
+          <div class="ping-stat-card"><div class="ping-stat-label" id="resourceLabelMin">最低占用</div><div class="ping-stat-value" id="resourceStatMin">--</div></div>
+          <div class="ping-stat-card"><div class="ping-stat-label" id="resourceLabelMax">最高占用</div><div class="ping-stat-value" id="resourceStatMax">--</div></div>
         </div>
         <div class="ping-chart-container">
           <svg id="resourceChartSvg" viewBox="0 0 700 240" preserveAspectRatio="none" role="img" aria-label="资源占用历史曲线"></svg>

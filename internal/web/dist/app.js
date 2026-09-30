@@ -530,6 +530,13 @@ async function fetchBasicSettingsForAdmin() {
   finally { submit.disabled = false; }
 }
 
+const telegramTemplateFields = {
+  offline: 'telegramTemplateOffline', recovery: 'telegramTemplateRecovery',
+  cpu: 'telegramTemplateCPU', memory: 'telegramTemplateMemory',
+  traffic: 'telegramTemplateTraffic', due: 'telegramTemplateDue'
+};
+let telegramDefaultTemplates = {};
+
 async function fetchExternalSettingsForAdmin() {
   try {
     const res = await fetch('/api/admin/telegram', { credentials: 'same-origin' });
@@ -541,12 +548,22 @@ async function fetchExternalSettingsForAdmin() {
     document.getElementById('telegramReminderDays').value = telegram.reminder_days ?? 7;
     document.getElementById('telegramReminderHour').value = telegram.reminder_hour ?? 9;
     document.getElementById('telegramReminderTimezone').value = telegram.reminder_timezone || 'Asia/Shanghai';
+    telegramDefaultTemplates = telegram.default_templates || {};
+    for (const [kind, id] of Object.entries(telegramTemplateFields)) {
+      document.getElementById(id).value = telegram.templates?.[kind] || telegramDefaultTemplates[kind] || '';
+    }
     const tokenInput = document.getElementById('telegramBotToken');
     tokenInput.value = '';
     tokenInput.placeholder = telegram.token_configured ? '已配置；留空保留原 Token' : '填写 BotFather 提供的 Token';
     return true;
   } catch (e) { alert(e.message); return false; }
 }
+
+document.getElementById('resetTelegramTemplatesBtn').addEventListener('click', () => {
+  for (const [kind, id] of Object.entries(telegramTemplateFields)) {
+    document.getElementById(id).value = telegramDefaultTemplates[kind] || '';
+  }
+});
 
 document.getElementById('saveTelegramBtn').addEventListener('click', async () => {
   const button = document.getElementById('saveTelegramBtn');
@@ -573,7 +590,11 @@ document.getElementById('saveTelegramBtn').addEventListener('click', async () =>
         offline_delay_seconds: offlineDelay,
         reminder_days: reminderDays,
         reminder_hour: reminderHour,
-        reminder_timezone: document.getElementById('telegramReminderTimezone').value.trim()
+        reminder_timezone: document.getElementById('telegramReminderTimezone').value.trim(),
+        templates: Object.fromEntries(Object.entries(telegramTemplateFields).map(([kind, id]) => {
+          const value = document.getElementById(id).value;
+          return [kind, value === telegramDefaultTemplates[kind] ? '' : value];
+        }))
       })
     });
     const data = await res.json();
@@ -1463,20 +1484,26 @@ function renderPingSvgChart(samples, range, errorMsg, startSec, nowSec, offlineI
   });
 }
 
-// CPU and memory history use the same ranges and modal layout as Ping.
+// CPU, memory, and total network rate share the same history modal.
 let currentResourceNodeUUID = '';
 let currentResourceMetric = 'cpu';
 let currentResourceRange = '1h';
 let resourceChartRequest = 0;
 
 window.openResourceChart = function(uuid, nodeName, metric) {
-  if (metric !== 'cpu' && metric !== 'memory') return;
+  if (!['cpu', 'memory', 'network'].includes(metric)) return;
   currentResourceNodeUUID = uuid;
   currentResourceMetric = metric;
   currentResourceRange = '1h';
-  const label = metric === 'cpu' ? 'CPU' : '内存';
-  document.getElementById('resourceModalTitle').textContent = `${nodeName} ${label}占用曲线`;
-  document.getElementById('resourceModalSubtitle').textContent = `每 60 秒记录 · 保留 90 天 · ${label} 占用率`;
+  const label = metric === 'cpu' ? 'CPU' : metric === 'memory' ? '内存' : '实时速率';
+  document.getElementById('resourceModalTitle').textContent = `${nodeName} ${label}${metric === 'network' ? '历史曲线' : '占用曲线'}`;
+  document.getElementById('resourceModalSubtitle').textContent = `每 60 秒记录 · 保留 90 天 · ${metric === 'network' ? '上行＋下行（Bytes/s）' : `${label}占用率`}`;
+  document.getElementById('resourceChartSvg').setAttribute('aria-label', `${label}历史曲线`);
+  for (const [name, labelText] of Object.entries(metric === 'network'
+    ? {Current: '最新速率', Avg: '平均速率', Min: '最低速率', Max: '最高速率'}
+    : {Current: '最新记录', Avg: '平均占用', Min: '最低占用', Max: '最高占用'})) {
+    document.getElementById(`resourceLabel${name}`).textContent = labelText;
+  }
   updateResourceRangeButtons();
   openModal('resourceChartModal');
   loadResourceHistory();
@@ -1512,11 +1539,10 @@ async function loadResourceHistory() {
     const data = await response.json();
     if (request !== resourceChartRequest) return;
     const stats = data.stats || {};
-    const pct = value => Number.isFinite(Number(value)) ? `${Number(value).toFixed(1)}%` : '--';
-    document.getElementById('resourceStatCurrent').textContent = stats.count > 0 ? pct(stats.current) : '--';
-    document.getElementById('resourceStatAvg').textContent = stats.count > 0 ? pct(stats.avg) : '--';
-    document.getElementById('resourceStatMin').textContent = stats.count > 0 ? pct(stats.min) : '--';
-    document.getElementById('resourceStatMax').textContent = stats.count > 0 ? pct(stats.max) : '--';
+    document.getElementById('resourceStatCurrent').textContent = stats.count > 0 ? formatResourceValue(metric, stats.current) : '--';
+    document.getElementById('resourceStatAvg').textContent = stats.count > 0 ? formatResourceValue(metric, stats.avg) : '--';
+    document.getElementById('resourceStatMin').textContent = stats.count > 0 ? formatResourceValue(metric, stats.min) : '--';
+    document.getElementById('resourceStatMax').textContent = stats.count > 0 ? formatResourceValue(metric, stats.max) : '--';
     document.getElementById('resourceChartTimeStart').textContent = formatChartTime(data.start_time, range !== '1h');
     document.getElementById('resourceChartTimeEnd').textContent = `现在 (${formatChartTime(data.end_time, range !== '1h')})`;
     renderResourceSvgChart(data.samples || [], data.start_time, data.end_time, data.step_seconds, metric);
@@ -1529,11 +1555,16 @@ async function loadResourceHistory() {
   }
 }
 
+function formatResourceValue(metric, value) {
+  if (!Number.isFinite(Number(value))) return '--';
+  return metric === 'network' ? formatSpeed(Number(value)) : `${Number(value).toFixed(1)}%`;
+}
+
 function renderResourceSvgChart(samples, startSec, endSec, stepSeconds, metric, errorMsg) {
   const svg = document.getElementById('resourceChartSvg');
   const tooltip = document.getElementById('resourceChartTooltip');
   tooltip.style.display = 'none';
-  const width = 700, height = 240, left = 48, right = 20, top = 24, bottom = 32;
+  const width = 700, height = 240, left = metric === 'network' ? 82 : 48, right = 20, top = 24, bottom = 32;
   const plotWidth = width - left - right, plotHeight = height - top - bottom;
   if (errorMsg || !samples.length || !(endSec > startSec)) {
     svg.innerHTML = `<text x="350" y="120" text-anchor="middle" fill="#64748b" font-size="13" font-family="system-ui">${errorMsg || '暂无历史采样，收到上报后将开始记录'}</text>`;
@@ -1541,20 +1572,34 @@ function renderResourceSvgChart(samples, startSec, endSec, stepSeconds, metric, 
   }
   const duration = endSec - startSec;
   const gap = Math.max(180, Number(stepSeconds || 60) * 2.5);
-  const color = metric === 'cpu' ? '#356dcc' : '#238364';
-  const points = samples.filter(sample => Number.isFinite(sample.t) && Number.isFinite(sample.v))
+  const color = metric === 'cpu' ? '#356dcc' : metric === 'memory' ? '#238364' : '#986700';
+  const validSamples = samples.filter(sample => Number.isFinite(sample.t) && Number.isFinite(sample.v));
+  let axisMax = 100;
+  if (metric === 'network') {
+    const peak = validSamples.reduce((max, sample) => Math.max(max, sample.v), 0);
+    if (peak === 0) axisMax = 1024;
+    else {
+      const scale = 10 ** Math.floor(Math.log10(peak));
+      const scaled = peak / scale;
+      axisMax = (scaled <= 1 ? 1 : scaled <= 2 ? 2 : scaled <= 5 ? 5 : 10) * scale;
+      axisMax = Math.max(4, axisMax);
+    }
+  }
+  const points = validSamples
     .map(sample => ({
-      t: sample.t, v: Math.max(0, Math.min(100, sample.v)),
+      t: sample.t, v: Math.max(0, Math.min(axisMax, sample.v)),
       x: left + Math.max(0, Math.min(1, (sample.t - startSec) / duration)) * plotWidth,
-      y: top + (1 - Math.max(0, Math.min(100, sample.v)) / 100) * plotHeight
+      y: top + (1 - Math.max(0, Math.min(axisMax, sample.v)) / axisMax) * plotHeight
     }));
   if (!points.length) {
     svg.innerHTML = '<text x="350" y="120" text-anchor="middle" fill="#64748b" font-size="13" font-family="system-ui">暂无历史采样</text>';
     return;
   }
-  const grid = [0, 25, 50, 75, 100].map(value => {
-    const y = top + (1 - value / 100) * plotHeight;
-    return `<line x1="${left}" y1="${y}" x2="${width-right}" y2="${y}" stroke="#64748b" stroke-width="1" stroke-dasharray="3,3" opacity=".25"/><text x="${left-8}" y="${y+4}" text-anchor="end" fill="#64748b" font-size="11" font-family="system-ui">${value}%</text>`;
+  const grid = [0, 0.25, 0.5, 0.75, 1].map(fraction => {
+    const value = axisMax * fraction;
+    const y = top + (1 - fraction) * plotHeight;
+    const label = metric === 'network' ? formatSpeed(value) : `${value}%`;
+    return `<line x1="${left}" y1="${y}" x2="${width-right}" y2="${y}" stroke="#64748b" stroke-width="1" stroke-dasharray="3,3" opacity=".25"/><text x="${left-8}" y="${y+4}" text-anchor="end" fill="#64748b" font-size="11" font-family="system-ui">${label}</text>`;
   }).join('');
   const path = points.map((point, index) => `${index === 0 || point.t - points[index-1].t > gap ? 'M' : 'L'} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(' ');
   svg.innerHTML = `${grid}<path d="${path}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -1585,7 +1630,7 @@ function renderResourceSvgChart(samples, startSec, endSec, stepSeconds, metric, 
     marker.setAttribute('cx', closest.x);
     marker.setAttribute('cy', closest.y);
     line.style.display = marker.style.display = tooltip.style.display = 'block';
-    tooltip.textContent = `${formatTooltipTime(closest.t)} · ${metric === 'cpu' ? 'CPU' : '内存'} ${closest.v.toFixed(1)}%`;
+    tooltip.textContent = `${formatTooltipTime(closest.t)} · ${metric === 'cpu' ? 'CPU' : metric === 'memory' ? '内存' : '实时速率'} ${formatResourceValue(metric, closest.v)}`;
   });
   hitBox.addEventListener('mouseleave', () => {
     line.style.display = marker.style.display = tooltip.style.display = 'none';

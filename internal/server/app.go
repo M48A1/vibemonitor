@@ -192,7 +192,7 @@ func (s *Server) Handler() http.Handler {
 		uuid := r.URL.Query().Get("uuid")
 		metric := r.URL.Query().Get("metric")
 		timeRange := r.URL.Query().Get("range")
-		if metric != "cpu" && metric != "memory" {
+		if metric != "cpu" && metric != "memory" && metric != "network" {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid resource metric"})
 			return
 		}
@@ -241,6 +241,8 @@ func (s *Server) Handler() http.Handler {
 			"reminder_days":         cfg.TelegramReminderDays,
 			"reminder_hour":         cfg.TelegramReminderHour,
 			"reminder_timezone":     cfg.TelegramReminderTimezone,
+			"templates":             cfg.TelegramTemplates.Effective(),
+			"default_templates":     store.DefaultTelegramTemplates(),
 		})
 	})
 	mux.HandleFunc("POST /api/admin/telegram", func(w http.ResponseWriter, r *http.Request) {
@@ -250,14 +252,15 @@ func (s *Server) Handler() http.Handler {
 			return
 		}
 		var req struct {
-			BotToken            string  `json:"bot_token"`
-			ChatID              string  `json:"chat_id"`
-			Enabled             bool    `json:"enabled"`
-			Clear               bool    `json:"clear"`
-			OfflineDelaySeconds *int    `json:"offline_delay_seconds"`
-			ReminderDays        *int    `json:"reminder_days"`
-			ReminderHour        *int    `json:"reminder_hour"`
-			ReminderTimezone    *string `json:"reminder_timezone"`
+			BotToken            string                   `json:"bot_token"`
+			ChatID              string                   `json:"chat_id"`
+			Enabled             bool                     `json:"enabled"`
+			Clear               bool                     `json:"clear"`
+			OfflineDelaySeconds *int                     `json:"offline_delay_seconds"`
+			ReminderDays        *int                     `json:"reminder_days"`
+			ReminderHour        *int                     `json:"reminder_hour"`
+			ReminderTimezone    *string                  `json:"reminder_timezone"`
+			Templates           *store.TelegramTemplates `json:"templates"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSON(w, jsonErrorStatus(err), map[string]any{"error": "invalid or oversized json"})
@@ -267,6 +270,7 @@ func (s *Server) Handler() http.Handler {
 			BotToken: req.BotToken, ChatID: req.ChatID, Enabled: req.Enabled, Clear: req.Clear,
 			OfflineDelaySeconds: req.OfflineDelaySeconds, ReminderDays: req.ReminderDays,
 			ReminderHour: req.ReminderHour, ReminderTimezone: req.ReminderTimezone,
+			Templates: req.Templates,
 		}); err != nil {
 			if errors.Is(err, store.ErrInvalidSettings) {
 				writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
