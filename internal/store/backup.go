@@ -101,6 +101,19 @@ func ValidateBackup(path string) error {
 			return err
 		}
 	}
+	var resourceTables int
+	if err := db.db.QueryRow("SELECT count(*) FROM sqlite_schema WHERE name='resource_history' AND type='table'").Scan(&resourceTables); err != nil {
+		return err
+	}
+	if resourceTables > 0 {
+		rows, err := db.db.Query("SELECT node_uuid,timestamp,cpu_usage,ram_usage FROM resource_history LIMIT 0")
+		if err != nil {
+			return err
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+	}
 	// v1.0.41 and earlier SQLite backups have no embedded icon table.
 	var assetTables int
 	if err := db.db.QueryRow("SELECT count(*) FROM sqlite_schema WHERE name='site_assets' AND type='table'").Scan(&assetTables); err != nil {
@@ -351,6 +364,19 @@ func RestoreData(source, destination string) error {
 	for _, table := range backupTables {
 		query := "INSERT INTO main." + table.name + " (" + table.columns + ") SELECT " + table.columns + " FROM restore_source." + table.name
 		if _, err := tx.Exec(query); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec("DELETE FROM main.resource_history"); err != nil {
+		return err
+	}
+	var resourceTables int
+	if err := tx.QueryRow("SELECT count(*) FROM restore_source.sqlite_schema WHERE name='resource_history' AND type='table'").Scan(&resourceTables); err != nil {
+		return err
+	}
+	if resourceTables > 0 {
+		if _, err := tx.Exec(`INSERT INTO main.resource_history(node_uuid,timestamp,cpu_usage,ram_usage)
+			SELECT node_uuid,timestamp,cpu_usage,ram_usage FROM restore_source.resource_history`); err != nil {
 			return err
 		}
 	}

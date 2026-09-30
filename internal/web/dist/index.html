@@ -393,6 +393,41 @@
     </div>
   </div>
 
+  <!-- CPU and memory history chart modal -->
+  <div class="modal-overlay" id="resourceChartModal">
+    <div class="modal modal-lg">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title" id="resourceModalTitle">资源占用曲线</h3>
+          <div class="resource-modal-subtitle" id="resourceModalSubtitle">每 60 秒记录 · 保留 90 天</div>
+        </div>
+        <button type="button" class="modal-close" id="closeResourceChartModalBtn" data-close-modal="resourceChartModal" aria-label="关闭">&times;</button>
+      </div>
+      <div class="resource-modal-body">
+        <div class="resource-range-row">
+          <div class="time-range-group">
+            <button type="button" class="range-btn active" id="resourceRange1h">最近一小时</button>
+            <button type="button" class="range-btn" id="resourceRange24h">最近24小时</button>
+            <button type="button" class="range-btn" id="resourceRange7d">最近7天</button>
+            <button type="button" class="range-btn" id="resourceRange31d">最近31天</button>
+          </div>
+        </div>
+        <div class="ping-stats-grid resource-stats-grid">
+          <div class="ping-stat-card"><div class="ping-stat-label">最新记录</div><div class="ping-stat-value" id="resourceStatCurrent">--</div></div>
+          <div class="ping-stat-card"><div class="ping-stat-label">平均占用</div><div class="ping-stat-value" id="resourceStatAvg">--</div></div>
+          <div class="ping-stat-card"><div class="ping-stat-label">最低占用</div><div class="ping-stat-value" id="resourceStatMin">--</div></div>
+          <div class="ping-stat-card"><div class="ping-stat-label">最高占用</div><div class="ping-stat-value" id="resourceStatMax">--</div></div>
+        </div>
+        <div class="ping-chart-container">
+          <svg id="resourceChartSvg" viewBox="0 0 700 240" preserveAspectRatio="none" role="img" aria-label="资源占用历史曲线"></svg>
+          <div class="chart-tooltip" id="resourceChartTooltip" style="display: none;"></div>
+        </div>
+        <div class="resource-chart-footer"><span id="resourceChartTimeStart">--</span><span>空白处表示未收到采样</span><span id="resourceChartTimeEnd">现在</span></div>
+        <div class="resource-modal-actions"><button type="button" class="btn" id="closeResourceChartBottomBtn" data-close-modal="resourceChartModal">关闭</button></div>
+      </div>
+    </div>
+  </div>
+
   <script src="/globe.js"></script>
   <script src="/themes.js"></script>
   <script src="/app.js"></script>

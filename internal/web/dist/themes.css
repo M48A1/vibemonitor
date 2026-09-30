@@ -114,6 +114,9 @@ body::before {
 .hex-status.is-online { color: var(--success); background: color-mix(in srgb, var(--success) 9%, transparent); }
 .hex-resources { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 20px; }
 .hex-metric { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.metric-button { width: 100%; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.metric-button:hover .metric-name { color: var(--primary); text-decoration: underline; }
+.metric-button:focus-visible { outline: 2px solid var(--primary); outline-offset: 5px; border-radius: 3px; }
 .hex-metric .metric-meta { gap: 6px; align-items: center; }
 .hex-metric .metric-meta strong { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .hex-metric small { font-size: 10px; color: var(--muted-foreground); overflow-wrap: anywhere; }

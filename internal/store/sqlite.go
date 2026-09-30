@@ -139,6 +139,14 @@ func (s *sqliteDB) initSchema() error {
 		timestamp INTEGER NOT NULL,
 		latency INTEGER NOT NULL
 	);
+	CREATE TABLE IF NOT EXISTS resource_history (
+		node_uuid TEXT NOT NULL,
+		timestamp INTEGER NOT NULL,
+		cpu_usage REAL,
+		ram_usage REAL,
+		PRIMARY KEY (node_uuid, timestamp)
+	);
+	CREATE INDEX IF NOT EXISTS idx_resource_history_time ON resource_history(timestamp);
 
 	CREATE INDEX IF NOT EXISTS idx_ping_lookup ON ping_history(node_uuid, target_name, timestamp);
 	CREATE INDEX IF NOT EXISTS idx_ping_cleanup ON ping_history(timestamp);
@@ -321,6 +329,9 @@ func (s *sqliteDB) deleteNode(uuid string) error {
 		return err
 	}
 	if _, err := tx.Exec("DELETE FROM ping_history WHERE node_uuid = ?", uuid); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("DELETE FROM resource_history WHERE node_uuid = ?", uuid); err != nil {
 		return err
 	}
 	return tx.Commit()

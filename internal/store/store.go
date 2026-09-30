@@ -2,6 +2,7 @@ package store
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -101,6 +102,8 @@ type Node struct {
 	CycleRemaining int64   `json:"cycle_remaining"`  // TrafficLimit - CycleTotalUsed
 	CyclePercent   float64 `json:"cycle_percent"`    // Percentage used (0-100+)
 	DaysUntilReset int     `json:"days_until_reset"` // Days remaining until reset day
+
+	lastResourceSampleAt int64
 }
 
 type Config struct {
@@ -228,6 +231,9 @@ func (s *Store) periodicFlusher() {
 			if s.sdb != nil {
 				if _, err := s.sdb.pruneOldPingHistory(time.Now().Unix() - pingHistoryRetentionSec); err != nil {
 					log.Printf("[Store] History cleanup failed: %v", err)
+				}
+				if _, err := s.sdb.pruneOldResourceHistory(time.Now().Unix() - resourceHistoryRetentionSec); err != nil {
+					log.Printf("[Store] Resource history cleanup failed: %v", err)
 				}
 			}
 		}
@@ -953,6 +959,27 @@ func (s *Store) ingestReportAt(token string, report protocol.Report, now time.Ti
 		node.History = append(node.History[1:], hp)
 	} else {
 		node.History = append(node.History, hp)
+	}
+	if s.sdb != nil {
+		if node.lastResourceSampleAt == 0 {
+			last, err := s.sdb.latestResourceSampleTime(node.UUID)
+			if err != nil {
+				log.Printf("[Store] Resource history lookup failed: %v", err)
+			} else {
+				node.lastResourceSampleAt = last
+			}
+		}
+		if receivedAt.Unix()-node.lastResourceSampleAt >= PingSampleIntervalSec {
+			cpu := sql.NullFloat64{Float64: report.CPU.Usage, Valid: validResourcePercent(report.CPU.Usage)}
+			ram := sql.NullFloat64{Float64: ramUsagePct, Valid: report.RAM.Total > 0 && report.RAM.Used >= 0 && report.RAM.Used <= report.RAM.Total}
+			if cpu.Valid || ram.Valid {
+				if err := s.sdb.recordResourceSample(node.UUID, receivedAt.Unix(), cpu, ram); err != nil {
+					log.Printf("[Store] Resource history write failed: %v", err)
+				} else {
+					node.lastResourceSampleAt = receivedAt.Unix()
+				}
+			}
+		}
 	}
 
 	// Record 60-second interval Ping samples into PingHistory (persisted in SQLite)

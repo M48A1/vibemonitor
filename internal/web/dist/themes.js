@@ -4,10 +4,13 @@ window.VibeHex = (() => {
   const percent = (used, total) => number(total) > 0 && number(used) != null ? Math.max(0, Math.min(100, Number(used) / Number(total) * 100)) : null;
   let overviewFields = null;
 
-  function metric(label, value, detail) {
+  function metric(label, value, detail, uuid, resource) {
     const pct = value == null ? null : Math.max(0, Math.min(100, value));
     const level = pct >= 90 ? 'critical' : pct >= 80 ? 'high' : '';
-    return `<div class="hex-metric"><div class="metric-meta"><span class="metric-name">${label}</span><strong>${pct == null ? '—' : pct.toFixed(1) + '%'}</strong></div><div class="progress-track"><div class="progress-bar ${level}" style="width:${pct || 0}%"></div></div><small>${detail}</small></div>`;
+    const interactive = resource === 'cpu' || resource === 'memory';
+    const tag = interactive ? 'button' : 'div';
+    const attributes = interactive ? ` type="button" data-action="resource" data-uuid="${escapeHtml(uuid)}" data-metric="${resource}" title="查看${label}历史曲线" aria-label="查看${label}历史曲线"` : '';
+    return `<${tag} class="hex-metric${interactive ? ' metric-button' : ''}"${attributes}><div class="metric-meta"><span class="metric-name">${label}</span><strong>${pct == null ? '—' : pct.toFixed(1) + '%'}</strong></div><div class="progress-track"><div class="progress-bar ${level}" style="width:${pct || 0}%"></div></div><small>${detail}</small></${tag}>`;
   }
 
   function renderNode(node) {
@@ -24,8 +27,8 @@ window.VibeHex = (() => {
     return `<article class="node-card hex-card ${node.online ? '' : 'offline'}" data-node-id="${escapeHtml(node.uuid)}">
       <div class="hex-node-header"><div class="hex-node-identity"><span class="hex-region">${getRegionBadge(node.region)}</span><h2>${escapeHtml(node.name)}</h2><span class="hex-system">${escapeHtml(info.os || '等待上报')} ${info.arch ? '· ' + escapeHtml(info.arch) : ''}</span></div><span class="hex-status ${node.online ? 'is-online' : ''}"><i></i>${node.online ? '在线' : '离线'}</span></div>
       <div class="hex-resources">
-        ${metric('CPU', live ? number(cpu.usage) : null, `${info.cpu_cores || cpu.cores || '—'} 核`)}
-        ${metric('内存', live ? percent(ram.used, ram.total) : null, capacity(ram))}
+        ${metric('CPU', live ? number(cpu.usage) : null, `${info.cpu_cores || cpu.cores || '—'} 核`, node.uuid, 'cpu')}
+        ${metric('内存', live ? percent(ram.used, ram.total) : null, capacity(ram), node.uuid, 'memory')}
         ${metric('硬盘', live ? percent(disk.used, disk.total) : null, capacity(disk))}
         ${metric('周期流量', traffic, limit > 0 ? `${formatBytes(used)} / ${formatBytes(limit)}` : '未设置流量配额')}
       </div>

@@ -729,11 +729,19 @@ body {
   overflow: hidden;
 }
 
-#pingChartSvg {
+#pingChartSvg, #resourceChartSvg {
   width: 100%;
   height: 100%;
   display: block;
 }
+
+.resource-modal-subtitle { font-size: 12px; color: var(--muted-foreground); margin-top: 2px; }
+.resource-modal-body { padding-top: 10px; }
+.resource-range-row { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+.resource-stats-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.resource-chart-footer { display: flex; justify-content: space-between; gap: 10px; font-size: 11px; color: var(--muted-foreground); margin-top: 8px; }
+.resource-modal-actions { display: flex; justify-content: flex-end; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+@media (max-width: 600px) { .resource-stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 .chart-tooltip {
   position: absolute;

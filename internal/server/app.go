@@ -180,6 +180,36 @@ func (s *Server) Handler() http.Handler {
 		}
 		writeJSON(w, http.StatusOK, resp)
 	})
+	mux.HandleFunc("GET /api/nodes/resource-history", func(w http.ResponseWriter, r *http.Request) {
+		uuid := r.URL.Query().Get("uuid")
+		metric := r.URL.Query().Get("metric")
+		timeRange := r.URL.Query().Get("range")
+		if metric != "cpu" && metric != "memory" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid resource metric"})
+			return
+		}
+		switch timeRange {
+		case "1h", "24h", "7d", "31d":
+		default:
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid resource range"})
+			return
+		}
+		if uuid == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing uuid parameter"})
+			return
+		}
+		if s.store.GetNode(uuid) == nil {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "node not found"})
+			return
+		}
+		resp, err := s.store.GetResourceHistory(uuid, metric, timeRange)
+		if err != nil {
+			log.Printf("[Store] Resource history query failed: %v", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load resource history"})
+			return
+		}
+		writeJSON(w, http.StatusOK, resp)
+	})
 
 	// 3. WebSocket Clients endpoint
 	mux.HandleFunc("GET /api/clients", s.wsHub.HandleWS)

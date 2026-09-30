@@ -27,10 +27,16 @@ func (s *sqliteDB) saveSnapshot(config Config, nodes map[string]*Node) error {
 		if _, err = tx.Exec("DELETE FROM ping_history WHERE node_uuid NOT IN (SELECT uuid FROM nodes)"); err != nil {
 			return err
 		}
+		if _, err = tx.Exec("DELETE FROM resource_history WHERE node_uuid NOT IN (SELECT uuid FROM nodes)"); err != nil {
+			return err
+		}
 	} else {
 		for id := range s.nodeCache {
 			if _, exists := nodes[id]; !exists {
 				if _, err = tx.Exec("DELETE FROM ping_history WHERE node_uuid=?", id); err != nil {
+					return err
+				}
+				if _, err = tx.Exec("DELETE FROM resource_history WHERE node_uuid=?", id); err != nil {
 					return err
 				}
 			}

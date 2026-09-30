@@ -137,7 +137,8 @@ const modalOverlayIds = [
   'addNodeModal',
   'editNodeModal',
   'nodeGuideModal',
-  'pingChartModal'
+  'pingChartModal',
+  'resourceChartModal'
 ];
 modalOverlayIds.forEach(id => {
   const overlay = document.getElementById(id);
@@ -166,7 +167,9 @@ const modalCloseBtnBindings = [
   { id: 'closeNodeGuideModalBtn', modalId: 'nodeGuideModal' },
   { id: 'closeNodeGuideBottomBtn', modalId: 'nodeGuideModal' },
   { id: 'closePingChartModalBtn', modalId: 'pingChartModal' },
-  { id: 'closePingChartBottomBtn', modalId: 'pingChartModal' }
+  { id: 'closePingChartBottomBtn', modalId: 'pingChartModal' },
+  { id: 'closeResourceChartModalBtn', modalId: 'resourceChartModal' },
+  { id: 'closeResourceChartBottomBtn', modalId: 'resourceChartModal' }
 ];
 modalCloseBtnBindings.forEach(binding => {
   const btn = document.getElementById(binding.id);
@@ -195,6 +198,11 @@ guideCopyBtns.forEach(item => {
     const range = id === 'btnRange1h' ? '1h' : (id === 'btnRange24h' ? '24h' : (id === 'btnRange7d' ? '7d' : '31d'));
     btn.addEventListener('click', () => switchPingRange(range));
   }
+});
+
+['1h', '24h', '7d', '31d'].forEach(range => {
+  const btn = document.getElementById(`resourceRange${range}`);
+  if (btn) btn.addEventListener('click', () => switchResourceRange(range));
 });
 
 // Global event delegation (backdrop click, Escape key, [data-close-modal])
@@ -439,6 +447,7 @@ document.getElementById('nodeGrid').addEventListener('click', (event) => {
     case 'guide': if (isAdmin) showGuide(node.uuid); break;
     case 'delete': if (isAdmin) deleteNode(node.uuid); break;
     case 'ping': openPingChart(node.uuid, node.name, action.dataset.target); break;
+    case 'resource': openResourceChart(node.uuid, node.name, action.dataset.metric); break;
   }
 });
 
@@ -1445,6 +1454,135 @@ function renderPingSvgChart(samples, range, errorMsg, startSec, nowSec, offlineI
     hoverLine.style.display = 'none';
     hoverPoint.style.display = 'none';
     if (tooltip) tooltip.style.display = 'none';
+  });
+}
+
+// CPU and memory history use the same ranges and modal layout as Ping.
+let currentResourceNodeUUID = '';
+let currentResourceMetric = 'cpu';
+let currentResourceRange = '1h';
+let resourceChartRequest = 0;
+
+window.openResourceChart = function(uuid, nodeName, metric) {
+  if (metric !== 'cpu' && metric !== 'memory') return;
+  currentResourceNodeUUID = uuid;
+  currentResourceMetric = metric;
+  currentResourceRange = '1h';
+  const label = metric === 'cpu' ? 'CPU' : '内存';
+  document.getElementById('resourceModalTitle').textContent = `${nodeName} ${label}占用曲线`;
+  document.getElementById('resourceModalSubtitle').textContent = `每 60 秒记录 · 保留 90 天 · ${label} 占用率`;
+  updateResourceRangeButtons();
+  openModal('resourceChartModal');
+  loadResourceHistory();
+};
+
+function updateResourceRangeButtons() {
+  ['1h', '24h', '7d', '31d'].forEach(range => {
+    const button = document.getElementById(`resourceRange${range}`);
+    button.classList.toggle('active', range === currentResourceRange);
+  });
+}
+
+window.switchResourceRange = function(range) {
+  if (!['1h', '24h', '7d', '31d'].includes(range)) return;
+  currentResourceRange = range;
+  updateResourceRangeButtons();
+  loadResourceHistory();
+};
+
+async function loadResourceHistory() {
+  const request = ++resourceChartRequest;
+  const uuid = currentResourceNodeUUID;
+  const metric = currentResourceMetric;
+  const range = currentResourceRange;
+  if (!uuid) return;
+  ['Current', 'Avg', 'Min', 'Max'].forEach(name => {
+    document.getElementById(`resourceStat${name}`).textContent = '...';
+  });
+  try {
+    const query = new URLSearchParams({uuid, metric, range});
+    const response = await fetch(`/api/nodes/resource-history?${query}`);
+    if (!response.ok) throw new Error('加载失败');
+    const data = await response.json();
+    if (request !== resourceChartRequest) return;
+    const stats = data.stats || {};
+    const pct = value => Number.isFinite(Number(value)) ? `${Number(value).toFixed(1)}%` : '--';
+    document.getElementById('resourceStatCurrent').textContent = stats.count > 0 ? pct(stats.current) : '--';
+    document.getElementById('resourceStatAvg').textContent = stats.count > 0 ? pct(stats.avg) : '--';
+    document.getElementById('resourceStatMin').textContent = stats.count > 0 ? pct(stats.min) : '--';
+    document.getElementById('resourceStatMax').textContent = stats.count > 0 ? pct(stats.max) : '--';
+    document.getElementById('resourceChartTimeStart').textContent = formatChartTime(data.start_time, range !== '1h');
+    document.getElementById('resourceChartTimeEnd').textContent = `现在 (${formatChartTime(data.end_time, range !== '1h')})`;
+    renderResourceSvgChart(data.samples || [], data.start_time, data.end_time, data.step_seconds, metric);
+  } catch (error) {
+    if (request !== resourceChartRequest) return;
+    ['Current', 'Avg', 'Min', 'Max'].forEach(name => {
+      document.getElementById(`resourceStat${name}`).textContent = '--';
+    });
+    renderResourceSvgChart([], 0, 0, 60, metric, '获取数据失败');
+  }
+}
+
+function renderResourceSvgChart(samples, startSec, endSec, stepSeconds, metric, errorMsg) {
+  const svg = document.getElementById('resourceChartSvg');
+  const tooltip = document.getElementById('resourceChartTooltip');
+  tooltip.style.display = 'none';
+  const width = 700, height = 240, left = 48, right = 20, top = 24, bottom = 32;
+  const plotWidth = width - left - right, plotHeight = height - top - bottom;
+  if (errorMsg || !samples.length || !(endSec > startSec)) {
+    svg.innerHTML = `<text x="350" y="120" text-anchor="middle" fill="#64748b" font-size="13" font-family="system-ui">${errorMsg || '暂无历史采样，收到上报后将开始记录'}</text>`;
+    return;
+  }
+  const duration = endSec - startSec;
+  const gap = Math.max(180, Number(stepSeconds || 60) * 2.5);
+  const color = metric === 'cpu' ? '#356dcc' : '#238364';
+  const points = samples.filter(sample => Number.isFinite(sample.t) && Number.isFinite(sample.v))
+    .map(sample => ({
+      t: sample.t, v: Math.max(0, Math.min(100, sample.v)),
+      x: left + Math.max(0, Math.min(1, (sample.t - startSec) / duration)) * plotWidth,
+      y: top + (1 - Math.max(0, Math.min(100, sample.v)) / 100) * plotHeight
+    }));
+  if (!points.length) {
+    svg.innerHTML = '<text x="350" y="120" text-anchor="middle" fill="#64748b" font-size="13" font-family="system-ui">暂无历史采样</text>';
+    return;
+  }
+  const grid = [0, 25, 50, 75, 100].map(value => {
+    const y = top + (1 - value / 100) * plotHeight;
+    return `<line x1="${left}" y1="${y}" x2="${width-right}" y2="${y}" stroke="#64748b" stroke-width="1" stroke-dasharray="3,3" opacity=".25"/><text x="${left-8}" y="${y+4}" text-anchor="end" fill="#64748b" font-size="11" font-family="system-ui">${value}%</text>`;
+  }).join('');
+  const path = points.map((point, index) => `${index === 0 || point.t - points[index-1].t > gap ? 'M' : 'L'} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(' ');
+  svg.innerHTML = `${grid}<path d="${path}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    ${points.length === 1 ? `<circle cx="${points[0].x.toFixed(1)}" cy="${points[0].y.toFixed(1)}" r="3.5" fill="${color}"/>` : ''}
+    <line id="resourceHoverLine" x1="0" y1="${top}" x2="0" y2="${top+plotHeight}" stroke="#64748b" stroke-dasharray="2,2" style="display:none"/>
+    <circle id="resourceHoverPoint" cx="0" cy="0" r="4.5" fill="${color}" stroke="#fff" stroke-width="2" style="display:none"/>
+    <rect id="resourceChartHitBox" x="${left}" y="${top}" width="${plotWidth}" height="${plotHeight}" fill="transparent" style="cursor:crosshair"/>`;
+  const hitBox = svg.querySelector('#resourceChartHitBox');
+  const line = svg.querySelector('#resourceHoverLine');
+  const marker = svg.querySelector('#resourceHoverPoint');
+  hitBox.addEventListener('mousemove', event => {
+    const rect = svg.getBoundingClientRect();
+    const mouseX = (event.clientX - rect.left) / rect.width * width;
+    const hoverTime = startSec + (mouseX - left) / plotWidth * duration;
+    let low = 0, high = points.length - 1;
+    while (low < high) {
+      const middle = (low + high) >> 1;
+      if (points[middle].t < hoverTime) low = middle + 1;
+      else high = middle;
+    }
+    const closest = low > 0 && Math.abs(points[low-1].t-hoverTime) < Math.abs(points[low].t-hoverTime) ? points[low-1] : points[low];
+    if (mouseX < left || mouseX > width-right || Math.abs(closest.t-hoverTime) > gap / 2) {
+      line.style.display = marker.style.display = tooltip.style.display = 'none';
+      return;
+    }
+    line.setAttribute('x1', closest.x);
+    line.setAttribute('x2', closest.x);
+    marker.setAttribute('cx', closest.x);
+    marker.setAttribute('cy', closest.y);
+    line.style.display = marker.style.display = tooltip.style.display = 'block';
+    tooltip.textContent = `${formatTooltipTime(closest.t)} · ${metric === 'cpu' ? 'CPU' : '内存'} ${closest.v.toFixed(1)}%`;
+  });
+  hitBox.addEventListener('mouseleave', () => {
+    line.style.display = marker.style.display = tooltip.style.display = 'none';
   });
 }
 
