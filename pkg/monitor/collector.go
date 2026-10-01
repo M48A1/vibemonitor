@@ -52,10 +52,18 @@ func (nt *NetTracker) CalculateSpeed(curUp, curDown int64) (upSpeed, downSpeed i
 }
 
 func (nt *NetTracker) CalculateInterfaceSpeed(current map[string]protocol.InterfaceCounters) (upSpeed, downSpeed int64) {
+	return nt.CalculateInterfaceSpeedAt(current, time.Now())
+}
+
+// CalculateInterfaceSpeedAt uses the counter snapshot time, including its
+// monotonic clock, rather than time spent preparing the rest of the report.
+func (nt *NetTracker) CalculateInterfaceSpeedAt(current map[string]protocol.InterfaceCounters, now time.Time) (upSpeed, downSpeed int64) {
 	nt.mu.Lock()
 	defer nt.mu.Unlock()
 
-	now := time.Now()
+	if !nt.lastTime.IsZero() && !now.After(nt.lastTime) {
+		return 0, 0
+	}
 	if !nt.lastTime.IsZero() {
 		elapsed := now.Sub(nt.lastTime).Seconds()
 		if elapsed > 0 {

@@ -16,6 +16,8 @@
 - 节点按自定义顺序排序;
 - 无主题管理,建议fork自己加;
 
+上下行速率分别按网卡字节增量和实际采样时间计算，默认每秒采样，独立于网络上报。页面显示最近一次采样的平均速率（B/s、KB/s、MB/s），不是链路带宽或瞬时峰值。默认每 3 秒上报；需要更快刷新时，可给探针设置 `--interval 1s`。指定更短的上报间隔时，采样间隔也会相应缩短。
+
 ## 界面预览
 
 ![VibeMonitor 监控面板预览](docs/dashboard-preview.png)
@@ -29,4 +31,3 @@ curl -4 -fsSL -o install.sh https://raw.githubusercontent.com/M48A1/vibemonitor/
 ```
 
 安装主控时填写域名，脚本会配置 Nginx HTTP 反向代理、申请 HTTPS 证书并启用自动续期。留空域名时使用原有的直接端口访问方式。探针填写最终的主控访问地址。
-

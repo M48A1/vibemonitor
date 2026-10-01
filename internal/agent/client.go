@@ -164,6 +164,14 @@ func (c *Client) Run(ctx context.Context) error {
 
 	// 2. Start Ping monitoring worker
 	go c.runPingWorker(ctx)
+	// Keep sampling while HTTP reports or basic-info refreshes are blocked.
+	reports := make(chan protocol.Report, 1)
+	samplingDone := make(chan struct{})
+	go func() {
+		defer close(samplingDone)
+		collectReports(ctx, c.collector, c.interval, reports)
+	}()
+	defer func() { stop(); <-samplingDone }()
 
 	// 3. Metrics Reporting loop
 	ticker := time.NewTicker(c.interval)
@@ -179,9 +187,10 @@ func (c *Client) Run(ctx context.Context) error {
 		case <-basicTicker.C:
 			reportBasicInfo()
 		case <-ticker.C:
-			report, err := c.collector.GetReport()
-			if err != nil {
-				log.Printf("[Agent] Error collecting metrics: %v", err)
+			var report protocol.Report
+			select {
+			case report = <-reports:
+			default:
 				continue
 			}
 

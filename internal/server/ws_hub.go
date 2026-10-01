@@ -59,7 +59,23 @@ func (h *WSHub) run() {
 
 	minInterval := 1 * time.Second
 	lastBroadcast := time.Now()
-	var pendingTrigger bool
+	// Send coalesced updates as soon as the rate limit expires, independently
+	// of the periodic offline-state check.
+	timer := time.NewTimer(time.Hour)
+	timer.Stop()
+	defer timer.Stop()
+	var pending <-chan time.Time
+	flush := func() {
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		pending = nil
+		lastBroadcast = time.Now()
+		h.broadcastNodes()
+	}
 
 	for {
 		select {
@@ -67,17 +83,16 @@ func (h *WSHub) run() {
 			return
 		case <-h.trigger:
 			if time.Since(lastBroadcast) >= minInterval {
-				lastBroadcast = time.Now()
-				pendingTrigger = false
-				h.broadcastNodes()
-			} else {
-				pendingTrigger = true
+				flush()
+			} else if pending == nil {
+				timer.Reset(minInterval - time.Since(lastBroadcast))
+				pending = timer.C
 			}
+		case <-pending:
+			flush()
 		case <-ticker.C:
-			if pendingTrigger || time.Since(lastBroadcast) >= minInterval {
-				lastBroadcast = time.Now()
-				pendingTrigger = false
-				h.broadcastNodes()
+			if time.Since(lastBroadcast) >= minInterval {
+				flush()
 			}
 		}
 	}

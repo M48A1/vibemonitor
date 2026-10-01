@@ -142,11 +142,12 @@ func (c *LinuxCollector) GetReport() (protocol.Report, error) {
 
 	// 5. Network
 	totalDown, totalUp, source, counters, err := c.readNetDev()
+	sampledAt := time.Now()
 	if err != nil {
 		return protocol.Report{}, fmt.Errorf("network counters: %w", err)
 	}
-	report.UpdatedAt = time.Now().UTC()
-	upSpeed, downSpeed := c.netTracker.CalculateInterfaceSpeed(counters)
+	report.UpdatedAt = sampledAt.UTC()
+	upSpeed, downSpeed := c.netTracker.CalculateInterfaceSpeedAt(counters, sampledAt)
 	report.Network.Up = upSpeed
 	report.Network.Down = downSpeed
 	report.Network.TotalUp = totalUp

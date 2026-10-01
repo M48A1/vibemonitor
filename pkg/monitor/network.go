@@ -15,7 +15,7 @@ func defaultTrafficInterface(name string) bool {
 	if name == "lo" {
 		return false
 	}
-	for _, prefix := range []string{"docker", "veth", "br-", "virbr", "vmbr", "bond", "vlan", "pppoe-", "ifb", "tun", "tap", "wg", "tailscale", "zt", "ip6tnl", "sit", "gre", "gretap", "ip6gre", "erspan", "vxlan", "dummy"} {
+	for _, prefix := range []string{"docker", "veth", "br-", "virbr", "vmbr", "bond", "vlan", "pppoe-", "ifb", "tun", "tap", "wg", "tailscale", "zt", "ip6tnl", "sit", "gre", "gretap", "ip6gre", "erspan", "vxlan", "dummy", "cni", "flannel", "podman", "fwbr", "fwpr", "fwln", "kube", "cali", "nerdctl", "lxc", "cilium"} {
 		if strings.HasPrefix(name, prefix) {
 			return false
 		}
