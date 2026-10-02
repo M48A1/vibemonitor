@@ -1,6 +1,14 @@
-# VibeMonitor v1.0.72
+# VibeMonitor v1.0.73
 
 ## 新功能
 
-- add theme markdown
+- 新增第四个内置主题「Design · 简约磨砂」，参照 monitor-theme-design 的 MIT 授权设计适配，采用暖白配色、横向节点列表、柔和圆角和噪点磨砂。
+- 手机屏幕下节点内容自动堆叠，保留资源指标、延迟和历史图表操作。
+- Powered by VibeMonitor 保持屏幕底部居中悬浮，切换主题和滚动页面时位置稳定。
+- 新主题支持启用、重启保存、数据库备份与恢复，内置主题不可删除。
 
+## 更新方式
+
+在主控服务器运行安装脚本，选择「2. 更新主控」，或执行 `sudo bash install.sh update`。更新后刷新网页，在「主题管理」中启用「Design · 简约磨砂」。本次更新无需更新探针。
+
+发布附件包含 Linux AMD64、ARM64 的可执行文件、压缩包、安装脚本及 SHA256 校验文件。
