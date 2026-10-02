@@ -1,0 +1,135 @@
+/* Native adaptation inspired by tom2almighty/monitor-theme-design (MIT).
+ * See third-party-notices.txt. Uses VibeMonitor's existing controls and data.
+ */
+:root {
+  color-scheme: light;
+  --background: #eeece8;
+  --foreground: #36352f;
+  --card-bg: #fdfcf9;
+  --card-hover: #fffefa;
+  --card-data-bg: #f4f2ed;
+  --primary: #b65b3c;
+  --primary-light: #f5e8df;
+  --primary-text: #fff;
+  --muted: #f1eee7;
+  --muted-foreground: #706f66;
+  --border: #e1dfd8;
+  --border-focus: #b65b3c;
+  --success: #059669;
+  --warning: #b7791f;
+  --destructive: #c2413c;
+  --control-bg: #fffefa;
+  --shadow-sm: 0 1px 3px rgba(54, 53, 47, .05);
+  --shadow-md: 0 3px 10px rgba(54, 53, 47, .06);
+  --shadow-lg: 0 12px 36px rgba(54, 53, 47, .12);
+}
+body { background: var(--background); }
+body::before {
+  inset: 0;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='grain'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.7' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23grain)' opacity='.13'/%3E%3C/svg%3E") repeat;
+  filter: none;
+  opacity: .4;
+}
+::selection { background: var(--primary-light); color: var(--foreground); }
+.container {
+  max-width: 1480px;
+  width: calc(100% - 48px);
+  margin: 32px auto 96px;
+  padding: 24px 28px 28px;
+  background: rgba(253, 252, 249, .94);
+  border: 1px solid rgba(255, 255, 255, .8);
+  border-radius: 18px;
+  box-shadow: 0 0 0 6px rgba(255, 255, 255, .35), var(--shadow-lg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+.navbar { margin-bottom: 24px; padding: 0 0 18px; border-bottom: 1px solid var(--border); }
+.brand-title { color: var(--foreground); font-size: 18px; font-weight: 650; }
+.hex-section-label { font-size: 12px; font-weight: 600; color: var(--foreground); }
+.hex-section-label::before { background: var(--success); }
+.hex-stats { display: block; margin-bottom: 24px; }
+.hex-globe-panel { display: none; }
+.hex-stats-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-rows: auto;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card-bg);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.hex-stat { padding: 16px 20px; gap: 8px; }
+.hex-stat:nth-child(even), .hex-stat:nth-child(n+3) { border: 0; }
+.hex-stat + .hex-stat { border-left: 1px solid var(--border); }
+.hex-stat > strong { font-size: 22px; letter-spacing: -.4px; }
+.hex-stat em { font-size: 16px; }
+.hex-stat small { font-size: 11px; }
+.controls-bar { margin-bottom: 14px; }
+.node-grid { grid-template-columns: minmax(0, 1fr); gap: 0; background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow-sm); }
+.node-card, .node-card:hover { background: transparent; border: 0; border-radius: 0; box-shadow: none; }
+.hex-card {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(280px, 1.6fr) minmax(170px, 1fr);
+  align-items: start;
+  gap: 18px 24px;
+  padding: 20px;
+}
+.hex-card + .hex-card { border-top: 1px solid var(--border); }
+.hex-card:hover { transform: none; background: rgba(244, 242, 237, .55); }
+.hex-node-header { gap: 10px; }
+.hex-node-identity h2 { font-size: 14px; font-weight: 650; }
+.hex-system { line-height: 1.6; }
+.hex-status { padding: 4px 6px; border-radius: 5px; background: var(--card-data-bg); }
+.hex-status.is-online { background: #e8f5ef; }
+.hex-resources { gap: 12px 18px; }
+.hex-metric { gap: 5px; }
+.hex-metric .metric-meta strong { font-size: 12px; font-weight: 500; }
+.hex-metric .metric-name { font-size: 11px; }
+.progress-track { height: 5px; border-radius: 99px; background: #e6e5e0; }
+.progress-bar { border-radius: 99px; background: var(--success); }
+.progress-bar.high { background: var(--warning); }
+.progress-bar.critical { background: var(--destructive); }
+.hex-network { padding-top: 3px; gap: 8px; }
+.hex-network strong { font-size: 13px; }
+.hex-network span { font-size: 10px; }
+.hex-facts { grid-column: 1; align-self: center; }
+.hex-facts strong { font-size: 10px; }
+.hex-probes { grid-column: 2; padding: 0; border: 0; }
+.hex-billing { grid-column: 3; padding: 10px; gap: 10px; border: 1px solid var(--border); background: var(--card-data-bg); border-radius: 7px; }
+.hex-card-footer { grid-column: 1 / -1; border: 0; padding: 0; font-size: 10px; }
+.sample-bar { border-radius: 2px; }
+.sample-bar.fast { background: var(--success); opacity: .8; }
+.btn { border-radius: 7px; background: var(--control-bg); box-shadow: var(--shadow-sm); }
+.btn:hover { background: var(--muted); }
+.btn-primary, .btn.active { background: var(--primary); color: var(--primary-text); }
+.btn-primary:hover { background: #a34e32; }
+.btn-danger { background: var(--destructive); color: #fff; }
+.btn-danger:hover { background: #ab3531; }
+.site-menu-panel, .modal { background: rgba(253, 252, 249, .98); border: 1px solid var(--border); box-shadow: var(--shadow-lg); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+.modal { border-radius: 12px; }
+.modal-title { font-size: 17px; }
+.modal-overlay { background: rgba(54, 53, 47, .28); }
+.form-input, .form-select, .form-textarea { background: var(--control-bg); border-color: var(--border); border-radius: 7px; }
+.theme-row { background: var(--card-bg); border-radius: 8px; }
+/* Retain shared fixed positioning, safe-area inset and horizontal centering. */
+.powered-by-pill { background: rgba(253, 252, 249, .94); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-lg); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+@media (max-width: 1120px) {
+  .hex-card { grid-template-columns: minmax(180px, 1fr) minmax(260px, 1.4fr); }
+  .hex-network { grid-column: 1; }
+  .hex-facts { grid-column: 2; }
+  .hex-probes { grid-column: 1; }
+  .hex-billing { grid-column: 2; }
+  .hex-stat { padding: 14px; }
+}
+@media (max-width: 720px) {
+  .container { width: calc(100% - 24px); margin-top: 18px; padding: 18px 14px; border-radius: 12px; }
+  .hex-stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hex-stat:nth-child(odd) { border-left: 0; }
+  .hex-stat:nth-child(n+3) { border-top: 1px solid var(--border); }
+  .hex-stat > strong { font-size: 20px; }
+  .hex-card { grid-template-columns: minmax(0, 1fr); padding: 16px; gap: 18px; }
+  .hex-node-header, .hex-resources, .hex-network, .hex-facts, .hex-probes, .hex-billing, .hex-card-footer { grid-column: 1; }
+  .hex-facts strong { font-size: 11px; }
+}

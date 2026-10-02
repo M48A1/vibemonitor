@@ -19,9 +19,10 @@ const MaxCustomThemes = 32
 const DefaultTheme = "hex"
 const RakugakiTheme = "rakugaki"
 const Win2000Theme = "win2000"
+const DesignTheme = "design"
 
 func isBuiltinTheme(id string) bool {
-	return id == DefaultTheme || id == RakugakiTheme || id == Win2000Theme
+	return id == DefaultTheme || id == RakugakiTheme || id == Win2000Theme || id == DesignTheme
 }
 
 type Theme struct {
@@ -117,6 +118,7 @@ func (s *Store) Themes() ([]Theme, error) {
 		{ID: DefaultTheme, Name: "默认主题", Description: "当前内置外观", Builtin: true},
 		{ID: RakugakiTheme, Name: "Rakugaki · 手绘纸感", Version: "1.0.0", Description: "米白纸面、墨线边框、手绘圆角与陶土橙", Builtin: true},
 		{ID: Win2000Theme, Name: "Win2000 · 经典桌面", Version: "1.0.0", Description: "蓝色桌面、灰色立体窗口、渐变标题栏与分段进度条", Builtin: true},
+		{ID: DesignTheme, Name: "Design · 简约磨砂", Version: "1.0.0", Description: "暖白窗口、细线列表、柔和圆角与噪点磨砂", Builtin: true},
 	}
 	rows, err := s.sdb.db.Query("SELECT id,name,version,description FROM site_themes ORDER BY name,id")
 	if err != nil {

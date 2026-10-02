@@ -8,7 +8,7 @@
   function apply(id) {
     active = id;
     const current = document.getElementById('customThemeStylesheet');
-    const builtin = id === 'rakugaki' || id === 'win2000';
+    const builtin = id === 'rakugaki' || id === 'win2000' || id === 'design';
     const valid = builtin || /^custom-[a-f0-9]{64}$/.test(id);
     if (recovery || !valid) { if (current) current.remove(); return; }
     const href = builtin ? '/' + id + '.css' : '/api/themes/' + id + '/style.css';

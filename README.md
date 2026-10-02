@@ -35,3 +35,7 @@ curl -4 -fsSL -o install.sh https://raw.githubusercontent.com/M48A1/vibemonitor/
 
 安装主控时填写域名，脚本会配置 Nginx HTTP 反向代理、申请 HTTPS 证书并启用自动续期。留空域名时使用原有的直接端口访问方式。探针填写最终的主控访问地址。
 
+
+## 内置主题
+
+点击网站名称 → **主题管理**，可选择默认玻璃主题、**Rakugaki · 手绘纸感**、**Win2000 · 经典桌面**，以及第四个主题 **Design · 简约磨砂**。Design 参照 [monitor-theme-design](https://github.com/tom2almighty/monitor-theme-design) 的 MIT 授权设计适配，采用暖白窗口、细线节点列表、柔和圆角和噪点磨砂，保留节点指标与历史图表操作，手机上自动堆叠。所有内置主题的 Powered by VibeMonitor 均固定悬浮在屏幕底部。内置主题不可删除，选择随数据库备份和恢复。

@@ -101,7 +101,7 @@ func TestThemeRoutes(t *testing.T) {
 }
 
 func TestBuiltinThemeRoutes(t *testing.T) {
-	for _, theme := range []struct{ id, marker string }{{store.RakugakiTheme, "--paper: #faf9f5"}, {store.Win2000Theme, "--background: #3a6ea5"}} {
+	for _, theme := range []struct{ id, marker string }{{store.RakugakiTheme, "--paper: #faf9f5"}, {store.Win2000Theme, "--background: #3a6ea5"}, {store.DesignTheme, "--background: #eeece8"}} {
 		t.Run(theme.id, func(t *testing.T) {
 			s, err := New(Options{DataFile: filepath.Join(t.TempDir(), "data.db"), AdminPassword: "test-password"})
 			if err != nil {

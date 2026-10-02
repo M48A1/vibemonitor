@@ -152,7 +152,7 @@ func TestLegacyThemeBackup(t *testing.T) {
 }
 
 func TestBuiltinThemeLifecycle(t *testing.T) {
-	for _, themeID := range []string{RakugakiTheme, Win2000Theme} {
+	for _, themeID := range []string{RakugakiTheme, Win2000Theme, DesignTheme} {
 		t.Run(themeID, func(t *testing.T) {
 			dir := t.TempDir()
 			db := filepath.Join(dir, "data.db")
@@ -164,7 +164,7 @@ func TestBuiltinThemeLifecycle(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(themes) != 3 || themes[0].ID != DefaultTheme || themes[1].ID != RakugakiTheme || !themes[1].Builtin || themes[2].ID != Win2000Theme || !themes[2].Builtin {
+			if len(themes) != 4 || themes[0].ID != DefaultTheme || themes[1].ID != RakugakiTheme || !themes[1].Builtin || themes[2].ID != Win2000Theme || !themes[2].Builtin || themes[3].ID != DesignTheme || !themes[3].Builtin {
 				t.Fatalf("builtins: %+v", themes)
 			}
 			if s.GetConfig().SiteTheme != DefaultTheme {
