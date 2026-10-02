@@ -23,6 +23,5 @@ integration_test.go
 *.test.ts
 *.spec.ts
 /internal/web/dashboard-checks.cjs
-/scripts/check_installer_rollback.sh
 .DS_Store
 *.test
