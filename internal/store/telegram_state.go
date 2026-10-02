@@ -7,14 +7,15 @@ import (
 
 // TelegramAlertState records transitions that have already been observed or delivered.
 type TelegramAlertState struct {
-	Seen           bool   `json:"seen"`
-	Online         bool   `json:"online"`
-	OfflineAlerted bool   `json:"offline_alerted"`
-	CPU            bool   `json:"cpu"`
-	Memory         bool   `json:"memory"`
-	Traffic        bool   `json:"traffic"`
-	ReminderDate   string `json:"reminder_date,omitempty"`
-	ReminderFor    string `json:"reminder_for,omitempty"`
+	Seen                bool   `json:"seen"`
+	Online              bool   `json:"online"`
+	OfflineAlerted      bool   `json:"offline_alerted"`
+	CPU                 bool   `json:"cpu"`
+	Memory              bool   `json:"memory"`
+	Traffic             bool   `json:"traffic"`
+	TrafficWarningCycle string `json:"traffic_warning_cycle,omitempty"`
+	ReminderDate        string `json:"reminder_date,omitempty"`
+	ReminderFor         string `json:"reminder_for,omitempty"`
 }
 
 func (s *Store) LoadTelegramAlertStates(epoch string) (map[string]TelegramAlertState, error) {

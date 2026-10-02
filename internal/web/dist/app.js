@@ -278,6 +278,11 @@ function readNodeOrder(prefix) {
 }
 
 function readNodeProfile(prefix) {
+  const warningText = document.getElementById(prefix+'NodeTrafficWarning').value.trim();
+  const trafficWarningPercent = warningText === '' ? 0 : Number(warningText);
+  if (!Number.isFinite(trafficWarningPercent) || trafficWarningPercent < 0 || trafficWarningPercent > 100) {
+    throw new Error('流量预警基准必须在 0 到 100 之间，0 表示不提前预警');
+  }
   const thresholdText = document.getElementById(prefix+'NodeCPUThreshold').value.trim();
   const cpuThreshold = thresholdText === '' ? null : Number(thresholdText);
   if (cpuThreshold !== null && (!Number.isFinite(cpuThreshold) || cpuThreshold < 0 || cpuThreshold > 100)) {
@@ -301,6 +306,7 @@ function readNodeProfile(prefix) {
     price: Number(document.getElementById(prefix+'NodePrice').value || 0),
     currency: document.getElementById(prefix+'NodeCurrency').value,
     cpu_threshold: cpuThreshold,
+    traffic_warning_percent: trafficWarningPercent,
     alerts_disabled: document.getElementById(prefix+'NodeAlertsDisabled').checked};
 }
 function fillNodeProfile(prefix, profile) {
@@ -311,6 +317,7 @@ function fillNodeProfile(prefix, profile) {
   document.getElementById(prefix+'NodePrice').value = p.price || '';
   document.getElementById(prefix+'NodeCurrency').value = p.currency || 'CNY';
   document.getElementById(prefix+'NodeCPUThreshold').value = p.cpu_threshold == null ? '' : p.cpu_threshold;
+  document.getElementById(prefix+'NodeTrafficWarning').value = p.traffic_warning_percent ?? 0;
   document.getElementById(prefix+'NodeAlertsDisabled').checked = !!p.alerts_disabled;
 }
 function billingDisplay(profile) {
@@ -532,6 +539,7 @@ async function fetchBasicSettingsForAdmin() {
 
 const telegramTemplateFields = {
   offline: 'telegramTemplateOffline', recovery: 'telegramTemplateRecovery',
+  traffic_warning: 'telegramTemplateTrafficWarning',
   cpu: 'telegramTemplateCPU', memory: 'telegramTemplateMemory',
   traffic: 'telegramTemplateTraffic', due: 'telegramTemplateDue'
 };

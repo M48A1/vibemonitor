@@ -121,6 +121,7 @@
             <div class="form-group"><label class="form-label" for="telegramTemplateCPU">CPU 告警</label><textarea class="form-input" id="telegramTemplateCPU" rows="2"></textarea><small>变量：<code>{node}</code>、<code>{cpu}</code> 当前使用率、<code>{cpu_threshold}</code> 阈值</small></div>
             <div class="form-group"><label class="form-label" for="telegramTemplateMemory">内存告警</label><textarea class="form-input" id="telegramTemplateMemory" rows="2"></textarea><small>变量：<code>{node}</code>、<code>{memory}</code> 当前使用率、<code>{memory_threshold}</code> 阈值</small></div>
             <div class="form-group"><label class="form-label" for="telegramTemplateTraffic">流量告警</label><textarea class="form-input" id="telegramTemplateTraffic" rows="2"></textarea><small>变量：<code>{node}</code>、<code>{used_gib}</code> 本周期已用 GiB、<code>{limit_gib}</code> 额度 GiB</small></div>
+            <div class="form-group"><label class="form-label" for="telegramTemplateTrafficWarning">流量提前预警</label><textarea class="form-input" id="telegramTemplateTrafficWarning" rows="2"></textarea><small>变量：<code>{node}</code>、<code>{used_gib}</code> 已用 GiB、<code>{limit_gib}</code> 额度 GiB、<code>{percent}</code> 已用比例、<code>{warning_percent}</code> 预警基准</small></div>
             <div class="form-group"><label class="form-label" for="telegramTemplateDue">到期提醒</label><textarea class="form-input" id="telegramTemplateDue" rows="2"></textarea><small>变量：<code>{node}</code>、<code>{due_date}</code> 到期日期、<code>{days}</code> 剩余天数</small></div>
           </div>
           <button type="button" class="btn" id="resetTelegramTemplatesBtn">填入全部默认文案</button>
@@ -207,6 +208,11 @@
           </div>
         </div>
         <div class="form-group">
+          <label class="form-label" for="newNodeTrafficWarning">流量预警基准 (%)</label>
+          <input type="number" class="form-input" id="newNodeTrafficWarning" min="0" max="100" step="any" value="0" placeholder="例如 80；0 不提前预警">
+          <small>达到月流量配额的此比例时，通过 Telegram 提前提醒，每个账期最多一次。0 或留空关闭提前预警；仍保留超额报警，需开启 Telegram 告警。</small>
+        </div>
+        <div class="form-group">
           <label class="form-label">当前周期已用流量 (GB, 选填)</label>
           <input type="number" class="form-input" id="newNodeInitialUsed" placeholder="如已用 250 (仅本周期叠加，下周期自动清零)" min="0" step="any">
         </div>
@@ -266,6 +272,11 @@
             <label class="form-label">每月重置日 (1-31，留空为 1 日)</label>
             <input type="number" class="form-input" id="editNodeResetDay" min="1" max="31">
           </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="editNodeTrafficWarning">流量预警基准 (%)</label>
+          <input type="number" class="form-input" id="editNodeTrafficWarning" min="0" max="100" step="any" value="0" placeholder="例如 80；0 不提前预警">
+          <small>达到月流量配额的此比例时，通过 Telegram 提前提醒，每个账期最多一次。0 或留空关闭提前预警；仍保留超额报警，需开启 Telegram 告警。</small>
         </div>
         <div class="form-group">
           <label class="form-label">手动设置当前周期已用流量 (GB)</label>

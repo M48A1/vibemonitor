@@ -15,22 +15,24 @@ var telegramTokenPattern = regexp.MustCompile(`^[0-9]+:[A-Za-z0-9_-]+$`)
 var telegramChatPattern = regexp.MustCompile(`^@[A-Za-z0-9_]{5,32}$`)
 
 type TelegramTemplates struct {
-	Offline  string `json:"offline"`
-	Recovery string `json:"recovery"`
-	CPU      string `json:"cpu"`
-	Memory   string `json:"memory"`
-	Traffic  string `json:"traffic"`
-	Due      string `json:"due"`
+	Offline        string `json:"offline"`
+	Recovery       string `json:"recovery"`
+	CPU            string `json:"cpu"`
+	Memory         string `json:"memory"`
+	Traffic        string `json:"traffic"`
+	TrafficWarning string `json:"traffic_warning"`
+	Due            string `json:"due"`
 }
 
 func DefaultTelegramTemplates() TelegramTemplates {
 	return TelegramTemplates{
-		Offline:  "🔴 VibeMonitor 节点离线：{node}（最后上报：{last_seen}）",
-		Recovery: "🟢 VibeMonitor 节点恢复：{node}",
-		CPU:      "⚠️ VibeMonitor CPU 告警：{node}，当前 {cpu}%，阈值 {cpu_threshold}%",
-		Memory:   "⚠️ VibeMonitor 内存告警：{node}，使用率 {memory}%，阈值 {memory_threshold}%",
-		Traffic:  "⚠️ VibeMonitor 流量告警：{node}，本周期已用 {used_gib} GiB，额度 {limit_gib} GiB",
-		Due:      "📅 VibeMonitor 到期提醒：{node}，{due_date} 到期（剩余 {days} 天）",
+		Offline:	"🔴 VibeMonitor 节点离线：{node}（最后上报：{last_seen}）",
+		Recovery:	"🟢 VibeMonitor 节点恢复：{node}",
+		CPU:		"⚠️ VibeMonitor CPU 告警：{node}，当前 {cpu}%，阈值 {cpu_threshold}%",
+		Memory:		"⚠️ VibeMonitor 内存告警：{node}，使用率 {memory}%，阈值 {memory_threshold}%",
+		Traffic:	"⚠️ VibeMonitor 流量告警：{node}，本周期已用 {used_gib} GiB，额度 {limit_gib} GiB",
+		TrafficWarning:	"⚠️ VibeMonitor 流量提前预警：{node}，本周期已用 {used_gib} GiB / {limit_gib} GiB（{percent}%），预警基准 {warning_percent}%",
+		Due:		"📅 VibeMonitor 到期提醒：{node}，{due_date} 到期（剩余 {days} 天）",
 	}
 }
 
@@ -52,6 +54,9 @@ func (t TelegramTemplates) Effective() TelegramTemplates {
 	if strings.TrimSpace(t.Traffic) == "" {
 		t.Traffic = defaults.Traffic
 	}
+	if strings.TrimSpace(t.TrafficWarning) == "" {
+		t.TrafficWarning = defaults.TrafficWarning
+	}
 	if strings.TrimSpace(t.Due) == "" {
 		t.Due = defaults.Due
 	}
@@ -68,6 +73,7 @@ func validateTelegramTemplates(t TelegramTemplates) error {
 		{"cpu", t.CPU, "node,cpu,cpu_threshold"},
 		{"memory", t.Memory, "node,memory,memory_threshold"},
 		{"traffic", t.Traffic, "node,used_gib,limit_gib"},
+		{"traffic_warning", t.TrafficWarning, "node,used_gib,limit_gib,percent,warning_percent"},
 		{"due", t.Due, "node,due_date,days"},
 	} {
 		if len(item.value) > 2048 {
