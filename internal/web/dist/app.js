@@ -7,7 +7,8 @@ let wsHasData = false;
 let lastWSDataAt = 0;
 let pollTimer = null;
 let lastNodeMarkup = '';
-let lastNodeCards = [];
+const nodeCardCache = new Map();
+let dashboardFrame = 0;
 let lastPublicSettings = '';
 let pendingAdminAction = null;
 
@@ -240,7 +241,8 @@ if (typeof document.addEventListener === 'function') {
 }
 
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) fetchPublicSettings();
+  if (!document.hidden) { fetchPublicSettings(); scheduleDashboard(); fetchNodes(); }
+  else if (dashboardFrame) { cancelAnimationFrame(dashboardFrame); dashboardFrame = 0; }
 });
 
 // Admin Authentication
@@ -401,42 +403,47 @@ function compareNodes(a, b) {
     || (a.uuid || '').localeCompare(b.uuid || '', 'en');
 }
 
+function scheduleDashboard() {
+  if (document.hidden || dashboardFrame) return;
+  dashboardFrame = requestAnimationFrame(() => {
+    dashboardFrame = 0;
+    if (document.hidden) return;
+    updateGlobalStats();
+    renderNodes();
+  });
+}
+
 function renderNodes() {
+  if (document.hidden) return;
   const grid = document.getElementById('nodeGrid');
   const sorted = [...nodes].sort(compareNodes);
-
-  if (sorted.length === 0) {
-    const markup = `
-      <div style="grid-column: 1 / -1; text-align: center; padding: 60px 20px; color: var(--muted-foreground);">
-        暂无监控节点。点击左上角网站标题，登录后通过“节点管理 → 新建节点”开始监控。
-      </div>
-    `;
-    if (markup !== lastNodeMarkup) {
-      grid.innerHTML = markup;
-      lastNodeMarkup = markup;
-      lastNodeCards = [];
-    }
+  if (!sorted.length) {
+    const markup = '<div style="grid-column:1 / -1;text-align:center;padding:60px 20px;color:var(--muted-foreground)">暂无监控节点。点击左上角网站标题，登录后通过“节点管理 → 新建节点”开始监控。</div>';
+    if (lastNodeMarkup !== markup) { grid.innerHTML = markup; lastNodeMarkup = markup; }
+    nodeCardCache.clear();
     return;
   }
-
-  const cards = sorted.map(VibeHex.renderNode);
-  const markup = cards.join('');
-  if (markup !== lastNodeMarkup) {
-    const canReconcile = grid.children.length === sorted.length
-      && sorted.every((node, index) => grid.children[index].dataset.nodeId === node.uuid)
-      && lastNodeCards.length === cards.length;
-    if (canReconcile) {
-      const template = document.createElement('template');
-      for (let index = 0; index < cards.length; index++) {
-        if (cards[index] === lastNodeCards[index]) continue;
-        template.innerHTML = cards[index];
-        reconcileNode(grid.children[index], template.content.firstElementChild);
-      }
-    } else {
-      grid.innerHTML = markup;
+  if (!nodeCardCache.size) grid.replaceChildren();
+  lastNodeMarkup = '';
+  const present = new Set();
+  let cursor = grid.firstChild;
+  let template;
+  for (const node of sorted) {
+    present.add(node.uuid);
+    const key = VibeHex.renderKey(node);
+    let cached = nodeCardCache.get(node.uuid);
+    if (!cached || cached.key !== key) {
+      template ||= document.createElement('template');
+      template.innerHTML = VibeHex.renderNode(node);
+      const next = template.content.firstElementChild;
+      if (cached) { reconcileNode(cached.element, next); cached.key = key; }
+      else { cached = {key, element: next}; nodeCardCache.set(node.uuid, cached); }
     }
-    lastNodeMarkup = markup;
-    lastNodeCards = cards;
+    if (cached.element !== cursor) grid.insertBefore(cached.element, cursor);
+    cursor = cached.element.nextSibling;
+  }
+  for (const [id, cached] of nodeCardCache) {
+    if (!present.has(id)) { cached.element.remove(); nodeCardCache.delete(id); }
   }
 }
 
@@ -466,14 +473,13 @@ function hasFreshWSData() {
 }
 
 async function fetchNodes() {
-  if (hasFreshWSData()) return;
+  if (document.hidden || hasFreshWSData()) return;
   try {
-    const res = await fetch('/api/nodes');
+    const res = await fetch('/api/nodes?view=dashboard');
     const data = await res.json();
     if (Array.isArray(data) && !hasFreshWSData()) {
       nodes = data;
-      updateGlobalStats();
-      renderNodes();
+      scheduleDashboard();
     }
   } catch (e) {
     console.error('Failed to fetch nodes:', e);
@@ -651,7 +657,7 @@ function connectWebSocket() {
     try { ws.close(); } catch(e) {}
   }
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${protocol}//${window.location.host}/api/clients`;
+  const wsUrl = `${protocol}//${window.location.host}/api/clients?view=dashboard`;
   ws = new WebSocket(wsUrl);
 
   ws.onopen = () => {
@@ -668,8 +674,7 @@ function connectWebSocket() {
         wsHasData = true;
         lastWSDataAt = Date.now();
         nodes = msg.nodes;
-        updateGlobalStats();
-        renderNodes();
+        scheduleDashboard();
       }
     } catch (e) {
       console.error('WS parse error:', e);

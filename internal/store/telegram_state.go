@@ -19,8 +19,6 @@ type TelegramAlertState struct {
 }
 
 func (s *Store) LoadTelegramAlertStates(epoch string) (map[string]TelegramAlertState, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
 	rows, err := s.sdb.db.Query("SELECT node_uuid, state_json FROM telegram_alert_state WHERE config_epoch = ?", epoch)
 	if err != nil {
 		return nil, err
@@ -42,20 +40,20 @@ func (s *Store) LoadTelegramAlertStates(epoch string) (map[string]TelegramAlertS
 }
 
 func (s *Store) SaveTelegramAlertState(epoch, id string, state TelegramAlertState) error {
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
 	raw, err := json.Marshal(state)
 	if err != nil {
 		return err
 	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
 	_, err = s.sdb.db.Exec(`INSERT INTO telegram_alert_state(node_uuid,config_epoch,state_json) VALUES(?,?,?)
 		ON CONFLICT(node_uuid) DO UPDATE SET config_epoch=excluded.config_epoch,state_json=excluded.state_json`, id, epoch, string(raw))
 	return err
 }
 
 func (s *Store) DeleteTelegramAlertState(id string) error {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
 	_, err := s.sdb.db.Exec("DELETE FROM telegram_alert_state WHERE node_uuid = ?", id)
 	return err
 }

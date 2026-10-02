@@ -20,6 +20,7 @@ const (
 )
 
 type sqliteDB struct {
+	readDB      *sql.DB
 	db          *sql.DB
 	tx          *sql.Tx // Set only on a transaction-scoped writer.
 	nodeCache   map[string]string
@@ -78,10 +79,29 @@ func openSQLite(dbPath string) (*sqliteDB, error) {
 		}
 	}
 
+	readDB, err := sql.Open("sqlite", uri.String()+"?mode=ro&_pragma=busy_timeout(5000)")
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	readDB.SetMaxOpenConns(2)
+	readDB.SetMaxIdleConns(2)
+	s.readDB = readDB
+
 	return s, nil
 }
 
+func (s *sqliteDB) reader() *sql.DB {
+	if s.readDB != nil {
+		return s.readDB
+	}
+	return s.db
+}
+
 func (s *sqliteDB) Close() error {
+	if s.readDB != nil {
+		_ = s.readDB.Close()
+	}
 	if s.db != nil {
 		return s.db.Close()
 	}
@@ -467,7 +487,7 @@ func (s *sqliteDB) getPingHistory(nodeUUID, targetName, host, method string, cut
 		args = []any{nodeUUID, targetName, cutoff}
 	}
 
-	rows, err := s.db.Query(query, args...)
+	rows, err := s.reader().Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -488,9 +508,9 @@ func (s *sqliteDB) getLatestPingMethod(nodeUUID, targetName, host string) string
 	var method string
 	var row *sql.Row
 	if host != "" {
-		row = s.db.QueryRow("SELECT method FROM ping_history WHERE node_uuid = ? AND target_name = ? AND host = ? ORDER BY timestamp DESC LIMIT 1", nodeUUID, targetName, host)
+		row = s.reader().QueryRow("SELECT method FROM ping_history WHERE node_uuid = ? AND target_name = ? AND host = ? ORDER BY timestamp DESC LIMIT 1", nodeUUID, targetName, host)
 	} else {
-		row = s.db.QueryRow("SELECT method FROM ping_history WHERE node_uuid = ? AND target_name = ? ORDER BY timestamp DESC LIMIT 1", nodeUUID, targetName)
+		row = s.reader().QueryRow("SELECT method FROM ping_history WHERE node_uuid = ? AND target_name = ? ORDER BY timestamp DESC LIMIT 1", nodeUUID, targetName)
 	}
 	_ = row.Scan(&method)
 	return method

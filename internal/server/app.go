@@ -165,6 +165,10 @@ func (s *Server) Handler() http.Handler {
 
 	// 2. Public Nodes Info & Ping History
 	mux.HandleFunc("GET /api/nodes", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("view") == "dashboard" {
+			writeJSON(w, http.StatusOK, s.store.GetDashboardNodes())
+			return
+		}
 		writeJSON(w, http.StatusOK, s.store.GetNodes())
 	})
 

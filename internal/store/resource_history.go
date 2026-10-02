@@ -46,7 +46,7 @@ func totalNetworkRate(up, down int64) (int64, bool) {
 
 func (s *sqliteDB) latestResourceSampleTime(uuid string) (int64, error) {
 	var timestamp sql.NullInt64
-	err := s.db.QueryRow("SELECT MAX(timestamp) FROM resource_history WHERE node_uuid = ?", uuid).Scan(&timestamp)
+	err := s.reader().QueryRow("SELECT MAX(timestamp) FROM resource_history WHERE node_uuid = ?", uuid).Scan(&timestamp)
 	return timestamp.Int64, err
 }
 
@@ -89,8 +89,9 @@ func (s *Store) GetResourceHistory(uuid, metric, timeRange string) (*ResourceHis
 		return nil, errors.New("invalid resource range")
 	}
 	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.nodes[uuid] == nil {
+	exists := s.nodes[uuid] != nil
+	s.mu.RUnlock()
+	if !exists {
 		return nil, errors.New("node not found")
 	}
 	now := time.Now().Unix()
@@ -110,7 +111,7 @@ func (s *Store) GetResourceHistory(uuid, metric, timeRange string) (*ResourceHis
 	}
 	where := " FROM resource_history WHERE node_uuid = ? AND timestamp >= ? AND timestamp <= ? AND " + column + " IS NOT NULL"
 	var avg, minValue, maxValue sql.NullFloat64
-	err := s.sdb.db.QueryRow("SELECT COUNT(*), AVG("+column+"), MIN("+column+"), MAX("+column+")"+where,
+	err := s.sdb.reader().QueryRow("SELECT COUNT(*), AVG("+column+"), MIN("+column+"), MAX("+column+")"+where,
 		uuid, start, now).Scan(&response.Stats.Count, &avg, &minValue, &maxValue)
 	if err != nil {
 		return nil, err
@@ -119,11 +120,11 @@ func (s *Store) GetResourceHistory(uuid, metric, timeRange string) (*ResourceHis
 		response.Stats.Avg = avg.Float64
 		response.Stats.Min = minValue.Float64
 		response.Stats.Max = maxValue.Float64
-		if err := s.sdb.db.QueryRow("SELECT "+column+where+" ORDER BY timestamp DESC LIMIT 1", uuid, start, now).Scan(&response.Stats.Current); err != nil {
+		if err := s.sdb.reader().QueryRow("SELECT "+column+where+" ORDER BY timestamp DESC LIMIT 1", uuid, start, now).Scan(&response.Stats.Current); err != nil {
 			return nil, err
 		}
 	}
-	rows, err := s.sdb.db.Query("SELECT MIN(timestamp), AVG("+column+")"+where+" GROUP BY timestamp / ? ORDER BY MIN(timestamp)", uuid, start, now, step)
+	rows, err := s.sdb.reader().Query("SELECT MIN(timestamp), AVG("+column+")"+where+" GROUP BY timestamp / ? ORDER BY MIN(timestamp)", uuid, start, now, step)
 	if err != nil {
 		return nil, err
 	}

@@ -26,6 +26,8 @@ func (s *Store) SaveSiteIcon(data []byte, kind string) (string, error) {
 	if len(data) > MaxIconBytes || (len(data) > 0 && !validIconType(kind)) {
 		return "", errors.New("invalid icon type or size")
 	}
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	next := s.config
@@ -59,8 +61,6 @@ func (s *Store) SaveSiteIcon(data []byte, kind string) (string, error) {
 }
 
 func (s *Store) SiteIconData() ([]byte, string, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
 	var data []byte
 	var kind string
 	err := s.sdb.db.QueryRow("SELECT data, content_type FROM site_assets WHERE id=1").Scan(&data, &kind)

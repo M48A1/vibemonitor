@@ -26,13 +26,13 @@ type TelegramTemplates struct {
 
 func DefaultTelegramTemplates() TelegramTemplates {
 	return TelegramTemplates{
-		Offline:	"🔴 VibeMonitor 节点离线：{node}（最后上报：{last_seen}）",
-		Recovery:	"🟢 VibeMonitor 节点恢复：{node}",
-		CPU:		"⚠️ VibeMonitor CPU 告警：{node}，当前 {cpu}%，阈值 {cpu_threshold}%",
-		Memory:		"⚠️ VibeMonitor 内存告警：{node}，使用率 {memory}%，阈值 {memory_threshold}%",
-		Traffic:	"⚠️ VibeMonitor 流量告警：{node}，本周期已用 {used_gib} GiB，额度 {limit_gib} GiB",
-		TrafficWarning:	"⚠️ VibeMonitor 流量提前预警：{node}，本周期已用 {used_gib} GiB / {limit_gib} GiB（{percent}%），预警基准 {warning_percent}%",
-		Due:		"📅 VibeMonitor 到期提醒：{node}，{due_date} 到期（剩余 {days} 天）",
+		Offline:        "🔴 VibeMonitor 节点离线：{node}（最后上报：{last_seen}）",
+		Recovery:       "🟢 VibeMonitor 节点恢复：{node}",
+		CPU:            "⚠️ VibeMonitor CPU 告警：{node}，当前 {cpu}%，阈值 {cpu_threshold}%",
+		Memory:         "⚠️ VibeMonitor 内存告警：{node}，使用率 {memory}%，阈值 {memory_threshold}%",
+		Traffic:        "⚠️ VibeMonitor 流量告警：{node}，本周期已用 {used_gib} GiB，额度 {limit_gib} GiB",
+		TrafficWarning: "⚠️ VibeMonitor 流量提前预警：{node}，本周期已用 {used_gib} GiB / {limit_gib} GiB（{percent}%），预警基准 {warning_percent}%",
+		Due:            "📅 VibeMonitor 到期提醒：{node}，{due_date} 到期（剩余 {days} 天）",
 	}
 }
 
@@ -130,6 +130,8 @@ func (s *Store) UpdateTelegramConfig(token, chatID string, enabled, clear bool) 
 
 // UpdateTelegramOptions keeps an omitted bot token and validates all alert settings.
 func (s *Store) UpdateTelegramOptions(opts TelegramOptions) error {
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	next := s.config

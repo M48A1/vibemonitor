@@ -110,8 +110,6 @@ func ParseThemePackage(data []byte) (Theme, error) {
 }
 
 func (s *Store) Themes() ([]Theme, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
 	list := []Theme{
 		{ID: DefaultTheme, Name: "默认主题", Description: "当前内置外观", Builtin: true},
 		{ID: RakugakiTheme, Name: "Rakugaki · 手绘纸感", Version: "1.0.0", Description: "米白纸面、墨线边框、手绘圆角与陶土橙", Builtin: true},
@@ -131,8 +129,6 @@ func (s *Store) Themes() ([]Theme, error) {
 	return list, rows.Err()
 }
 func (s *Store) ThemeCSS(id string) (string, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
 	var css string
 	err := s.sdb.db.QueryRow("SELECT css FROM site_themes WHERE id=?", id).Scan(&css)
 	return css, err
@@ -142,6 +138,8 @@ func (s *Store) ImportTheme(data []byte) (Theme, error) {
 	if err != nil {
 		return t, err
 	}
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var count, exists int
@@ -155,6 +153,8 @@ func (s *Store) ImportTheme(data []byte) (Theme, error) {
 	return t, err
 }
 func (s *Store) SelectTheme(id string) error {
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !isBuiltinTheme(id) {
@@ -174,6 +174,8 @@ func (s *Store) DeleteTheme(id string) error {
 	if isBuiltinTheme(id) {
 		return errors.New("内置主题不能删除")
 	}
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	tx, err := s.sdb.db.Begin()

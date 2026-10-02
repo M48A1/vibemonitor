@@ -28,6 +28,8 @@ func (s *Store) UpdateSettingsWithIcon(title string, targets []protocol.PingTarg
 			return fmt.Errorf("%w: %v", ErrInvalidSettings, err)
 		}
 	}
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	next := s.config
@@ -57,6 +59,8 @@ func (s *Store) UpdateSiteIcon(icon string) error {
 	if err := validateSiteIcon(icon); err != nil {
 		return err
 	}
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	next := s.config

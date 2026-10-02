@@ -13,6 +13,19 @@ window.VibeHex = (() => {
     return `<${tag} class="hex-metric${interactive ? ' metric-button' : ''}"${attributes}><div class="metric-meta"><span class="metric-name">${label}</span><strong>${pct == null ? '—' : pct.toFixed(1) + '%'}</strong></div><div class="progress-track"><div class="progress-bar ${level}" style="width:${pct || 0}%"></div></div><small>${detail}</small></${tag}>`;
   }
 
+  // Only fields that influence the card. Report timestamps, history arrays and
+  // per-interface accounting counters do not invalidate its rendered markup.
+  function renderKey(node) {
+    const r = node.last_report || {}, net = r.network || {};
+    return JSON.stringify([
+      node.uuid, node.name, node.region, node.online, node.basic_info, node.profile,
+      node.ping_preview, node.traffic_limit, node.cycle_total_used,
+      node.reset_day, node.days_until_reset, !!node.last_report,
+      r.cpu, r.ram, r.disk, r.ping_results, Math.floor((r.uptime || 0) / 60),
+      net.up, net.down, net.totalUp, net.totalDown, new Date().toDateString()
+    ]);
+  }
+
   function renderNode(node) {
     const r = node.last_report || {};
     const info = node.basic_info || {};
@@ -83,5 +96,6 @@ window.VibeHex = (() => {
     }
     if (window.VibeGlobe) window.VibeGlobe.setNodes(nodes);
   }
-  return Object.freeze({ renderNode, renderOverview });
+  return Object.freeze({ renderNode, renderOverview, renderKey });
 })();
+

@@ -14,21 +14,23 @@ import (
 )
 
 type wsClient struct {
-	conn   *websocket.Conn
-	sendCh chan []byte
+	compact bool
+	conn    *websocket.Conn
+	sendCh  chan []byte
 }
 
 type WSHub struct {
-	mu          sync.RWMutex
-	clients     map[*wsClient]struct{}
-	closed      bool
-	store       *store.Store
-	trigger     chan struct{}
-	stop        chan struct{}
-	done        chan struct{}
-	closeOnce   sync.Once
-	lastPayload []byte
-	payloadMu   sync.Mutex
+	mu                 sync.RWMutex
+	clients            map[*wsClient]struct{}
+	closed             bool
+	store              *store.Store
+	trigger            chan struct{}
+	stop               chan struct{}
+	done               chan struct{}
+	closeOnce          sync.Once
+	lastPayload        []byte
+	lastCompactPayload []byte
+	payloadMu          sync.Mutex
 }
 
 const maxWSClients = 1000
@@ -145,8 +147,9 @@ func (h *WSHub) HandleWS(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	client := &wsClient{
-		conn:   conn,
-		sendCh: make(chan []byte, 4),
+		compact: r.URL.Query().Get("view") == "dashboard",
+		conn:    conn,
+		sendCh:  make(chan []byte, 4),
 	}
 
 	h.mu.Lock()
@@ -202,7 +205,7 @@ func (h *WSHub) HandleWS(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *WSHub) sendNodesTo(client *wsClient) error {
-	payload, err := h.nodesPayload()
+	payload, err := h.nodesPayload(client.compact)
 	if err != nil {
 		return err
 	}
@@ -221,10 +224,16 @@ func (h *WSHub) sendNodesTo(client *wsClient) error {
 	return nil
 }
 
-func (h *WSHub) nodesPayload() ([]byte, error) {
+func (h *WSHub) nodesPayload(compact ...bool) ([]byte, error) {
+	var nodes []*store.Node
+	if len(compact) > 0 && compact[0] {
+		nodes = h.store.GetDashboardNodes()
+	} else {
+		nodes = h.store.GetNodes()
+	}
 	cfg := h.store.GetConfig()
 	return json.Marshal(map[string]any{
-		"nodes":      h.store.GetNodes(),
+		"nodes":      nodes,
 		"site_title": cfg.SiteTitle,
 		"site_theme": cfg.SiteTheme,
 		"site_icon":  cfg.SiteIcon,
@@ -246,40 +255,49 @@ func (h *WSHub) forceBroadcastNodes() {
 
 func (h *WSHub) doBroadcastNodes(force bool) {
 	h.mu.RLock()
-	clients := make([]*wsClient, 0, len(h.clients))
+	groups := [2][]*wsClient{}
 	for c := range h.clients {
-		clients = append(clients, c)
+		index := 0
+		if c.compact {
+			index = 1
+		}
+		groups[index] = append(groups[index], c)
 	}
 	h.mu.RUnlock()
-
-	if len(clients) == 0 {
-		return
-	}
-
-	payload, err := h.nodesPayload()
-	if err != nil {
-		return
-	}
-
-	h.payloadMu.Lock()
-	if !force && bytes.Equal(h.lastPayload, payload) {
+	// Serialize only formats with subscribers. All clients in a group share bytes.
+	for index, clients := range groups {
+		if len(clients) == 0 {
+			continue
+		}
+		payload, err := h.nodesPayload(index == 1)
+		if err != nil {
+			continue
+		}
+		h.payloadMu.Lock()
+		last := &h.lastPayload
+		if index == 1 {
+			last = &h.lastCompactPayload
+		}
+		duplicate := !force && bytes.Equal(*last, payload)
+		if !duplicate {
+			*last = payload
+		}
 		h.payloadMu.Unlock()
-		return
-	}
-	h.lastPayload = payload
-	h.payloadMu.Unlock()
-
-	for _, client := range clients {
-		select {
-		case client.sendCh <- payload:
-		default:
-			select {
-			case <-client.sendCh:
-			default:
-			}
+		if duplicate {
+			continue
+		}
+		for _, client := range clients {
 			select {
 			case client.sendCh <- payload:
 			default:
+				select {
+				case <-client.sendCh:
+				default:
+				}
+				select {
+				case client.sendCh <- payload:
+				default:
+				}
 			}
 		}
 	}

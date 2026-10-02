@@ -7,7 +7,7 @@ import (
 
 // saveSnapshot commits configuration, changed nodes and history together.
 // Caches are advanced only after commit, so failed writes can be retried.
-func (s *sqliteDB) saveSnapshot(config Config, nodes map[string]*Node) error {
+func (s *sqliteDB) saveSnapshot(config Config, nodes map[string]*Node, samples ...historySample) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -84,6 +84,9 @@ func (s *sqliteDB) saveSnapshot(config Config, nodes map[string]*Node) error {
 				}
 			}
 		}
+	}
+	if err = writeHistorySamples(tx, filterHistorySamples(nodes, config, samples)); err != nil {
+		return err
 	}
 	if err = tx.Commit(); err != nil {
 		return err

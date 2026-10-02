@@ -9,6 +9,7 @@ import (
 	"log"
 	"math"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -127,16 +128,18 @@ type Config struct {
 }
 
 type Store struct {
-	mu         sync.RWMutex
-	dbPath     string
-	sdb        *sqliteDB
-	config     Config
-	nodes      map[string]*Node  // uuid -> Node
-	tokenIndex map[string]string // token -> uuid
-	onUpdate   func()            // optional callback when state changes
-	dirty      bool
-	stopFlush  chan struct{}
-	flushDone  chan struct{}
+	persistMu      sync.Mutex // Lock order: persistMu, then mu. Ingestion never waits for disk with mu held.
+	pendingSamples []historySample
+	mu             sync.RWMutex
+	dbPath         string
+	sdb            *sqliteDB
+	config         Config
+	nodes          map[string]*Node  // uuid -> Node
+	tokenIndex     map[string]string // token -> uuid
+	onUpdate       func()            // optional callback when state changes
+	dirty          bool
+	stopFlush      chan struct{}
+	flushDone      chan struct{}
 }
 
 func GenerateToken(length int) string {
@@ -211,24 +214,12 @@ func (s *Store) periodicFlusher() {
 		case <-s.stopFlush:
 			return
 		case <-ticker.C:
-			s.mu.Lock()
-			var saveErr error
-			var saveDuration time.Duration
-			var nodeCount int
-			if s.dirty {
-				started := time.Now()
-				nodeCount = len(s.nodes)
-				saveErr = s.saveLocked()
-				saveDuration = time.Since(started)
+			if err := s.Save(); err != nil {
+				log.Printf("[Store] Save failed (will retry): %v", err)
 			}
-			s.mu.Unlock()
-			if saveErr != nil {
-				log.Printf("[Store] Save failed (will retry): %v", saveErr)
-			}
-			if saveDuration >= 200*time.Millisecond {
-				log.Printf("[Store] Periodic save held store lock for %s (%d nodes)", saveDuration.Round(time.Millisecond), nodeCount)
-			}
+
 		case <-pruneTicker.C:
+			s.persistMu.Lock()
 			s.mu.Lock()
 			s.pruneExpiredPingPreviewsLocked(time.Now().Unix() - 86400)
 			s.mu.Unlock()
@@ -240,14 +231,33 @@ func (s *Store) periodicFlusher() {
 					log.Printf("[Store] Resource history cleanup failed: %v", err)
 				}
 			}
+			s.persistMu.Unlock()
 		}
 	}
 }
 
 func (s *Store) Save() error {
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
+	s.mu.Lock()
+	if !s.dirty {
+		s.mu.Unlock()
+		return nil
+	}
+	config := s.config
+	nodes := cloneNodesForSave(s.nodes)
+	samples := append([]historySample(nil), s.pendingSamples...)
+	s.dirty = false
+	s.mu.Unlock()
+	err := s.sdb.saveSnapshot(config, nodes, samples...)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.saveLocked()
+	if err != nil {
+		s.dirty = true
+		return err
+	}
+	s.ackHistoryLocked(len(samples))
+	return nil
 }
 
 func (s *Store) Close() error {
@@ -259,6 +269,8 @@ func (s *Store) Close() error {
 	}
 	s.mu.Unlock()
 	<-s.flushDone // Keep the flusher, including history cleanup, off a closed DB.
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var err error
@@ -359,6 +371,13 @@ func (s *Store) load(defaultPassword, username string) error {
 		s.nodes = make(map[string]*Node)
 	}
 	for uuid, n := range s.nodes {
+		if n != nil {
+			var err error
+			n.lastResourceSampleAt, err = s.sdb.latestResourceSampleTime(uuid)
+			if err != nil {
+				return err
+			}
+		}
 		if n == nil {
 			continue
 		}
@@ -417,10 +436,11 @@ func (s *Store) saveLocked() error {
 	if s.sdb == nil {
 		return nil
 	}
-	if err := s.sdb.saveSnapshot(s.config, s.nodes); err != nil {
+	if err := s.sdb.saveSnapshot(s.config, s.nodes, s.pendingSamples...); err != nil {
 		return err
 	}
 
+	s.pendingSamples = nil
 	s.dirty = false
 	return nil
 }
@@ -446,6 +466,8 @@ func verifyAdminPasswordHash(hash, pwd string) bool {
 }
 
 func (s *Store) SetAdminPassword(newPwd string) error {
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if newPwd == "" {
@@ -474,6 +496,8 @@ func (s *Store) UpdateConfig(title, autoKey string, pingTargets []protocol.PingT
 	if err := validatePingTargets(pingTargets); err != nil {
 		return err
 	}
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	next := s.config
@@ -583,7 +607,11 @@ func (n *Node) calculateDynamicFields(now time.Time) {
 	}
 }
 
-func (s *Store) GetNodes() []*Node {
+func (s *Store) GetNodes() []*Node { return s.getNodes(false) }
+
+func (s *Store) GetDashboardNodes() []*Node { return s.getNodes(true) }
+
+func (s *Store) getNodes(compact bool) []*Node {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -591,6 +619,11 @@ func (s *Store) GetNodes() []*Node {
 	list := make([]*Node, 0, len(s.nodes))
 	for _, n := range s.nodes {
 		nodeCopy := *n
+		if compact {
+			nodeCopy.History = nil
+		} else {
+			nodeCopy.History = append([]HistoryPoint(nil), n.History...)
+		}
 		nodeCopy.Token = "" // Credentials are only available through authenticated management.
 		if n.Profile != nil {
 			profile := *n.Profile
@@ -619,6 +652,7 @@ func (s *Store) GetNodes() []*Node {
 		nodeCopy.calculateDynamicFields(now)
 		list = append(list, &nodeCopy)
 	}
+	sort.Slice(list, func(i, j int) bool { return list[i].UUID < list[j].UUID })
 	return list
 }
 
@@ -699,6 +733,8 @@ func (s *Store) CreateNodeWithOptions(opts NodeOptions) (*Node, error) {
 	if opts.ResetDay == 0 {
 		opts.ResetDay = 1
 	}
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -775,6 +811,8 @@ func (s *Store) UpdateNodeWithOptions(uuid string, opts NodeOptions) error {
 			return err
 		}
 	}
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -828,6 +866,8 @@ func (s *Store) UpdateNodeWithOptions(uuid string, opts NodeOptions) error {
 }
 
 func (s *Store) DeleteNode(uuid string) error {
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -873,7 +913,15 @@ func (s *Store) IngestReport(token string, report protocol.Report) (*Node, error
 
 func (s *Store) ingestReportAt(token string, report protocol.Report, now time.Time) (*Node, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	sampled := false
+	defer func() {
+		s.mu.Unlock()
+		if sampled {
+			if err := s.flushHistory(); err != nil {
+				log.Printf("[Store] History batch failed (will retry): %v", err)
+			}
+		}
+	}()
 
 	uuid, ok := s.tokenIndex[token]
 	if !ok {
@@ -975,26 +1023,15 @@ func (s *Store) ingestReportAt(token string, report protocol.Report, now time.Ti
 	} else {
 		node.History = append(node.History, hp)
 	}
-	if s.sdb != nil {
-		if node.lastResourceSampleAt == 0 {
-			last, err := s.sdb.latestResourceSampleTime(node.UUID)
-			if err != nil {
-				log.Printf("[Store] Resource history lookup failed: %v", err)
-			} else {
-				node.lastResourceSampleAt = last
-			}
-		}
-		if receivedAt.Unix()-node.lastResourceSampleAt >= PingSampleIntervalSec {
-			cpu := sql.NullFloat64{Float64: report.CPU.Usage, Valid: validResourcePercent(report.CPU.Usage)}
-			ram := sql.NullFloat64{Float64: ramUsagePct, Valid: report.RAM.Total > 0 && report.RAM.Used >= 0 && report.RAM.Used <= report.RAM.Total}
-			rate, validRate := totalNetworkRate(report.Network.Up, report.Network.Down)
-			network := sql.NullInt64{Int64: rate, Valid: validRate}
-			if cpu.Valid || ram.Valid || network.Valid {
-				if err := s.sdb.recordResourceSample(node.UUID, receivedAt.Unix(), cpu, ram, network); err != nil {
-					log.Printf("[Store] Resource history write failed: %v", err)
-				} else {
-					node.lastResourceSampleAt = receivedAt.Unix()
-				}
+	if receivedAt.Unix()-node.lastResourceSampleAt >= PingSampleIntervalSec {
+		cpu := sql.NullFloat64{Float64: report.CPU.Usage, Valid: validResourcePercent(report.CPU.Usage)}
+		ram := sql.NullFloat64{Float64: ramUsagePct, Valid: report.RAM.Total > 0 && report.RAM.Used >= 0 && report.RAM.Used <= report.RAM.Total}
+		rate, validRate := totalNetworkRate(report.Network.Up, report.Network.Down)
+		network := sql.NullInt64{Int64: rate, Valid: validRate}
+		if cpu.Valid || ram.Valid || network.Valid {
+			if s.enqueueHistoryLocked(historySample{UUID: node.UUID, Timestamp: receivedAt.Unix(), CPU: cpu, RAM: ram, Network: network}) {
+				node.lastResourceSampleAt = receivedAt.Unix()
+				sampled = true
 			}
 		}
 	}
@@ -1014,18 +1051,15 @@ func (s *Store) ingestReportAt(token string, report protocol.Report, now time.Ti
 					Method:    p.Method,
 					Latency:   p.Latency,
 				}
+				if !s.enqueueHistoryLocked(historySample{UUID: node.UUID, Timestamp: nowUnix, Target: p.Name, Host: p.Host, Method: p.Method, Latency: p.Latency, Ping: true}) {
+					continue
+				}
+				sampled = true
 				samples = append(samples, smp)
 				if len(samples) > 24 {
 					samples = samples[len(samples)-24:]
 				}
 				node.PingHistory[p.Name] = samples
-
-				// 直接高效追加写入 SQLite
-				if s.sdb != nil {
-					if err := s.sdb.recordPingSample(node.UUID, p.Name, p.Host, p.Method, nowUnix, p.Latency); err != nil {
-						log.Printf("[Store] Ping write failed (will retry on save): %v", err)
-					}
-				}
 			}
 		}
 	}
@@ -1038,14 +1072,16 @@ func (s *Store) ingestReportAt(token string, report protocol.Report, now time.Ti
 
 func (s *Store) GetPingHistory(uuid, targetName, timeRange string) (*PingHistoryResponse, error) {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
 
 	node, ok := s.nodes[uuid]
 	if !ok {
+		s.mu.RUnlock()
 		return nil, errors.New("node not found")
 	}
 
-	targets := s.targetsLocked(node)
+	targets := append([]protocol.PingTarget(nil), s.targetsLocked(node)...)
+	node = cloneNodeForSave(node)
+	s.mu.RUnlock()
 	if targetName == "" && len(targets) > 0 {
 		targetName = targets[0].Name
 	}
