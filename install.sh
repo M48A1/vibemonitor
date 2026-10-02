@@ -205,6 +205,30 @@ unit_arg() {
     printf '"%s"' "$value"
 }
 
+service_start_failed() {
+    warn "查看启动日志：journalctl -u $UPDATE_SERVICE -n 80 --no-pager"
+    error "$*"
+}
+
+# Type=simple only confirms that the process started, not that HTTP is ready.
+# Allow database initialization to finish before deciding to roll back.
+wait_for_http_health() {
+    local url="$1"; shift
+    local attempt remaining response deadline=$((SECONDS + 60))
+    for ((attempt = 0; attempt < 60; attempt++)); do
+        systemctl is-active --quiet "$UPDATE_SERVICE" || service_start_failed "服务未保持运行。"
+        remaining=$((deadline - SECONDS))
+        [ "$remaining" -gt 0 ] || break
+        if [ "$remaining" -gt 5 ]; then remaining=5; fi
+        if response=$(curl -4 -fsS --noproxy '*' --connect-timeout 2 --max-time "$remaining" "$@" "$url" 2>/dev/null) && [ "$response" = pong ]; then
+            return 0
+        fi
+        [ "$SECONDS" -lt "$deadline" ] || break
+        sleep 1
+    done
+    service_start_failed "健康检查超时（60 秒）：${url}；请检查启动日志及实际监听地址、端口。"
+}
+
 finish_update() {
     local port="${1:-}" domain="${2:-}"
     info "正在启动服务并检查运行状态…"
@@ -214,14 +238,14 @@ finish_update() {
     chmod 600 "$UNIT_DIR/$UPDATE_SERVICE.service"
     systemctl daemon-reload
     systemctl enable "$UPDATE_SERVICE" >/dev/null
-    systemctl restart "$UPDATE_SERVICE"
+    systemctl restart "$UPDATE_SERVICE" || service_start_failed "服务启动失败。"
     sleep 3
-    systemctl is-active --quiet "$UPDATE_SERVICE" || error "Service did not remain running."
+    systemctl is-active --quiet "$UPDATE_SERVICE" || service_start_failed "服务未保持运行。"
     if [ -n "$port" ]; then
-        [ "$(curl -4 -fsS --noproxy '*' --max-time 5 "http://127.0.0.1:$port/ping")" = pong ] || error "Server health check failed."
+        wait_for_http_health "http://127.0.0.1:$port/ping"
     fi
     if [ -n "$domain" ]; then
-        [ "$(curl -4 -fsS --noproxy '*' --max-time 10 --resolve "$domain:443:127.0.0.1" "https://$domain/ping")" = pong ] || error "HTTPS reverse proxy health check failed."
+        wait_for_http_health "https://$domain/ping" --resolve "$domain:443:127.0.0.1"
     fi
     UPDATE_COMMITTED=1
     success "$UPDATE_SERVICE is running. Agent connectivity can be checked in the dashboard and journal."
