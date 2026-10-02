@@ -23,7 +23,10 @@
 
 ## 界面预览
 
-![VibeMonitor 监控面板预览](docs/dashboard-preview.png)
+![VibeMonitor 默认主题](docs/1.png)
+![VibeMonitor 第二个主题](docs/2.png)
+![VibeMonitor 第三个主题](docs/3.png)
+![VibeMonitor 第四个主题](docs/4.png)
 
 ## 安装与更新
 
