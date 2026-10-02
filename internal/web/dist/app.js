@@ -130,6 +130,7 @@ window.closeModal = function(id) {
 
 // Bind modal overlay backdrop click to close
 const modalOverlayIds = [
+  'themeManagementModal',
   'settingsModal',
   'externalSettingsModal',
   'loginModal',
@@ -153,6 +154,7 @@ modalOverlayIds.forEach(id => {
 
 // Bind all explicit close/cancel buttons
 const modalCloseBtnBindings = [
+  { id: 'closeThemeManagementBtn', modalId: 'themeManagementModal' },
   { id: 'closeSettingsModalBtn', modalId: 'settingsModal' },
   { id: 'cancelSettingsModalBtn', modalId: 'settingsModal' },
   { id: 'closeExternalSettingsModalBtn', modalId: 'externalSettingsModal' },
@@ -499,7 +501,7 @@ function updateSiteIconDisplay(iconUrl) {
 }
 
 function applyPublicSettings(data) {
-  const settings = JSON.stringify([data.site_title || '', data.site_icon || '']);
+  const settings = JSON.stringify([data.site_title || '', data.site_icon || '', data.site_theme || 'hex']);
   if (settings === lastPublicSettings) return;
   lastPublicSettings = settings;
   if (data.site_title) {
@@ -507,6 +509,7 @@ function applyPublicSettings(data) {
     document.title = data.site_title;
   }
   updateSiteIconDisplay(data.site_icon || '');
+  window.VibeThemes.apply(data.site_theme || 'hex');
 }
 
 async function fetchPublicSettings() {

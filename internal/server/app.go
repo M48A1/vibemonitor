@@ -113,6 +113,7 @@ func (s *Server) checkAdmin(r *http.Request) bool {
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	s.registerThemeRoutes(mux)
 
 	// 1. Health & Meta
 	mux.HandleFunc("GET /ping", func(w http.ResponseWriter, r *http.Request) {
@@ -131,6 +132,7 @@ func (s *Server) Handler() http.Handler {
 		cfg := s.store.GetConfig()
 		writeJSON(w, http.StatusOK, map[string]any{
 			"site_title": cfg.SiteTitle,
+			"site_theme": cfg.SiteTheme,
 			"site_icon":  cfg.SiteIcon,
 		})
 	})
@@ -620,6 +622,9 @@ func (s *Server) Handler() http.Handler {
 		limit := int64(maxRequestBytes)
 		if r.Method == http.MethodPost && r.URL.Path == "/api/admin/upload-icon" {
 			limit = store.MaxIconBytes + (64 << 10) // Allow multipart headers, not larger files.
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/api/admin/themes" {
+			limit = store.MaxThemePackageBytes + (64 << 10)
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, limit)
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' wss: ws:")

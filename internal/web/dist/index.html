@@ -19,6 +19,7 @@
           </summary>
           <div class="site-menu-panel">
             <button type="button" class="site-menu-item site-menu-level-1" id="adminBtn">基本设置</button>
+            <button type="button" class="site-menu-item site-menu-level-1" id="themeManagementBtn">主题管理</button>
             <details class="node-management" id="nodeManagementMenu">
               <summary class="site-menu-item site-menu-level-1">节点管理</summary>
               <div class="node-management-menu">
@@ -61,6 +62,17 @@
 
   <div class="powered-by-pill">
     Powered by <a class="powered-by-link" href="https://github.com/M48A1/vibemonitor" target="_blank" rel="noopener noreferrer"><strong>VibeMonitor</strong></a>
+  </div>
+
+  <div class="modal-overlay" id="themeManagementModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="themeManagementTitle">
+      <div class="modal-header"><h3 class="modal-title" id="themeManagementTitle">主题管理</h3><button type="button" class="modal-close" id="closeThemeManagementBtn" aria-label="关闭">&times;</button></div>
+      <p class="logo-upload-hint">选择主题后点击启用，对所有访客生效。默认主题保留当前外观。</p>
+      <div id="themeList" class="theme-list"></div>
+      <div class="theme-actions"><label class="btn" id="themeUploadLabel">上传主题包<input type="file" id="themePackageFile" accept=".zip,application/zip" hidden></label><a class="btn" href="/api/admin/themes/example" download>下载示例包</a><button type="button" class="btn btn-primary" id="activateThemeBtn">启用所选主题</button></div>
+      <p class="logo-upload-hint">ZIP 最大 2MB，包含 theme.json 和一个 UTF-8 CSS 文件。主题包与启用状态随数据库备份。</p>
+      <p id="themeStatus" role="status" aria-live="polite"></p>
+    </div>
   </div>
 
   <!-- Basic Settings Modal -->
@@ -453,6 +465,7 @@
 
   <script src="/globe.js"></script>
   <script src="/themes.js"></script>
+  <script src="/theme-manager.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

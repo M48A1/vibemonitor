@@ -90,6 +90,13 @@ func (s *sqliteDB) Close() error {
 
 func (s *sqliteDB) initSchema() error {
 	schema := `
+	CREATE TABLE IF NOT EXISTS site_themes (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL,
+		version TEXT NOT NULL,
+		description TEXT NOT NULL,
+		css TEXT NOT NULL
+	);
 	CREATE TABLE IF NOT EXISTS site_assets (
 		id INTEGER PRIMARY KEY CHECK (id = 1),
 		content_type TEXT NOT NULL,
@@ -244,6 +251,7 @@ func (s *sqliteDB) loadConfig() (*Config, error) {
 		{"telegram_reminder_hour", "9"}, {"telegram_reminder_timezone", "'Asia/Shanghai'"},
 		{"telegram_alert_epoch", "''"},
 		{"telegram_templates_json", "'{}'"},
+		{"site_theme", "'hex'"},
 	} {
 		exists, err := s.hasConfigColumn(field.name)
 		if err != nil {
@@ -261,7 +269,7 @@ func (s *sqliteDB) loadConfig() (*Config, error) {
 	var templatesJSON string
 	err := row.Scan(&c.AdminUsername, &c.AdminPassword, &c.SiteTitle, &c.SiteIcon, &c.AutoDiscoveryKey, &targetsJSON,
 		&c.TelegramBotToken, &c.TelegramChatID, &c.TelegramEnabled, &c.TelegramOfflineDelaySeconds,
-		&c.TelegramReminderDays, &c.TelegramReminderHour, &c.TelegramReminderTimezone, &c.TelegramAlertEpoch, &templatesJSON)
+		&c.TelegramReminderDays, &c.TelegramReminderHour, &c.TelegramReminderTimezone, &c.TelegramAlertEpoch, &templatesJSON, &c.SiteTheme)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil // 未初始化
@@ -279,8 +287,10 @@ func (s *sqliteDB) loadConfig() (*Config, error) {
 	if err := json.Unmarshal([]byte(templatesJSON), &c.TelegramTemplates); err != nil {
 		return nil, fmt.Errorf("invalid stored Telegram templates: %w", err)
 	}
-	// Legacy columns remain compatible with backups; appearance is fixed.
-	c.SiteTheme, c.ColorMode = "hex", "light"
+	if c.SiteTheme == "" {
+		c.SiteTheme = DefaultTheme
+	}
+	c.ColorMode = "light"
 	return &c, nil
 }
 

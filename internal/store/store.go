@@ -111,7 +111,7 @@ type Config struct {
 	AdminPassword               string                `json:"admin_password"`
 	SiteTitle                   string                `json:"site_title"`
 	SiteIcon                    string                `json:"site_icon,omitempty"`
-	SiteTheme                   string                `json:"site_theme"` // Legacy backup field; fixed to Hex.
+	SiteTheme                   string                `json:"site_theme"` // Active built-in or imported theme.
 	ColorMode                   string                `json:"color_mode"` // Legacy backup field; fixed to light.
 	AutoDiscoveryKey            string                `json:"auto_discovery_key"`
 	PingTargets                 []protocol.PingTarget `json:"ping_targets"`
@@ -325,6 +325,16 @@ func (s *Store) load(defaultPassword, username string) error {
 		}
 	} else {
 		s.config = *cfg
+	}
+
+	if s.config.SiteTheme != DefaultTheme {
+		var count int
+		if err := s.sdb.db.QueryRow("SELECT count(*) FROM site_themes WHERE id=?", s.config.SiteTheme).Scan(&count); err != nil {
+			return err
+		}
+		if count == 0 {
+			s.config.SiteTheme = DefaultTheme
+		}
 	}
 
 	if s.config.AdminUsername == "" {

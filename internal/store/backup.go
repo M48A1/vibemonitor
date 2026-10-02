@@ -123,6 +123,35 @@ func ValidateBackup(path string) error {
 			return err
 		}
 	}
+	var themeTables int
+	if err := db.db.QueryRow("SELECT count(*) FROM sqlite_schema WHERE name='site_themes' AND type='table'").Scan(&themeTables); err != nil {
+		return err
+	}
+	if themeTables > 0 {
+		rows, err := db.db.Query("SELECT id,name,version,description,css FROM site_themes")
+		if err != nil {
+			return err
+		}
+		count := 0
+		for rows.Next() {
+			var t Theme
+			if err := rows.Scan(&t.ID, &t.Name, &t.Version, &t.Description, &t.CSS); err != nil {
+				rows.Close()
+				return err
+			}
+			count++
+			if count > MaxCustomThemes || !validTheme(t) {
+				rows.Close()
+				return errors.New("invalid embedded theme")
+			}
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return err
+		}
+	}
+
 	// v1.0.41 and earlier SQLite backups have no embedded icon table.
 	var assetTables int
 	if err := db.db.QueryRow("SELECT count(*) FROM sqlite_schema WHERE name='site_assets' AND type='table'").Scan(&assetTables); err != nil {
@@ -345,6 +374,19 @@ func RestoreData(source, destination string) error {
 		return err
 	}
 	defer tx.Rollback()
+	if _, err := tx.Exec("DELETE FROM main.site_themes"); err != nil {
+		return err
+	}
+	var themeTables int
+	if err := tx.QueryRow("SELECT count(*) FROM restore_source.sqlite_schema WHERE name='site_themes' AND type='table'").Scan(&themeTables); err != nil {
+		return err
+	}
+	if themeTables > 0 {
+		if _, err := tx.Exec("INSERT INTO main.site_themes(id,name,version,description,css) SELECT id,name,version,description,css FROM restore_source.site_themes"); err != nil {
+			return err
+		}
+	}
+
 	if _, err := tx.Exec("DELETE FROM main.site_assets"); err != nil {
 		return err
 	}

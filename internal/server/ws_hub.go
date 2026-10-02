@@ -226,6 +226,7 @@ func (h *WSHub) nodesPayload() ([]byte, error) {
 	return json.Marshal(map[string]any{
 		"nodes":      h.store.GetNodes(),
 		"site_title": cfg.SiteTitle,
+		"site_theme": cfg.SiteTheme,
 		"site_icon":  cfg.SiteIcon,
 		"status":     "success",
 	})

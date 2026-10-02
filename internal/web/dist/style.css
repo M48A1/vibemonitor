@@ -846,3 +846,13 @@ body {
   color: var(--foreground);
   background-color: var(--card-data-bg);
 }
+
+
+.theme-list { display: grid; gap: 10px; margin: 18px 0; max-height: 45vh; overflow: auto; }
+.theme-row { display: flex; align-items: center; gap: 12px; border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
+.theme-option { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; cursor: pointer; }
+.theme-option span { min-width: 0; overflow-wrap: anywhere; }
+.theme-option small { display: block; margin-top: 4px; color: var(--muted-foreground); }
+.theme-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.theme-actions a { text-decoration: none; }
+#themeStatus { font-size: 13px; overflow-wrap: anywhere; }
