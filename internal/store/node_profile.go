@@ -10,14 +10,18 @@ import (
 
 // A nil profile preserves the global targets of legacy nodes.
 type NodeProfile struct {
-	Targets        []protocol.PingTarget `json:"targets"`
-	DueDate        string                `json:"due_date"`
-	PaymentCycle   string                `json:"payment_cycle"`
-	Price          float64               `json:"price"`
-	Currency       string                `json:"currency"`
-	CPUThreshold   *float64              `json:"cpu_threshold"`
-	AlertsDisabled bool                  `json:"alerts_disabled,omitempty"`
+	TrafficWarningPercent float64               `json:"traffic_warning_percent,omitempty"`
+	Targets               []protocol.PingTarget `json:"targets"`
+	DueDate               string                `json:"due_date"`
+	PaymentCycle          string                `json:"payment_cycle"`
+	Price                 float64               `json:"price"`
+	Currency              string                `json:"currency"`
+	CPUThreshold          *float64              `json:"cpu_threshold"`
+	AlertsDisabled        bool                  `json:"alerts_disabled,omitempty"`
 }
+
+var ErrInvalidTrafficWarning = errors.New("traffic warning percentage must be between 0 and 100; 0 disables early warnings")
+
 type PingPreview struct {
 	Name    string       `json:"name"`
 	Host    string       `json:"host"`
@@ -29,6 +33,9 @@ type PingPreview struct {
 func validateProfile(p *NodeProfile) error {
 	if p == nil {
 		return nil
+	}
+	if math.IsNaN(p.TrafficWarningPercent) || math.IsInf(p.TrafficWarningPercent, 0) || p.TrafficWarningPercent < 0 || p.TrafficWarningPercent > 100 {
+		return ErrInvalidTrafficWarning
 	}
 	if err := validatePingTargets(p.Targets); err != nil {
 		return err

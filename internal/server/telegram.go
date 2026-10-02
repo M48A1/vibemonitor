@@ -113,6 +113,7 @@ func (a *telegramAlerts) check(ctx context.Context, cfg store.Config, nodes []*s
 			})
 			state.Memory = a.threshold(ctx, cfg, state.Memory, memoryHigh, memoryMessage)
 		}
+		a.trafficWarning(ctx, cfg, node, &state)
 		trafficHigh := node.TrafficLimit > 0 && node.CycleTotalUsed >= node.TrafficLimit
 		trafficMessage := renderTelegramTemplate(templates.Traffic, map[string]string{
 			"node": label, "used_gib": fmt.Sprintf("%.2f", gib(node.CycleTotalUsed)), "limit_gib": fmt.Sprintf("%.2f", gib(node.TrafficLimit)),
@@ -138,6 +139,27 @@ func (a *telegramAlerts) check(ctx context.Context, cfg store.Config, nodes []*s
 		if !active[id] {
 			a.deleteState(id)
 		}
+	}
+}
+
+// Early warnings are delivered at most once per billing cycle. If usage has
+// already reached the quota, the existing over-quota alert takes precedence.
+func (a *telegramAlerts) trafficWarning(ctx context.Context, cfg store.Config, node *store.Node, state *store.TelegramAlertState) {
+	if node.Profile == nil || node.Profile.TrafficWarningPercent <= 0 || node.TrafficLimit <= 0 || node.CycleTotalUsed >= node.TrafficLimit {
+		return
+	}
+	percent := float64(node.CycleTotalUsed) / float64(node.TrafficLimit) * 100
+	cycle := node.CycleStart.UTC().Format(time.RFC3339Nano)
+	if percent < node.Profile.TrafficWarningPercent || state.TrafficWarningCycle == cycle {
+		return
+	}
+	message := renderTelegramTemplate(cfg.TelegramTemplates.Effective().TrafficWarning, map[string]string{
+		"node": alertNodeLabel(node), "used_gib": fmt.Sprintf("%.2f", gib(node.CycleTotalUsed)),
+		"limit_gib": fmt.Sprintf("%.2f", gib(node.TrafficLimit)), "percent": fmt.Sprintf("%.1f", percent),
+		"warning_percent": fmt.Sprintf("%g", node.Profile.TrafficWarningPercent),
+	})
+	if a.deliver(ctx, cfg, message) {
+		state.TrafficWarningCycle = cycle
 	}
 }
 

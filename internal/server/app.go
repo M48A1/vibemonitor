@@ -422,7 +422,7 @@ func (s *Server) Handler() http.Handler {
 		})
 		if err != nil {
 			status := http.StatusInternalServerError
-			if errors.Is(err, store.ErrInvalidNodeOrder) {
+			if errors.Is(err, store.ErrInvalidNodeOrder) || errors.Is(err, store.ErrInvalidTrafficWarning) {
 				status = http.StatusBadRequest
 			}
 			writeJSON(w, status, map[string]any{"error": err.Error()})
@@ -469,7 +469,7 @@ func (s *Server) Handler() http.Handler {
 			CycleUsedGB:    req.CycleUsedGB,
 		}); err != nil {
 			status := http.StatusInternalServerError
-			if errors.Is(err, store.ErrInvalidCycleUsage) || errors.Is(err, store.ErrInvalidNodeOrder) {
+			if errors.Is(err, store.ErrInvalidCycleUsage) || errors.Is(err, store.ErrInvalidNodeOrder) || errors.Is(err, store.ErrInvalidTrafficWarning) {
 				status = http.StatusBadRequest
 			}
 			writeJSON(w, status, map[string]any{"error": err.Error()})
