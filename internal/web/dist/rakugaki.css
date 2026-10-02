@@ -118,7 +118,7 @@ body::before { display: none; }
 .modal-title { font-family: var(--rak-display); }
 .modal-overlay { background: rgba(20, 20, 19, .4); }
 .theme-row { border: 1px dashed var(--border); border-radius: var(--r-chip); background: var(--paper); }
-.powered-by-pill { position: relative; left: auto; bottom: auto; width: fit-content; margin: 28px auto; transform: none; background: var(--paper); border: 1.5px solid var(--ink); border-radius: var(--r-chip); box-shadow: 3px 3px 0 var(--fill-oat); backdrop-filter: none; -webkit-backdrop-filter: none; }
+.powered-by-pill { background: var(--paper); border: 1.5px solid var(--ink); border-radius: var(--r-chip); box-shadow: 3px 3px 0 var(--fill-oat); backdrop-filter: none; -webkit-backdrop-filter: none; }
 @media (max-width: 1120px) {
   .hex-stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
