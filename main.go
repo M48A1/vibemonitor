@@ -51,7 +51,7 @@ Server Options:
 Agent Options:
   --server, -s            VibeMonitor server URL (required, e.g. http://127.0.0.1:1314, env: VIBEMONITOR_SERVER)
   --token, -t             Client communication token (required, env: VIBEMONITOR_TOKEN)
-  --interval, -i          Metrics reporting interval (default: 3s, env: VIBEMONITOR_INTERVAL)
+  --interval, -i          Metrics reporting interval (default: 1s, env: VIBEMONITOR_INTERVAL)
   --interfaces           Traffic interface names, comma-separated (env: VIBEMONITOR_INTERFACES; default: auto)
 
 Examples:
@@ -101,7 +101,7 @@ func runAgent(args []string) {
 	fs.StringVar(srvURL, "s", *srvURL, "Server URL (shorthand)")
 	token := fs.String("token", getEnv("VIBEMONITOR_TOKEN", ""), "Agent token")
 	fs.StringVar(token, "t", *token, "Agent token (shorthand)")
-	intervalStr := fs.String("interval", getEnv("VIBEMONITOR_INTERVAL", "3s"), "Report interval")
+	intervalStr := fs.String("interval", getEnv("VIBEMONITOR_INTERVAL", "1s"), "Report interval")
 	interfaces := fs.String("interfaces", getEnv("VIBEMONITOR_INTERFACES", ""), "Traffic interfaces, comma-separated")
 	fs.StringVar(intervalStr, "i", *intervalStr, "Report interval (shorthand)")
 

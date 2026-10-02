@@ -101,6 +101,8 @@ function resetPasswordFields() {
 
 window.closeModal = function(id) {
   if (!id) {
+    cancelPingHistory();
+    cancelResourceHistory();
     const activeModals = typeof document.querySelectorAll === 'function'
       ? document.querySelectorAll('.modal-overlay.active')
       : [];
@@ -117,6 +119,8 @@ window.closeModal = function(id) {
     m.classList.remove('active');
   }
   const modalId = (m && m.id) || id;
+  if (modalId === 'pingChartModal') cancelPingHistory();
+  if (modalId === 'resourceChartModal') cancelResourceHistory();
   if (modalId === 'loginModal') {
     resetLoginPasswordFields();
     pendingAdminAction = null;
@@ -366,6 +370,8 @@ function reconcileNode(current, next) {
   }
   if (current.nodeType !== 1) return;
   for (const attribute of Array.from(current.attributes)) {
+    // Keep a ServerStatus row expanded while its live metrics are reconciled.
+    if (attribute.name === 'open' && current.matches('details.ss-details')) continue;
     if (!next.hasAttribute(attribute.name)) current.removeAttribute(attribute.name);
   }
   for (const attribute of Array.from(next.attributes)) {
@@ -1128,6 +1134,14 @@ let currentPingNodeName = '';
 let currentPingTarget = '';
 let currentPingRange = '1h';
 let cachedPingSamples = [];
+let pingChartRequest = 0;
+let pingChartController = null;
+
+function cancelPingHistory() {
+  ++pingChartRequest;
+  if (pingChartController) pingChartController.abort();
+  pingChartController = null;
+}
 
 window.openPingChart = function(uuid, nodeName, targetName) {
   currentPingNodeUUID = uuid;
@@ -1135,7 +1149,7 @@ window.openPingChart = function(uuid, nodeName, targetName) {
   currentPingTarget = targetName || '';
   currentPingRange = '1h';
 
-  ['btnRange1h', 'btnRange24h', 'btnRange7d', 'btnRange31d'].forEach(id => {
+  ['btnRange1h', 'btnRange24h', 'btnRange7d', 'btnRange31d', 'btnRangeAll'].forEach(id => {
     const el = document.getElementById(id);
     if (el && el.classList) {
       if (id === 'btnRange1h') {
@@ -1209,7 +1223,14 @@ window.switchPingRange = function(range) {
 };
 
 async function loadPingHistory() {
-  if (!currentPingNodeUUID) return;
+  cancelPingHistory();
+  const request = pingChartRequest;
+  const uuid = currentPingNodeUUID;
+  const target = currentPingTarget;
+  const range = currentPingRange;
+  if (!uuid) return;
+  const controller = new AbortController();
+  pingChartController = controller;
   const statCur = document.getElementById('statCurrent');
   const statAvg = document.getElementById('statAvg');
   const statMin = document.getElementById('statMin');
@@ -1223,9 +1244,11 @@ async function loadPingHistory() {
   statLoss.textContent = '...';
 
   try {
-    const res = await fetch(`/api/nodes/ping-history?uuid=${currentPingNodeUUID}&target=${encodeURIComponent(currentPingTarget)}&range=${currentPingRange}`);
+    const query = new URLSearchParams({uuid, target, range});
+    const res = await fetch(`/api/nodes/ping-history?${query}`, {signal: controller.signal});
     if (!res.ok) throw new Error('加载失败');
     const data = await res.json();
+    if (request !== pingChartRequest || controller.signal.aborted) return;
 
     if (data.target) {
       document.getElementById('pingModalSubtitle').textContent = `目标: ${data.target} · 历史方式: ${{tcp: 'TCP', icmp: 'ICMP', unknown: '未标明'}[data.method] || '暂无采样'}`;
@@ -1233,13 +1256,14 @@ async function loadPingHistory() {
 
     // Stats
     const s = data.stats || {};
-    statCur.textContent = s.current >= 0 ? `${s.current}ms` : (s.total_count > 0 ? '超时' : '--');
-    statCur.style.color = s.current < 0 ? 'var(--destructive)' : s.current > 150 ? 'var(--warning)' : 'var(--success)';
-    statAvg.textContent = s.avg > 0 ? `${s.avg}ms` : '--';
-    statMin.textContent = s.min >= 0 ? `${s.min}ms` : '--';
-    statMax.textContent = s.max >= 0 ? `${s.max}ms` : '--';
-    statLoss.textContent = `${s.packet_loss || 0}%`;
-    statLoss.style.color = (s.packet_loss > 0) ? 'var(--destructive)' : 'var(--success)';
+    const hasSamples = s.total_count > 0;
+    statCur.textContent = hasSamples ? (s.current >= 0 ? `${s.current}ms` : '超时') : '--';
+    statCur.style.color = !hasSamples ? 'var(--muted-foreground)' : s.current < 0 ? 'var(--destructive)' : s.current > 150 ? 'var(--warning)' : 'var(--success)';
+    statAvg.textContent = hasSamples && s.min >= 0 && s.avg >= 0 ? `${s.avg}ms` : '--';
+    statMin.textContent = hasSamples && s.min >= 0 ? `${s.min}ms` : '--';
+    statMax.textContent = hasSamples && s.max >= 0 ? `${s.max}ms` : '--';
+    statLoss.textContent = hasSamples ? `${s.packet_loss || 0}%` : '--';
+    statLoss.style.color = !hasSamples ? 'var(--muted-foreground)' : s.packet_loss > 0 ? 'var(--destructive)' : 'var(--success)';
 
     cachedPingSamples = data.samples || [];
 
@@ -1247,21 +1271,22 @@ async function loadPingHistory() {
     let startSec = data.start_time;
     let endSec = data.end_time || nowSec;
     if (!startSec) {
-      const duration = currentPingRange === '1h' ? 3600 :
-                       currentPingRange === '7d' ? 7 * 86400 :
-                       currentPingRange === '31d' ? 31 * 86400 :
-                       currentPingRange === 'all' ? (cachedPingSamples[0]?.t || (nowSec - 86400)) : 86400;
-      startSec = nowSec - duration;
+      startSec = range === 'all' ? (cachedPingSamples[0]?.t || (nowSec - 86400)) :
+        nowSec - (range === '1h' ? 3600 : range === '7d' ? 7 * 86400 : range === '31d' ? 31 * 86400 : 86400);
     }
 
     // Time indicators
-    const showDate = currentPingRange !== '1h';
+    const showDate = range !== '1h';
     document.getElementById('chartTimeStart').textContent = formatChartTime(startSec, showDate);
     document.getElementById('chartTimeEnd').textContent = `现在 (${formatChartTime(endSec, showDate)})`;
 
-    renderPingSvgChart(cachedPingSamples, currentPingRange, null, startSec, endSec, data.offline_intervals || []);
+    renderPingSvgChart(cachedPingSamples, range, null, startSec, endSec, data.offline_intervals || []);
   } catch (e) {
-    renderPingSvgChart([], currentPingRange, e.message);
+    if (request !== pingChartRequest || controller.signal.aborted) return;
+    [statCur, statAvg, statMin, statMax, statLoss].forEach(stat => { stat.textContent = '--'; });
+    renderPingSvgChart([], range, e.message);
+  } finally {
+    if (pingChartController === controller) pingChartController = null;
   }
 }
 
@@ -1505,6 +1530,13 @@ let currentResourceNodeUUID = '';
 let currentResourceMetric = 'cpu';
 let currentResourceRange = '1h';
 let resourceChartRequest = 0;
+let resourceChartController = null;
+
+function cancelResourceHistory() {
+  ++resourceChartRequest;
+  if (resourceChartController) resourceChartController.abort();
+  resourceChartController = null;
+}
 
 window.openResourceChart = function(uuid, nodeName, metric) {
   if (!['cpu', 'memory', 'network'].includes(metric)) return;
@@ -1540,20 +1572,23 @@ window.switchResourceRange = function(range) {
 };
 
 async function loadResourceHistory() {
-  const request = ++resourceChartRequest;
+  cancelResourceHistory();
+  const request = resourceChartRequest;
   const uuid = currentResourceNodeUUID;
   const metric = currentResourceMetric;
   const range = currentResourceRange;
   if (!uuid) return;
+  const controller = new AbortController();
+  resourceChartController = controller;
   ['Current', 'Avg', 'Min', 'Max'].forEach(name => {
     document.getElementById(`resourceStat${name}`).textContent = '...';
   });
   try {
     const query = new URLSearchParams({uuid, metric, range});
-    const response = await fetch(`/api/nodes/resource-history?${query}`);
+    const response = await fetch(`/api/nodes/resource-history?${query}`, {signal: controller.signal});
     if (!response.ok) throw new Error('加载失败');
     const data = await response.json();
-    if (request !== resourceChartRequest) return;
+    if (request !== resourceChartRequest || controller.signal.aborted) return;
     const stats = data.stats || {};
     document.getElementById('resourceStatCurrent').textContent = stats.count > 0 ? formatResourceValue(metric, stats.current) : '--';
     document.getElementById('resourceStatAvg').textContent = stats.count > 0 ? formatResourceValue(metric, stats.avg) : '--';
@@ -1563,11 +1598,13 @@ async function loadResourceHistory() {
     document.getElementById('resourceChartTimeEnd').textContent = `现在 (${formatChartTime(data.end_time, range !== '1h')})`;
     renderResourceSvgChart(data.samples || [], data.start_time, data.end_time, data.step_seconds, metric);
   } catch (error) {
-    if (request !== resourceChartRequest) return;
+    if (request !== resourceChartRequest || controller.signal.aborted) return;
     ['Current', 'Avg', 'Min', 'Max'].forEach(name => {
       document.getElementById(`resourceStat${name}`).textContent = '--';
     });
     renderResourceSvgChart([], 0, 0, 60, metric, '获取数据失败');
+  } finally {
+    if (resourceChartController === controller) resourceChartController = null;
   }
 }
 

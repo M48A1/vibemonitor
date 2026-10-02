@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -22,9 +23,15 @@ import (
 type LinuxCollector struct {
 	cpuTracker CPUTracker
 	netTracker NetTracker
+	tcpTracker tcpConnectionRateTracker
 	startTime  time.Time
 	interfaces map[string]bool
+	diskCache  metricCache[protocol.DiskReport]
+	connCache  metricCache[connectionCounts]
+	procCache  metricCache[int]
 }
+
+type connectionCounts struct{ tcp, udp int }
 
 func NewCollector(interfaces ...string) Collector {
 	selected := make(map[string]bool)
@@ -128,17 +135,19 @@ func (c *LinuxCollector) GetReport() (protocol.Report, error) {
 	// 3. Load
 	report.Load = readLoadAvg()
 
-	// 4. Disk
-	var stat syscall.Statfs_t
-	if err := syscall.Statfs(getDiskPath(), &stat); err == nil {
+	// 4. Disk: filesystem statistics change slowly and can be expensive.
+	report.Disk = c.diskCache.getAt(time.Now(), func() (protocol.DiskReport, error) {
+		var stat syscall.Statfs_t
+		if err := syscall.Statfs(getDiskPath(), &stat); err != nil {
+			return protocol.DiskReport{}, err
+		}
 		total := int64(stat.Blocks * uint64(stat.Bsize))
 		free := int64(stat.Bavail * uint64(stat.Bsize))
 		if free > total {
 			free = total
 		}
-		report.Disk.Total = total
-		report.Disk.Used = total - free
-	}
+		return protocol.DiskReport{Total: total, Used: total - free}, nil
+	})
 
 	// 5. Network
 	totalDown, totalUp, source, counters, err := c.readNetDev()
@@ -156,10 +165,20 @@ func (c *LinuxCollector) GetReport() (protocol.Report, error) {
 	report.Network.BootID = readKernelBootID("/proc/sys/kernel/random/boot_id")
 	report.Network.Interfaces = counters
 
-	// 6. Connections & Process
-	report.Connections.TCP = countLinesInFile("/proc/net/tcp") + countLinesInFile("/proc/net/tcp6")
-	report.Connections.UDP = countLinesInFile("/proc/net/udp") + countLinesInFile("/proc/net/udp6")
-	report.Process = countProcesses()
+	// 6. TCP attempts/s stays on the fast path; socket and process counts
+	// scan potentially large tables and are refreshed every five seconds.
+	if data, err := os.ReadFile("/proc/net/snmp"); err == nil {
+		if active, passive, err := parseTCPConnectionCounters(data); err == nil {
+			report.Connections.TCPNewPerSecond = c.tcpTracker.CalculateRateAt(active, passive, time.Now())
+		} else {
+			c.tcpTracker.Reset()
+		}
+	} else {
+		c.tcpTracker.Reset()
+	}
+	counts := c.connCache.getAt(time.Now(), readConnectionCounts)
+	report.Connections.TCP, report.Connections.UDP = counts.tcp, counts.udp
+	report.Process = c.procCache.getAt(time.Now(), countProcesses)
 
 	// 7. Uptime
 	report.Uptime = readUptime()
@@ -173,55 +192,7 @@ func readCPUStats() (total, idle uint64, err error) {
 		return 0, 0, err
 	}
 
-	// Fast-path: The aggregated "cpu " metric is always on the first line
-	var firstLine string
-	if idx := bytes.IndexByte(data, '\n'); idx != -1 {
-		firstLine = string(data[:idx])
-	} else {
-		firstLine = string(data)
-	}
-
-	if strings.HasPrefix(firstLine, "cpu ") {
-		fields := strings.Fields(firstLine)
-		if len(fields) < 5 {
-			return 0, 0, fmt.Errorf("invalid cpu format")
-		}
-		var sum uint64
-		for i := 1; i < len(fields); i++ {
-			v, _ := strconv.ParseUint(fields[i], 10, 64)
-			sum += v
-		}
-		idleVal, _ := strconv.ParseUint(fields[4], 10, 64)
-		var iowaitVal uint64
-		if len(fields) >= 6 {
-			iowaitVal, _ = strconv.ParseUint(fields[5], 10, 64)
-		}
-		return sum, idleVal + iowaitVal, nil
-	}
-
-	// Fallback in case "cpu " is not the very first line
-	scanner := bufio.NewScanner(bytes.NewReader(data))
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "cpu ") {
-			fields := strings.Fields(line)
-			if len(fields) < 5 {
-				return 0, 0, fmt.Errorf("invalid cpu format")
-			}
-			var sum uint64
-			for i := 1; i < len(fields); i++ {
-				v, _ := strconv.ParseUint(fields[i], 10, 64)
-				sum += v
-			}
-			idleVal, _ := strconv.ParseUint(fields[4], 10, 64)
-			var iowaitVal uint64
-			if len(fields) >= 6 {
-				iowaitVal, _ = strconv.ParseUint(fields[5], 10, 64)
-			}
-			return sum, idleVal + iowaitVal, nil
-		}
-	}
-	return 0, 0, fmt.Errorf("cpu line not found")
+	return parseCPUStats(data)
 }
 
 func readMemInfo() (memTotal, memUsed, swapTotal, swapUsed int64, err error) {
@@ -229,58 +200,7 @@ func readMemInfo() (memTotal, memUsed, swapTotal, swapUsed int64, err error) {
 	if err != nil {
 		return 0, 0, 0, 0, err
 	}
-	var (
-		total, avail, free, buffers, cached, swapTot, swapFr int64
-	)
-	scanner := bufio.NewScanner(bytes.NewReader(data))
-	for scanner.Scan() {
-		line := scanner.Text()
-		parts := strings.Split(line, ":")
-		if len(parts) != 2 {
-			continue
-		}
-		key := strings.TrimSpace(parts[0])
-		valFields := strings.Fields(parts[1])
-		if len(valFields) == 0 {
-			continue
-		}
-		valKb, _ := strconv.ParseInt(valFields[0], 10, 64)
-		valBytes := valKb * 1024
-
-		switch key {
-		case "MemTotal":
-			total = valBytes
-		case "MemAvailable":
-			avail = valBytes
-		case "MemFree":
-			free = valBytes
-		case "Buffers":
-			buffers = valBytes
-		case "Cached":
-			cached = valBytes
-		case "SwapTotal":
-			swapTot = valBytes
-		case "SwapFree":
-			swapFr = valBytes
-		}
-	}
-
-	memTotal = total
-	if avail > 0 {
-		memUsed = total - avail
-	} else {
-		memUsed = total - free - buffers - cached
-	}
-	if memUsed < 0 {
-		memUsed = 0
-	}
-
-	swapTotal = swapTot
-	swapUsed = swapTot - swapFr
-	if swapUsed < 0 {
-		swapUsed = 0
-	}
-	return memTotal, memUsed, swapTotal, swapUsed, nil
+	return parseMemInfo(data)
 }
 
 func readLoadAvg() protocol.LoadReport {
@@ -384,10 +304,32 @@ var lineBufPool = sync.Pool{
 	},
 }
 
-func countLinesInFile(path string) int {
+func readConnectionCounts() (connectionCounts, error) {
+	var counts connectionCounts
+	for _, table := range []struct {
+		path  string
+		total *int
+	}{
+		{"/proc/net/tcp", &counts.tcp}, {"/proc/net/tcp6", &counts.tcp},
+		{"/proc/net/udp", &counts.udp}, {"/proc/net/udp6", &counts.udp},
+	} {
+		count, err := countLinesInFile(table.path)
+		// IPv6 socket tables are absent when the kernel disables IPv6.
+		if os.IsNotExist(err) && strings.HasSuffix(table.path, "6") {
+			continue
+		}
+		if err != nil {
+			return connectionCounts{}, err
+		}
+		*table.total += count
+	}
+	return counts, nil
+}
+
+func countLinesInFile(path string) (int, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return 0
+		return 0, err
 	}
 	defer f.Close()
 
@@ -411,26 +353,29 @@ func countLinesInFile(path string) int {
 			lastByteWasLF = (buf[n-1] == '\n')
 		}
 		if err != nil {
+			if err != io.EOF {
+				return 0, err
+			}
 			break
 		}
 	}
 
 	if !hasData {
-		return 0
+		return 0, nil
 	}
 	if !lastByteWasLF {
 		lineCount++
 	}
 	if lineCount <= 1 {
-		return 0
+		return 0, nil
 	}
-	return lineCount - 1 // subtract header
+	return lineCount - 1, nil // subtract header
 }
 
-func countProcesses() int {
+func countProcesses() (int, error) {
 	f, err := os.Open("/proc")
 	if err != nil {
-		return 0
+		return 0, err
 	}
 	defer f.Close()
 
@@ -443,10 +388,13 @@ func countProcesses() int {
 			}
 		}
 		if err != nil {
+			if err != io.EOF {
+				return 0, err
+			}
 			break
 		}
 	}
-	return count
+	return count, nil
 }
 
 func isAllDigits(s string) bool {

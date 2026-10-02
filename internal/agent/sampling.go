@@ -16,7 +16,9 @@ func collectReports(ctx context.Context, collector monitor.Collector, interval t
 		interval = time.Second
 	}
 	// Establish the counter baseline before publishing any rates.
+	var failures repeatedErrorLog
 	if _, err := collector.GetReport(); err != nil {
+		failures.message(err, time.Now())
 		log.Printf("[Agent] Error establishing metrics baseline: %v", err)
 	}
 	ticker := time.NewTicker(interval)
@@ -28,7 +30,9 @@ func collectReports(ctx context.Context, collector monitor.Collector, interval t
 		case <-ticker.C:
 			report, err := collector.GetReport()
 			if err != nil {
-				log.Printf("[Agent] Error collecting metrics: %v", err)
+				if message, emit := failures.message(err, time.Now()); emit {
+					log.Printf("[Agent] Error collecting metrics: %s", message)
+				}
 				// Do not upload an older sample after a collection failure.
 				select {
 				case <-reports:
@@ -36,6 +40,7 @@ func collectReports(ctx context.Context, collector monitor.Collector, interval t
 				}
 				continue
 			}
+			failures.reset()
 			select {
 			case <-reports:
 			default:

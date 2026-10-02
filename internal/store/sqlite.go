@@ -167,6 +167,15 @@ func (s *sqliteDB) initSchema() error {
 		timestamp INTEGER NOT NULL,
 		latency INTEGER NOT NULL
 	);
+	CREATE TABLE IF NOT EXISTS ping_observations (
+		node_uuid TEXT NOT NULL,
+		target_name TEXT NOT NULL,
+		host TEXT NOT NULL,
+		method TEXT NOT NULL,
+		started_at INTEGER NOT NULL,
+		last_sample_at INTEGER NOT NULL,
+		PRIMARY KEY (node_uuid, target_name)
+	);
 	CREATE TABLE IF NOT EXISTS resource_history (
 		node_uuid TEXT NOT NULL,
 		timestamp INTEGER NOT NULL,
@@ -178,6 +187,7 @@ func (s *sqliteDB) initSchema() error {
 	CREATE INDEX IF NOT EXISTS idx_resource_history_time ON resource_history(timestamp);
 
 	CREATE INDEX IF NOT EXISTS idx_ping_lookup ON ping_history(node_uuid, target_name, timestamp);
+	CREATE INDEX IF NOT EXISTS idx_ping_series ON ping_history(node_uuid, target_name, host, method, timestamp, latency);
 	CREATE INDEX IF NOT EXISTS idx_ping_cleanup ON ping_history(timestamp);
 	CREATE UNIQUE INDEX IF NOT EXISTS idx_ping_unique ON ping_history(node_uuid, target_name, timestamp);
 	`
@@ -232,7 +242,7 @@ func (s *sqliteDB) initSchema() error {
 			}
 		}
 	}
-	return nil
+	return s.initHistoryRollupSchema()
 }
 
 func (s *sqliteDB) hasConfigColumn(name string) (bool, error) {
@@ -248,19 +258,33 @@ func (s *sqliteDB) hasResourceColumn(name string) (bool, error) {
 }
 
 func (s *sqliteDB) pruneNodePing(nodeUUID string, allowedTargets []protocol.PingTarget) error {
-	if len(allowedTargets) == 0 {
-		_, err := s.db.Exec("DELETE FROM ping_history WHERE node_uuid = ?", nodeUUID)
+	targets, err := json.Marshal(allowedTargets)
+	if err != nil {
 		return err
 	}
-	placeholders := strings.Repeat("?,", len(allowedTargets))
-	placeholders = placeholders[:len(placeholders)-1]
-	args := make([]any, 0, len(allowedTargets)+1)
-	args = append(args, nodeUUID)
-	for _, t := range allowedTargets {
-		args = append(args, t.Name)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
 	}
-	_, err := s.db.Exec("DELETE FROM ping_history WHERE node_uuid = ? AND target_name NOT IN ("+placeholders+")", args...)
-	return err
+	defer tx.Rollback()
+	for _, table := range []string{"ping_history", "ping_observations", "history_rollups"} {
+		condition := ""
+		if table == "history_rollups" {
+			condition = " AND kind='ping'"
+		}
+		query := "DELETE FROM " + table + " WHERE node_uuid=?" + condition + ` AND NOT EXISTS
+			(SELECT 1 FROM json_each(?) WHERE json_extract(value,'$.name')=` + table + `.target_name
+			 AND json_extract(value,'$.host')=` + table + `.host)`
+		if _, err := tx.Exec(query, nodeUUID, string(targets)); err != nil {
+			return err
+		}
+	}
+	if len(allowedTargets) == 0 {
+		if _, err := tx.Exec("DELETE FROM history_rollup_dirty WHERE node_uuid=? AND kind='ping'", nodeUUID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (s *sqliteDB) loadConfig() (*Config, error) {
@@ -389,7 +413,18 @@ func (s *sqliteDB) deleteNode(uuid string) error {
 	if _, err := tx.Exec("DELETE FROM ping_history WHERE node_uuid = ?", uuid); err != nil {
 		return err
 	}
+	if _, err := tx.Exec("DELETE FROM ping_observations WHERE node_uuid = ?", uuid); err != nil {
+		return err
+	}
 	if _, err := tx.Exec("DELETE FROM resource_history WHERE node_uuid = ?", uuid); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("DELETE FROM history_rollups WHERE node_uuid = ?", uuid); err != nil {
+		return err
+	}
+	// Deleting raw rows may trigger dirty-hour bookkeeping; the node is gone,
+	// so remove both pre-existing and newly created jobs in the same transaction.
+	if _, err := tx.Exec("DELETE FROM history_rollup_dirty WHERE node_uuid = ?", uuid); err != nil {
 		return err
 	}
 	return tx.Commit()

@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"net/http"
@@ -49,7 +48,7 @@ const maxPingConcurrency = 8
 
 func New(opts Options) *Client {
 	if opts.Interval <= 0 {
-		opts.Interval = 3 * time.Second
+		opts.Interval = time.Second
 	}
 	serverURL := strings.TrimRight(opts.ServerURL, "/")
 
@@ -112,25 +111,7 @@ func (c *Client) postRPCContext(ctx context.Context, method string, params any) 
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		_, _ = io.Copy(io.Discard, resp.Body)
-		_ = resp.Body.Close()
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("server returned status %d: %s", resp.StatusCode, string(b))
-	}
-
-	var rpcResp protocol.Response
-	if err := json.NewDecoder(resp.Body).Decode(&rpcResp); err != nil {
-		return nil, err
-	}
-	if rpcResp.Error != nil {
-		return nil, fmt.Errorf("RPC error (%d): %s", rpcResp.Error.Code, rpcResp.Error.Message)
-	}
-
-	return &rpcResp, nil
+	return readRPCResponse(resp)
 }
 
 func (c *Client) Run(ctx context.Context) error {
@@ -142,6 +123,7 @@ func (c *Client) Run(ctx context.Context) error {
 	// Retry pending info after every successful metrics report; refresh periodically
 	// even if the master was replaced without a visible connection failure.
 	var lastBasicInfo time.Time
+	var basicFailures, reportFailures repeatedErrorLog
 	reportBasicInfo := func() {
 		info, err := c.collector.GetBasicInfo()
 		if err == nil {
@@ -149,6 +131,7 @@ func (c *Client) Run(ctx context.Context) error {
 			var resp *protocol.Response
 			resp, err = c.postRPCContext(ctx, protocol.MethodAgentBasicInfo, protocol.BasicInfoParams{Info: info})
 			if err == nil {
+				basicFailures.reset()
 				lastBasicInfo = time.Now()
 				if resp != nil {
 					c.handleRPCResult(resp.Result)
@@ -157,7 +140,9 @@ func (c *Client) Run(ctx context.Context) error {
 			}
 		}
 		if err != nil {
-			log.Printf("[Agent] BasicInfo pending, will retry after reconnect: %v", err)
+			if message, emit := basicFailures.message(err, time.Now()); emit {
+				log.Printf("[Agent] BasicInfo pending, will retry after reconnect: %s", message)
+			}
 		}
 	}
 	reportBasicInfo()
@@ -206,8 +191,11 @@ func (c *Client) Run(ctx context.Context) error {
 			resp, err := c.postRPCContext(ctx, protocol.MethodAgentReport, protocol.ReportParams{Report: report})
 			if err != nil {
 				lastBasicInfo = time.Time{}
-				log.Printf("[Agent] Report failed: %v", err)
+				if message, emit := reportFailures.message(err, time.Now()); emit {
+					log.Printf("[Agent] Report failed: %s", message)
+				}
 			} else {
+				reportFailures.reset()
 				if resp != nil {
 					c.handleRPCResult(resp.Result)
 				}

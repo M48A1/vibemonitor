@@ -67,6 +67,7 @@ begin_update() {
     UPDATE_COMMITTED=0
     BINARY_REPLACED=0
     UNIT_TOUCHED=0
+    SERVICE_TOUCHED=0
     WAS_ACTIVE=0
     WAS_ENABLED=0
     PROXY_CONFIG_TOUCHED=0
@@ -85,10 +86,15 @@ begin_update() {
 cleanup_update() {
     local result=$? rollback_failed=0
     trap - EXIT
-    if [ "$UPDATE_COMMITTED" != 1 ] && { [ "$BINARY_REPLACED" = 1 ] || [ "$UNIT_TOUCHED" = 1 ]; }; then
+    if [ "$UPDATE_COMMITTED" != 1 ] && { [ "$BINARY_REPLACED" = 1 ] || [ "$UNIT_TOUCHED" = 1 ] || [ "$SERVICE_TOUCHED" = 1 ]; }; then
         warn "操作失败；正在恢复原有程序和服务配置。"
-        if [ "$WAS_ACTIVE" = 1 ]; then
-            systemctl stop "$UPDATE_SERVICE" >/dev/null 2>&1 || rollback_failed=1
+        # A health check can fail after starting a previously stopped service.
+        # Always stop the replacement before restoring its binary and unit.
+        if [ "$SERVICE_TOUCHED" = 1 ] || systemctl is-active --quiet "$UPDATE_SERVICE"; then
+            if ! systemctl stop "$UPDATE_SERVICE" >/dev/null 2>&1; then
+                warn "Could not stop replacement service; recovery files retained."
+                rollback_failed=1
+            fi
         fi
         if [ "$BINARY_REPLACED" = 1 ]; then
             if [ -f "$UPDATE_DIR/previous-binary" ]; then
@@ -101,16 +107,18 @@ cleanup_update() {
                 rm -f "$INSTALL_BIN" || rollback_failed=1
             fi
         fi
+        # Disable while the replacement unit still exists, including first installs.
+        if [ "$WAS_ENABLED" = 0 ] && [ -f "$UNIT_DIR/$UPDATE_SERVICE.service" ]; then systemctl disable "$UPDATE_SERVICE" >/dev/null 2>&1 || rollback_failed=1; fi
         if [ "$UNIT_TOUCHED" = 1 ]; then
             if [ -f "$UPDATE_DIR/previous-unit" ]; then
                 cp -p "$UPDATE_DIR/previous-unit" "$UNIT_DIR/$UPDATE_SERVICE.service" || rollback_failed=1
             else
                 rm -f "$UNIT_DIR/$UPDATE_SERVICE.service" || rollback_failed=1
             fi
-            if [ "$WAS_ENABLED" = 0 ]; then systemctl disable "$UPDATE_SERVICE" >/dev/null 2>&1 || rollback_failed=1; fi
-            systemctl daemon-reload || rollback_failed=1
         fi
-        if [ "$WAS_ACTIVE" = 1 ]; then systemctl restart "$UPDATE_SERVICE" || rollback_failed=1; fi
+        systemctl daemon-reload || rollback_failed=1
+        if [ "$WAS_ENABLED" = 1 ]; then systemctl enable "$UPDATE_SERVICE" >/dev/null 2>&1 || rollback_failed=1; fi
+        if [ "$WAS_ACTIVE" = 1 ] && [ "$rollback_failed" = 0 ]; then systemctl restart "$UPDATE_SERVICE" || rollback_failed=1; fi
         result=1
     fi
     if [ "$UPDATE_COMMITTED" != 1 ] && [ "$PROXY_CONFIG_TOUCHED" = 1 ]; then
@@ -177,10 +185,19 @@ download_binary() {
     BINARY_REPLACED=1
 }
 
+# Validate in the calling shell before any cleanup or service changes. Errors in
+# a heredoc's command substitution do not propagate to the outer cat command.
+validate_unit_args() {
+    local value
+    for value in "$@"; do
+        [[ "$value" != *$'\n'* && "$value" != *$'\r'* ]] || error "Arguments cannot contain line breaks."
+    done
+}
+
 # Escape one systemd ExecStart argument; never interpret it as shell source.
 unit_arg() {
     local value="$1"
-    [[ "$value" != *$'\n'* && "$value" != *$'\r'* ]] || error "Arguments cannot contain line breaks."
+    validate_unit_args "$value"
     value=${value//\\/\\\\}
     value=${value//\"/\\\"}
     value=${value//\$/\$\$}
@@ -191,6 +208,9 @@ unit_arg() {
 finish_update() {
     local port="${1:-}" domain="${2:-}"
     info "正在启动服务并检查运行状态…"
+    # Track permission and enable/start changes even when ExecStart is unchanged.
+    UNIT_TOUCHED=1
+    SERVICE_TOUCHED=1
     chmod 600 "$UNIT_DIR/$UPDATE_SERVICE.service"
     systemctl daemon-reload
     systemctl enable "$UPDATE_SERVICE" >/dev/null
@@ -271,6 +291,7 @@ switch_server_to_sqlite() {
         error "Custom data argument detected; update --data in $unit to the existing .db path."
     fi
     chmod 600 "$UPDATE_DIR/sqlite-unit"
+    UNIT_TOUCHED=1
     mv -f "$UPDATE_DIR/sqlite-unit" "$unit"
     info "启动参数已切换到现有 SQLite 数据库。"
 }
@@ -607,6 +628,7 @@ EOF
 
 install_server() {
     local port="${1:-1314}" password="${2:-}" username="${3:-}" domain="${4:-}" email="${5:-}"
+    validate_unit_args "$INSTALL_BIN" "$CONFIG_DIR" "$UNIT_DIR" "$port" "$password" "$username" "$domain" "$email"
     [[ "$username" =~ [^[:space:]] ]] || error "管理员账号不能为空，请填写 --username。"
     [[ "$password" =~ [^[:space:]] ]] || error "管理员密码不能为空，请填写 --password。"
     [[ "$port" =~ ^[0-9]+$ && ${#port} -le 5 ]] || error "Invalid port."
@@ -618,6 +640,13 @@ install_server() {
     elif [ -n "$email" ]; then
         error "提供证书通知邮箱时还需填写域名。"
     fi
+    local args
+    if [ -n "$domain" ]; then
+        args="$(unit_arg "$INSTALL_BIN") server --listen $(unit_arg "127.0.0.1:$port") --data $(unit_arg "$CONFIG_DIR/vibemonitor-data.db")"
+    else
+        args="$(unit_arg "$INSTALL_BIN") server --listen $(unit_arg "0.0.0.0:$port") --data $(unit_arg "$CONFIG_DIR/vibemonitor-data.db")"
+    fi
+    args="$args --admin-username $(unit_arg "$username") --admin-password $(unit_arg "$password")"
     check_root; detect_arch; check_dependencies
     confirm_full_cleanup || return 0
     begin_update "$SERVER_SERVICE"
@@ -627,14 +656,6 @@ install_server() {
     WAS_ACTIVE=0 # Deleted data cannot be recovered; do not restart old credentials on failure.
     mkdir -p "$CONFIG_DIR"
     rm -rf -- "$UNIT_DIR/$SERVER_SERVICE.service.d"
-    local args
-    if [ -n "$domain" ]; then
-        args="$(unit_arg "$INSTALL_BIN") server --listen $(unit_arg "127.0.0.1:$port") --data $(unit_arg "$CONFIG_DIR/vibemonitor-data.db")"
-    else
-        args="$(unit_arg "$INSTALL_BIN") server --listen $(unit_arg "0.0.0.0:$port") --data $(unit_arg "$CONFIG_DIR/vibemonitor-data.db")"
-    fi
-    args="$args --admin-username $(unit_arg "$username")"
-    if [ -n "$password" ]; then args="$args --admin-password $(unit_arg "$password")"; fi
     UNIT_TOUCHED=1
     cat > "$UNIT_DIR/$SERVER_SERVICE.service" <<EOF
 [Unit]
@@ -695,14 +716,18 @@ configure_existing_server_domain() {
 }
 
 install_agent() {
-    local server="$1" token="$2" interval="${3:-3s}"
+    local server="$1" token="$2" interval="${3:-1s}"
+    validate_unit_args "$INSTALL_BIN" "$CONFIG_DIR" "$UNIT_DIR" "$server" "$token" "$interval"
     [[ "$server" == http://* || "$server" == https://* ]] || error "Server URL must start with http:// or https://."
     [ -n "$token" ] || error "A node token is required."
+    local args
+    args="$(unit_arg "$INSTALL_BIN") agent --server $(unit_arg "$server") --token $(unit_arg "$token") --interval $(unit_arg "$interval")"
     check_root; detect_arch; check_dependencies
     confirm_backup_cleanup || return 0
     clear_backups
     begin_update "$AGENT_SERVICE"
     download_binary
+    UNIT_TOUCHED=1
     cat > "$UNIT_DIR/$AGENT_SERVICE.service" <<EOF
 [Unit]
 Description=VibeMonitor Agent
@@ -710,7 +735,7 @@ After=network-online.target
 [Service]
 Type=simple
 Environment=GOMEMLIMIT=25MiB
-ExecStart=$(unit_arg "$INSTALL_BIN") agent --server $(unit_arg "$server") --token $(unit_arg "$token") --interval $(unit_arg "$interval")
+ExecStart=$args
 Restart=always
 RestartSec=5
 [Install]
@@ -923,8 +948,8 @@ menu() {
                fi ;;
             4) read_input "主控地址（http:// 或 https://）: " server
                read_secret "节点 Token（输入不显示）: " token
-               read_input "上报间隔 [3s]: " interval
-               ( install_agent "$server" "$token" "${interval:-3s}" ) ;;
+               read_input "上报间隔 [1s]: " interval
+               ( install_agent "$server" "$token" "${interval:-1s}" ) ;;
             5) uninstall_agent ;;
             6) show_status ;;
             7) manage_services restart ;;
@@ -983,7 +1008,7 @@ case "$CMD" in
         [ -n "$domain" ] || error "Domain is required."
         configure_existing_server_domain "$domain" "$port" "$email" ;;
     agent)
-        server=""; token=""; interval=3s
+        server=""; token=""; interval=1s
         while [ $# -gt 0 ]; do
             case "$1" in
                 -s|--server) server="${2:?missing server}"; shift 2 ;;

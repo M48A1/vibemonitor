@@ -300,6 +300,7 @@ body {
 }
 
 /* Node Grid - Solid Modern Cards */
+.ss-table-head { display: none; }
 .node-grid {
   display: grid;
   grid-template-columns: 1fr;

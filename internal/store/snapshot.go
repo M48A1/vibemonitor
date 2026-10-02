@@ -31,6 +31,11 @@ func (s *sqliteDB) saveSnapshot(config Config, nodes map[string]*Node, samples .
 		if _, err = tx.Exec("DELETE FROM resource_history WHERE node_uuid NOT IN (SELECT uuid FROM nodes)"); err != nil {
 			return err
 		}
+		for _, table := range []string{"history_rollups", "history_rollup_dirty"} {
+			if _, err = tx.Exec("DELETE FROM " + table + " WHERE node_uuid NOT IN (SELECT uuid FROM nodes)"); err != nil {
+				return err
+			}
+		}
 	} else {
 		for id := range s.nodeCache {
 			if _, exists := nodes[id]; !exists {
@@ -40,9 +45,22 @@ func (s *sqliteDB) saveSnapshot(config Config, nodes map[string]*Node, samples .
 				if _, err = tx.Exec("DELETE FROM resource_history WHERE node_uuid=?", id); err != nil {
 					return err
 				}
+				for _, table := range []string{"history_rollups", "history_rollup_dirty"} {
+					if _, err = tx.Exec("DELETE FROM "+table+" WHERE node_uuid=?", id); err != nil {
+						return err
+					}
+				}
 			}
 		}
 	}
+	if _, err = tx.Exec("DELETE FROM ping_observations WHERE node_uuid NOT IN (SELECT uuid FROM nodes)"); err != nil {
+		return err
+	}
+	observations, err := tx.Prepare(pingObservationUpsert)
+	if err != nil {
+		return err
+	}
+	defer observations.Close()
 	nextTargets := make(map[string]string, len(nodes))
 	nextPings := make(map[string]PingSample)
 	stmt, err := tx.Prepare(`INSERT INTO ping_history(node_uuid,target_name,host,method,timestamp,latency)
@@ -67,6 +85,21 @@ func (s *sqliteDB) saveSnapshot(config Config, nodes map[string]*Node, samples .
 			if _, err = tx.Exec(`DELETE FROM ping_history WHERE node_uuid=? AND NOT EXISTS
 				(SELECT 1 FROM json_each(?) WHERE json_extract(value,'$.name')=target_name AND json_extract(value,'$.host')=host)`, id, string(targetJSON)); err != nil {
 				return err
+			}
+			if _, err = tx.Exec(`DELETE FROM history_rollups WHERE node_uuid=? AND kind='ping' AND NOT EXISTS
+				(SELECT 1 FROM json_each(?) WHERE json_extract(value,'$.name')=target_name AND json_extract(value,'$.host')=host)`, id, string(targetJSON)); err != nil {
+				return err
+			}
+			if _, err = tx.Exec(`DELETE FROM ping_observations WHERE node_uuid=? AND NOT EXISTS
+			(SELECT 1 FROM json_each(?) WHERE json_extract(value,'$.name')=target_name AND json_extract(value,'$.host')=host)`, id, string(targetJSON)); err != nil {
+				return err
+			}
+		}
+		for name, observation := range n.PingObserved {
+			if host, ok := allowed[name]; ok && host == observation.Host {
+				if _, err = observations.Exec(id, name, observation.Host, observation.Method, observation.StartedAt, observation.LastSampleAt); err != nil {
+					return err
+				}
 			}
 		}
 		for name, samples := range n.PingHistory {

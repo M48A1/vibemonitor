@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"math"
@@ -81,6 +82,10 @@ func resourceDuration(name string) (int64, bool) {
 }
 
 func (s *Store) GetResourceHistory(uuid, metric, timeRange string) (*ResourceHistoryResponse, error) {
+	return s.GetResourceHistoryContext(context.Background(), uuid, metric, timeRange)
+}
+
+func (s *Store) GetResourceHistoryContext(ctx context.Context, uuid, metric, timeRange string) (*ResourceHistoryResponse, error) {
 	if metric != "cpu" && metric != "memory" && metric != "network" {
 		return nil, errors.New("invalid resource metric")
 	}
@@ -98,6 +103,12 @@ func (s *Store) GetResourceHistory(uuid, metric, timeRange string) (*ResourceHis
 	start := now - duration
 	// Keep at most about 720 buckets in long ranges, aligned to whole minutes.
 	step := ((duration+719)/720 + 59) / 60 * 60
+	useRollups := timeRange == "7d" || timeRange == "31d"
+	if useRollups {
+		// Whole-hour buckets can combine hourly rollups without splitting a
+		// summary across graph points (7d: 1h, 31d: 2h).
+		step = ((duration+719)/720 + 3599) / 3600 * 3600
+	}
 	column := "cpu_usage"
 	switch metric {
 	case "memory":
@@ -109,9 +120,12 @@ func (s *Store) GetResourceHistory(uuid, metric, timeRange string) (*ResourceHis
 		UUID: uuid, Metric: metric, Range: timeRange, StartTime: start,
 		EndTime: now, StepSeconds: step, Samples: []ResourceSample{},
 	}
+	if useRollups {
+		return s.sdb.readResourceRollupHistory(ctx, response, column)
+	}
 	where := " FROM resource_history WHERE node_uuid = ? AND timestamp >= ? AND timestamp <= ? AND " + column + " IS NOT NULL"
 	var avg, minValue, maxValue sql.NullFloat64
-	err := s.sdb.reader().QueryRow("SELECT COUNT(*), AVG("+column+"), MIN("+column+"), MAX("+column+")"+where,
+	err := s.sdb.reader().QueryRowContext(ctx, "SELECT COUNT(*), AVG("+column+"), MIN("+column+"), MAX("+column+")"+where,
 		uuid, start, now).Scan(&response.Stats.Count, &avg, &minValue, &maxValue)
 	if err != nil {
 		return nil, err
@@ -120,11 +134,11 @@ func (s *Store) GetResourceHistory(uuid, metric, timeRange string) (*ResourceHis
 		response.Stats.Avg = avg.Float64
 		response.Stats.Min = minValue.Float64
 		response.Stats.Max = maxValue.Float64
-		if err := s.sdb.reader().QueryRow("SELECT "+column+where+" ORDER BY timestamp DESC LIMIT 1", uuid, start, now).Scan(&response.Stats.Current); err != nil {
+		if err := s.sdb.reader().QueryRowContext(ctx, "SELECT "+column+where+" ORDER BY timestamp DESC LIMIT 1", uuid, start, now).Scan(&response.Stats.Current); err != nil {
 			return nil, err
 		}
 	}
-	rows, err := s.sdb.reader().Query("SELECT MIN(timestamp), AVG("+column+")"+where+" GROUP BY timestamp / ? ORDER BY MIN(timestamp)", uuid, start, now, step)
+	rows, err := s.sdb.reader().QueryContext(ctx, "SELECT MIN(timestamp), AVG("+column+")"+where+" GROUP BY timestamp / ? ORDER BY MIN(timestamp)", uuid, start, now, step)
 	if err != nil {
 		return nil, err
 	}

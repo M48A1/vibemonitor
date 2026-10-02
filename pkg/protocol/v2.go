@@ -135,8 +135,9 @@ type InterfaceCounters struct {
 }
 
 type ConnectionsReport struct {
-	TCP int `json:"tcp"`
-	UDP int `json:"udp"`
+	TCP             int      `json:"tcp"`
+	UDP             int      `json:"udp"`
+	TCPNewPerSecond *float64 `json:"tcp_new_per_sec,omitempty"` // TCP ActiveOpens + PassiveOpens attempts/s (may include failed attempts); nil until measured.
 }
 
 // Helper to construct success JSON-RPC response

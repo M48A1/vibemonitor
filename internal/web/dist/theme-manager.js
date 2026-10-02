@@ -5,19 +5,37 @@
   const activate = document.getElementById('activateThemeBtn');
   const file = document.getElementById('themePackageFile');
   const recovery = new URLSearchParams(location.search).get('theme') === 'default';
+  function setEffectiveTheme(id) {
+    if (document.documentElement.dataset.siteTheme === id) return;
+    document.documentElement.dataset.siteTheme = id;
+    if (typeof window.scheduleDashboard === 'function') window.scheduleDashboard();
+  }
   function apply(id) {
     active = id;
     const current = document.getElementById('customThemeStylesheet');
-    const builtin = id === 'rakugaki' || id === 'win2000' || id === 'design';
+    const builtin = id === 'rakugaki' || id === 'win2000' || id === 'design' || id === 'serverstatus';
     const valid = builtin || /^custom-[a-f0-9]{64}$/.test(id);
-    if (recovery || !valid) { if (current) current.remove(); return; }
+    if (recovery || !valid) {
+      if (current) current.remove();
+      setEffectiveTheme('hex');
+      return;
+    }
     const href = builtin ? '/' + id + '.css' : '/api/themes/' + id + '/style.css';
-    if (current && current.getAttribute('href') === href) return;
+    if (current && current.getAttribute('href') === href) {
+      setEffectiveTheme(id);
+      return;
+    }
     const link = document.createElement('link');
     link.id = 'customThemeStylesheet'; link.rel = 'stylesheet'; link.href = href;
-    link.onerror = () => { link.remove(); status.textContent = '主题加载失败，已显示默认外观'; };
+    link.onerror = () => {
+      if (document.getElementById('customThemeStylesheet') !== link) return;
+      link.remove();
+      setEffectiveTheme('hex');
+      status.textContent = '主题加载失败，已显示默认外观';
+    };
     if (current) current.remove();
     document.head.appendChild(link);
+    setEffectiveTheme(id);
   }
   async function request(url, options = {}) {
     const response = await fetch(url, { credentials: 'same-origin', ...options });

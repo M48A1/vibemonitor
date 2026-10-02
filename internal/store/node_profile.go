@@ -94,29 +94,24 @@ func (s *Store) pingPreviewLocked(n *Node) []PingPreview {
 				break
 			}
 		}
-		lost, total := 0, 0
-		for i := len(samples) - 1; i >= 0; i-- {
+		for i := len(samples) - 1; i >= 0 && len(preview.Samples) < 24; i-- {
 			sample := samples[i]
 			if sample.Timestamp < cutoff {
 				break
 			}
-			if sample.Host != target.Host || sample.Method != preview.Method {
-				continue
-			}
-			total++
-			if sample.Latency < 0 {
-				lost++
-			}
-			if len(preview.Samples) < 24 {
+			if sample.Host == target.Host && sample.Method == preview.Method {
 				preview.Samples = append(preview.Samples, sample)
 			}
 		}
 		for left, right := 0, len(preview.Samples)-1; left < right; left, right = left+1, right-1 {
 			preview.Samples[left], preview.Samples[right] = preview.Samples[right], preview.Samples[left]
 		}
-		if total > 0 {
-			loss := math.Round(float64(lost)/float64(total)*1000) / 10
-			preview.Loss = &loss
+		if window := n.pingWindows[target.Name]; window != nil && window.Host == target.Host && window.Method == preview.Method {
+			lost, total := window.counts(cutoff)
+			if total > 0 {
+				loss := math.Round(float64(lost)/float64(total)*1000) / 10
+				preview.Loss = &loss
+			}
 		}
 		result = append(result, preview)
 	}

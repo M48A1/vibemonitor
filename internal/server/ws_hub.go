@@ -14,9 +14,23 @@ import (
 )
 
 type wsClient struct {
-	compact bool
-	conn    *websocket.Conn
-	sendCh  chan []byte
+	compact             bool
+	conn                *websocket.Conn
+	sendCh              chan []byte
+	lastSnapshotRequest time.Time // Accessed only by this client's reader.
+}
+
+func (c *wsClient) allowSnapshotRequest(now time.Time) bool {
+	if !c.lastSnapshotRequest.IsZero() && now.Sub(c.lastSnapshotRequest) < minWSUpdateInterval {
+		return false
+	}
+	c.lastSnapshotRequest = now
+	return true
+}
+
+type wsPayloadSnapshot struct {
+	payload   []byte
+	createdAt time.Time
 }
 
 type WSHub struct {
@@ -31,9 +45,11 @@ type WSHub struct {
 	lastPayload        []byte
 	lastCompactPayload []byte
 	payloadMu          sync.Mutex
+	payloadCache       [2]wsPayloadSnapshot // Full and dashboard formats remain separate.
 }
 
 const maxWSClients = 1000
+const minWSUpdateInterval = time.Second
 
 func NewWSHub(s *store.Store) *WSHub {
 	hub := &WSHub{
@@ -59,7 +75,7 @@ func (h *WSHub) run() {
 	defer ticker.Stop()
 	defer close(h.done)
 
-	minInterval := 1 * time.Second
+	minInterval := minWSUpdateInterval
 	lastBroadcast := time.Now()
 	// Send coalesced updates as soon as the rate limit expires, independently
 	// of the periodic offline-state check.
@@ -152,14 +168,10 @@ func (h *WSHub) HandleWS(w http.ResponseWriter, r *http.Request) {
 		sendCh:  make(chan []byte, 4),
 	}
 
-	h.mu.Lock()
-	if h.closed {
-		h.mu.Unlock()
+	if !h.registerClient(client) {
 		_ = conn.CloseNow()
 		return
 	}
-	h.clients[client] = struct{}{}
-	h.mu.Unlock()
 
 	defer func() {
 		h.mu.Lock()
@@ -189,6 +201,7 @@ func (h *WSHub) HandleWS(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	// Send initial data immediately
+	client.lastSnapshotRequest = time.Now()
 	_ = h.sendNodesTo(client)
 
 	for {
@@ -196,16 +209,25 @@ func (h *WSHub) HandleWS(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			break
 		}
-		if typ == websocket.MessageText {
-			if string(msg) == "get" {
-				_ = h.sendNodesTo(client)
-			}
+		if typ == websocket.MessageText && string(msg) == "get" && client.allowSnapshotRequest(time.Now()) {
+			_ = h.sendNodesTo(client)
 		}
 	}
 }
 
+func (h *WSHub) registerClient(client *wsClient) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	// The pre-handshake check alone cannot bound concurrent upgrades.
+	if h.closed || len(h.clients) >= maxWSClients {
+		return false
+	}
+	h.clients[client] = struct{}{}
+	return true
+}
+
 func (h *WSHub) sendNodesTo(client *wsClient) error {
-	payload, err := h.nodesPayload(client.compact)
+	payload, err := h.snapshotPayload(client.compact, false)
 	if err != nil {
 		return err
 	}
@@ -222,6 +244,27 @@ func (h *WSHub) sendNodesTo(client *wsClient) error {
 		}
 	}
 	return nil
+}
+
+// Resynchronisation requests share a recent snapshot instead of rebuilding the
+// entire fleet for every client. Scheduled and forced broadcasts always refresh.
+func (h *WSHub) snapshotPayload(compact, refresh bool) ([]byte, error) {
+	h.payloadMu.Lock()
+	defer h.payloadMu.Unlock()
+	index := 0
+	if compact {
+		index = 1
+	}
+	cache := &h.payloadCache[index]
+	if !refresh && cache.payload != nil && time.Since(cache.createdAt) < minWSUpdateInterval {
+		return cache.payload, nil
+	}
+	payload, err := h.nodesPayload(compact)
+	if err != nil {
+		return nil, err
+	}
+	*cache = wsPayloadSnapshot{payload: payload, createdAt: time.Now()}
+	return payload, nil
 }
 
 func (h *WSHub) nodesPayload(compact ...bool) ([]byte, error) {
@@ -250,6 +293,9 @@ func (h *WSHub) broadcastNodes() {
 
 // forceBroadcastNodes immediately sends a fresh payload after a settings change.
 func (h *WSHub) forceBroadcastNodes() {
+	h.payloadMu.Lock()
+	h.payloadCache = [2]wsPayloadSnapshot{}
+	h.payloadMu.Unlock()
 	h.doBroadcastNodes(true)
 }
 
@@ -269,7 +315,7 @@ func (h *WSHub) doBroadcastNodes(force bool) {
 		if len(clients) == 0 {
 			continue
 		}
-		payload, err := h.nodesPayload(index == 1)
+		payload, err := h.snapshotPayload(index == 1, true)
 		if err != nil {
 			continue
 		}

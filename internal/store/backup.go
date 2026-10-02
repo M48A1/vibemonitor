@@ -124,6 +124,33 @@ func ValidateBackup(path string) error {
 		}
 	}
 	var themeTables int
+	var observationTables int
+	if err := db.db.QueryRow("SELECT count(*) FROM sqlite_schema WHERE name='ping_observations' AND type='table'").Scan(&observationTables); err != nil {
+		return err
+	}
+	if observationTables > 0 {
+		rows, err := db.db.Query("SELECT node_uuid,target_name,host,method,started_at,last_sample_at FROM ping_observations")
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var uuid, target, host, method string
+			var start, last int64
+			if err := rows.Scan(&uuid, &target, &host, &method, &start, &last); err != nil {
+				rows.Close()
+				return err
+			}
+			if uuid == "" || target == "" || host == "" || start <= 0 || last < 0 || (last > 0 && last < start) || (method != "" && method != "tcp" && method != "icmp" && method != "unknown") {
+				rows.Close()
+				return errors.New("invalid ping observation metadata in backup")
+			}
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return err
+		}
+	}
 	if err := db.db.QueryRow("SELECT count(*) FROM sqlite_schema WHERE name='site_themes' AND type='table'").Scan(&themeTables); err != nil {
 		return err
 	}
@@ -422,6 +449,18 @@ func RestoreData(source, destination string) error {
 			return err
 		}
 	}
+	if _, err := tx.Exec("DELETE FROM main.ping_observations"); err != nil {
+		return err
+	}
+	var observationTables int
+	if err := tx.QueryRow("SELECT count(*) FROM restore_source.sqlite_schema WHERE name='ping_observations' AND type='table'").Scan(&observationTables); err != nil {
+		return err
+	}
+	if observationTables > 0 {
+		if _, err := tx.Exec("INSERT INTO main.ping_observations(node_uuid,target_name,host,method,started_at,last_sample_at) SELECT node_uuid,target_name,host,method,started_at,last_sample_at FROM restore_source.ping_observations"); err != nil {
+			return err
+		}
+	}
 	if _, err := tx.Exec("DELETE FROM main.resource_history"); err != nil {
 		return err
 	}
@@ -447,6 +486,15 @@ func RestoreData(source, destination string) error {
 	}
 	if _, err := tx.Exec("UPDATE main.config SET site_theme = ?, color_mode = ? WHERE id = 1", config.SiteTheme, config.ColorMode); err != nil {
 		return err
+	}
+	// Rollups are derived from the raw samples restored above. A destination's
+	// old watermark (or a source's cached aggregates) must never claim that this
+	// replacement data has already been processed. Raw-write triggers may have
+	// queued work during the copy, so clear those jobs only after all raw writes.
+	for _, table := range []string{"history_rollups", "history_rollup_state", "history_rollup_dirty"} {
+		if _, err := tx.Exec("DELETE FROM main." + table); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }

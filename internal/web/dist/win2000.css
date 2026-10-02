@@ -40,8 +40,8 @@ body::before { display: none; }
 .hex-section-label::before { border-radius: 0; background: var(--primary); }
 .hex-stats { display: block; margin-bottom: 22px; }
 .hex-globe-panel { display: none; }
-.hex-stats-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: auto; gap: 12px; min-height: 0; overflow: visible; background: transparent; border: 0; border-radius: 0; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
-.hex-stat, .hex-stat:nth-child(even), .hex-stat:nth-child(n+3) { padding: 14px; min-height: 112px; gap: 8px; border: 1px solid #fff; border-top-color: #808080; border-left-color: #808080; }
+.hex-stats-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: auto; gap: 12px; min-height: 0; overflow: visible; background: transparent; border: 0; border-radius: 0; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+.hex-stats-grid .hex-stat { padding: 14px; min-height: 112px; gap: 8px; border: 1px solid #fff; border-top-color: #808080; border-left-color: #808080; }
 .hex-stat > span { color: var(--foreground); }
 .hex-stat > strong { font-size: 23px; letter-spacing: 0; }
 .hex-stat em { font-size: 16px; }

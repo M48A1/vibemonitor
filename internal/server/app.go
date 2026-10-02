@@ -183,9 +183,17 @@ func (s *Server) Handler() http.Handler {
 			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "missing uuid parameter"})
 			return
 		}
-		resp, err := s.store.GetPingHistory(uuid, target, timeRange)
+		if s.store.GetNode(uuid) == nil {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "node not found"})
+			return
+		}
+		resp, err := s.store.GetPingHistoryContext(r.Context(), uuid, target, timeRange)
 		if err != nil {
-			writeJSON(w, http.StatusNotFound, map[string]any{"error": err.Error()})
+			if r.Context().Err() != nil {
+				return
+			}
+			log.Printf("[Store] Ping history query failed: %v", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load ping history"})
 			return
 		}
 		resp.Host = ""
@@ -216,8 +224,11 @@ func (s *Server) Handler() http.Handler {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "node not found"})
 			return
 		}
-		resp, err := s.store.GetResourceHistory(uuid, metric, timeRange)
+		resp, err := s.store.GetResourceHistoryContext(r.Context(), uuid, metric, timeRange)
 		if err != nil {
+			if r.Context().Err() != nil {
+				return
+			}
 			log.Printf("[Store] Resource history query failed: %v", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load resource history"})
 			return
@@ -305,7 +316,7 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("POST /api/admin/login", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
-		if !s.loginLimit.allow(r) {
+		if !s.loginLimit.allow(r, s.trustedProxies...) {
 			w.Header().Set("Retry-After", "300")
 			writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "too many login attempts; retry in 5 minutes"})
 			return

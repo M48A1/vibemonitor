@@ -53,7 +53,7 @@ body::before {
 .hex-stats { display: block; margin-bottom: 24px; }
 .hex-globe-panel { display: none; }
 .hex-stats-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   grid-template-rows: auto;
   min-height: 0;
   border: 1px solid var(--border);
@@ -66,6 +66,8 @@ body::before {
 .hex-stat { padding: 16px 20px; gap: 8px; }
 .hex-stat:nth-child(even), .hex-stat:nth-child(n+3) { border: 0; }
 .hex-stat + .hex-stat { border-left: 1px solid var(--border); }
+.hex-stat:nth-child(3n+1) { border-left: 0; }
+.hex-stat:nth-child(n+4) { border-top: 1px solid var(--border); }
 .hex-stat > strong { font-size: 22px; letter-spacing: -.4px; }
 .hex-stat em { font-size: 16px; }
 .hex-stat small { font-size: 11px; }
@@ -133,13 +135,14 @@ body::before {
 .powered-by-pill { background: rgba(253, 252, 249, .94); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-lg); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
 @media (max-width: 1120px) {
   .hex-card { grid-template-columns: repeat(3, minmax(80px, 1fr)) minmax(0, 5.4fr); }
+  .hex-stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hex-stat:nth-child(3n+1) { border-left: 1px solid var(--border); }
+  .hex-stat:nth-child(odd) { border-left: 0; }
+  .hex-stat:nth-child(n+3) { border-top: 1px solid var(--border); }
   .hex-stat { padding: 14px; }
 }
 @media (max-width: 720px) {
   .container { width: calc(100% - 24px); margin-top: 18px; padding: 18px 14px; border-radius: 12px; }
-  .hex-stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .hex-stat:nth-child(odd) { border-left: 0; }
-  .hex-stat:nth-child(n+3) { border-top: 1px solid var(--border); }
   .hex-stat > strong { font-size: 20px; }
   .hex-card {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -155,4 +158,9 @@ body::before {
   }
   .hex-resources, .hex-probes { margin-left: 0; }
   .hex-facts strong { font-size: 11px; }
+}
+@media (max-width: 360px) {
+  .hex-stats-grid { grid-template-columns: minmax(0, 1fr); }
+  .hex-stat:nth-child(n) { border-left: 0; }
+  .hex-stat:nth-child(n+2) { border-top: 1px solid var(--border); }
 }

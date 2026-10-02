@@ -13,6 +13,7 @@ __pycache__/
 *.pyc
 /tests/
 **/tests/
+# Local tests and validation fixtures
 integration_test.go
 *_test.go
 *_test.cjs
@@ -21,4 +22,7 @@ integration_test.go
 *.spec.js
 *.test.ts
 *.spec.ts
+/internal/web/dashboard-checks.cjs
+/scripts/check_installer_rollback.sh
+.DS_Store
 *.test

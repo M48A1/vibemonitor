@@ -1,6 +1,9 @@
 package store
 
-import "vibemonitor/pkg/protocol"
+import (
+	"time"
+	"vibemonitor/pkg/protocol"
+)
 
 // Names are unique display identifiers. The host and measurement method are
 // retained in each sample so a name cannot silently relabel older observations.
@@ -66,11 +69,23 @@ func (s *Store) pruneNodePingLocked(node *Node) {
 		allowed[target.Name] = target.Host
 	}
 	clean := make(map[string][]PingSample)
+	observed := make(map[string]PingObservation, len(allowed))
+	windows := make(map[string]*pingLossWindow, len(allowed))
 	for name, host := range allowed {
+		observation := node.PingObserved[name]
+		if observation.Host != host || observation.StartedAt <= 0 {
+			observation = PingObservation{Host: host, StartedAt: time.Now().Unix()}
+		}
+		observed[name] = observation
+		window := node.pingWindows[name]
+		if window == nil || window.Host != host || window.Method != observation.Method {
+			window = &pingLossWindow{Host: host, Method: observation.Method}
+		}
+		windows[name] = window
 		var samples []PingSample
 		for _, sample := range node.PingHistory[name] {
 			// Legacy samples have no trustworthy host/method provenance.
-			if sample.Host == host && (sample.Method == "tcp" || sample.Method == "icmp" || sample.Method == "unknown") {
+			if sample.Host == host && sample.Timestamp >= observation.StartedAt && (observation.Method == "" || sample.Method == observation.Method) && (sample.Method == "tcp" || sample.Method == "icmp" || sample.Method == "unknown") {
 				samples = append(samples, sample)
 			}
 		}
@@ -82,6 +97,8 @@ func (s *Store) pruneNodePingLocked(node *Node) {
 		}
 	}
 	node.PingHistory = clean
+	node.PingObserved = observed
+	node.pingWindows = windows
 	if node.LastReport != nil {
 		report := *node.LastReport
 		report.PingResults = filterPingResults(report.PingResults, s.targetsLocked(node))
@@ -93,12 +110,14 @@ func (s *Store) pruneNodePingLocked(node *Node) {
 func (s *Store) commitConfigLocked(next Config) error {
 	previous := s.config
 	type pingState struct {
-		history map[string][]PingSample
-		report  *protocol.Report
+		history  map[string][]PingSample
+		report   *protocol.Report
+		observed map[string]PingObservation
+		windows  map[string]*pingLossWindow
 	}
 	states := make(map[string]pingState, len(s.nodes))
 	for id, node := range s.nodes {
-		states[id] = pingState{node.PingHistory, node.LastReport}
+		states[id] = pingState{node.PingHistory, node.LastReport, node.PingObserved, node.pingWindows}
 	}
 	s.config = next
 	s.prunePingDataLocked()
@@ -107,6 +126,8 @@ func (s *Store) commitConfigLocked(next Config) error {
 		for id, state := range states {
 			s.nodes[id].PingHistory = state.history
 			s.nodes[id].LastReport = state.report
+			s.nodes[id].PingObserved = state.observed
+			s.nodes[id].pingWindows = state.windows
 		}
 		return err
 	}

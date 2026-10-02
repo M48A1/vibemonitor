@@ -46,6 +46,57 @@ func parseTrustedProxies(value string) ([]netip.Prefix, error) {
 	return proxies, nil
 }
 
+func trustedProxyAddress(ip netip.Addr, trustedProxies []netip.Prefix) bool {
+	ip = ip.Unmap()
+	if ip.IsLoopback() {
+		return true
+	}
+	for _, proxy := range trustedProxies {
+		if proxy.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// Only a trusted immediate peer may supply a forwarding chain. Walking it from
+// the right stops at the first untrusted hop, ignoring any prefix it supplied.
+func requestClientIP(r *http.Request, trustedProxies []netip.Prefix) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	peer, err := netip.ParseAddr(host)
+	if err != nil {
+		return host
+	}
+	peer = peer.Unmap()
+	key := peer.String()
+	if !trustedProxyAddress(peer, trustedProxies) {
+		return key
+	}
+	forwarded := strings.Join(r.Header.Values("X-Forwarded-For"), ",")
+	if forwarded == "" || len(forwarded) > 4096 {
+		return key
+	}
+	hops := strings.Split(forwarded, ",")
+	if len(hops) > 32 {
+		return key
+	}
+	client := peer
+	for i := len(hops) - 1; i >= 0; i-- {
+		ip, err := netip.ParseAddr(strings.TrimSpace(hops[i]))
+		if err != nil || ip.Zone() != "" {
+			return key
+		}
+		client = ip.Unmap()
+		if !trustedProxyAddress(client, trustedProxies) {
+			return client.String()
+		}
+	}
+	return client.String()
+}
+
 func requestHTTPS(r *http.Request, trustedProxies ...netip.Prefix) bool {
 	if r.TLS != nil {
 		return true
@@ -61,16 +112,7 @@ func requestHTTPS(r *http.Request, trustedProxies ...netip.Prefix) bool {
 	if err != nil {
 		return false
 	}
-	ip = ip.Unmap()
-	if ip.IsLoopback() {
-		return true
-	}
-	for _, proxy := range trustedProxies {
-		if proxy.Contains(ip) {
-			return true
-		}
-	}
-	return false
+	return trustedProxyAddress(ip, trustedProxies)
 }
 
 func clearAdminCookie(w http.ResponseWriter, r *http.Request, trustedProxies ...netip.Prefix) {
@@ -110,18 +152,14 @@ func (l *loginLimiter) pruneExpiredLocked(now time.Time) {
 	}
 }
 
-func (l *loginLimiter) allow(r *http.Request) bool {
+func (l *loginLimiter) allow(r *http.Request, trustedProxies ...netip.Prefix) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := time.Now()
 	if l.clients == nil {
 		l.clients = make(map[string]loginWindow)
 	}
-	// Do not trust client-supplied forwarding headers for rate limiting.
-	key, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		key = r.RemoteAddr
-	}
+	key := requestClientIP(r, trustedProxies)
 	v, ok := l.clients[key]
 	if ok && !now.Before(v.expires) {
 		delete(l.clients, key)

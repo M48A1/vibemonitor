@@ -56,21 +56,20 @@ body::before { display: none; }
 .brand-title { font-family: var(--rak-display); font-size: 26px; font-weight: 700; color: var(--ink); }
 .hex-section-label { font-family: "Kaiti SC", KaiTi, var(--rak-display); font-size: 16px; color: var(--primary); }
 .hex-section-label::before { background: var(--primary); border-radius: var(--r-chip); }
-/* Overview reads as four paper cards. The globe remains available in the default theme. */
+/* Overview reads as six paper cards. The globe remains available in the default theme. */
 .hex-stats { display: block; margin-bottom: 30px; }
 .hex-globe-panel { display: none; }
 .hex-stats-grid {
-  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: auto;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: auto;
   gap: 22px; min-height: 0; overflow: visible; background: transparent; border: 0;
   border-radius: 0; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none;
 }
-.hex-stat {
+.hex-stats-grid .hex-stat {
   min-height: 154px; padding: 20px; background: #fff;
   border: 2px solid var(--ink); border-radius: var(--r-card);
   box-shadow: var(--shadow-md); gap: 12px;
 }
 .hex-stat:nth-child(even) { border: 2px solid var(--ink); border-radius: var(--r-card-alt); }
-.hex-stat:nth-child(n+3) { border-top: 2px solid var(--ink); }
 .hex-stat > span { font-family: "Kaiti SC", KaiTi, var(--rak-display); font-size: 16px; color: var(--primary); }
 .hex-stat > strong { font-family: var(--rak-mono); font-size: 25px; letter-spacing: -.5px; }
 .hex-stat em { color: var(--ink); }

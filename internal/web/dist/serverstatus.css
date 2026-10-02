@@ -226,7 +226,8 @@ body::before { display: none; }
 .ss-expanded .ping-sample-row { padding-top: 5px; }
 .ss-expanded .sample-bar { height: 7px; }
 
-@media (max-width: 1240px) {
+/* Include container padding, grid gaps and row padding in the breakpoints. */
+@media (max-width: 1320px) {
   :root { --ss-cols: 36px minmax(105px, 1.25fr) 60px minmax(112px, 1.1fr) minmax(108px, 1fr) 78px 78px 78px; }
   .ss-table-head .ss-system, .ss-table-head .ss-uptime, .ss-table-head .ss-expiry, .ss-table-head .ss-load,
   .ss-row .ss-system, .ss-row .ss-uptime, .ss-row .ss-expiry, .ss-row .ss-load { display: none; }
@@ -237,7 +238,7 @@ body::before { display: none; }
   .hex-stats-grid .hex-stat:nth-child(n+3) { border-top: 1px solid var(--border); }
 }
 
-@media (max-width: 700px) {
+@media (max-width: 820px) {
   .container { padding: 12px 10px 84px; }
   .navbar { padding: 8px 10px; margin-bottom: 14px; }
   .hex-stats-grid .hex-stat { min-height: 90px; padding: 10px 12px; }

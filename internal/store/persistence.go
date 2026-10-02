@@ -11,6 +11,7 @@ const maxPendingHistorySamples = 65536
 
 type historySample struct {
 	UUID, Target, Host, Method string
+	ObservationStart           int64
 	Timestamp                  int64
 	CPU, RAM                   sql.NullFloat64
 	Network                    sql.NullInt64
@@ -42,9 +43,17 @@ func writeHistorySamples(tx *sql.Tx, samples []historySample) error {
 		return err
 	}
 	defer ping.Close()
+	observation, err := tx.Prepare(pingObservationUpsert)
+	if err != nil {
+		return err
+	}
+	defer observation.Close()
 	for _, v := range samples {
 		if v.Ping {
 			_, err = ping.Exec(v.UUID, v.Target, v.Host, v.Method, v.Timestamp, v.Latency)
+			if err == nil && v.ObservationStart > 0 {
+				_, err = observation.Exec(v.UUID, v.Target, v.Host, v.Method, v.ObservationStart, v.Timestamp)
+			}
 		} else {
 			_, err = resource.Exec(v.UUID, v.Timestamp, v.CPU, v.RAM, v.Network)
 		}
@@ -104,6 +113,10 @@ func (s *Store) ackHistoryLocked(count int) {
 func cloneNodeForSave(n *Node) *Node {
 	c := *n
 	c.History = append([]HistoryPoint(nil), n.History...)
+	c.PingObserved = make(map[string]PingObservation, len(n.PingObserved))
+	for k, v := range n.PingObserved {
+		c.PingObserved[k] = v
+	}
 	c.PingHistory = make(map[string][]PingSample, len(n.PingHistory))
 	for k, v := range n.PingHistory {
 		c.PingHistory[k] = append([]PingSample(nil), v...)

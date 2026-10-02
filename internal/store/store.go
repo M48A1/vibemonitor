@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
@@ -85,7 +86,9 @@ type Node struct {
 	History     []HistoryPoint      `json:"history,omitempty"`
 
 	// Recent latency previews; complete history is persisted in SQLite.
-	PingHistory map[string][]PingSample `json:"ping_history,omitempty"`
+	PingHistory  map[string][]PingSample    `json:"ping_history,omitempty"`
+	PingObserved map[string]PingObservation `json:"ping_observed,omitempty"`
+	pingWindows  map[string]*pingLossWindow
 
 	// Traffic Billing Quota (sum mode: up + down)
 	TrafficLimit       int64      `json:"traffic_limit"`               // Bytes, 0 = no limit
@@ -128,18 +131,20 @@ type Config struct {
 }
 
 type Store struct {
-	persistMu      sync.Mutex // Lock order: persistMu, then mu. Ingestion never waits for disk with mu held.
-	pendingSamples []historySample
-	mu             sync.RWMutex
-	dbPath         string
-	sdb            *sqliteDB
-	config         Config
-	nodes          map[string]*Node  // uuid -> Node
-	tokenIndex     map[string]string // token -> uuid
-	onUpdate       func()            // optional callback when state changes
-	dirty          bool
-	stopFlush      chan struct{}
-	flushDone      chan struct{}
+	pingHistoryCacheMu sync.Mutex
+	pingHistoryCache   map[pingHistoryCacheKey]pingHistoryCacheEntry
+	persistMu          sync.Mutex // Lock order: persistMu, then mu. Ingestion never waits for disk with mu held.
+	pendingSamples     []historySample
+	mu                 sync.RWMutex
+	dbPath             string
+	sdb                *sqliteDB
+	config             Config
+	nodes              map[string]*Node  // uuid -> Node
+	tokenIndex         map[string]string // token -> uuid
+	onUpdate           func()            // optional callback when state changes
+	dirty              bool
+	stopFlush          chan struct{}
+	flushDone          chan struct{}
 }
 
 func GenerateToken(length int) string {
@@ -205,6 +210,17 @@ func (s *Store) DataDir() string {
 func (s *Store) periodicFlusher() {
 	ticker := time.NewTicker(15 * time.Second)
 	pruneTicker := time.NewTicker(1 * time.Hour)
+	rollupTimer := time.NewTimer(0) // Startup backfill before waiting for midnight.
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		select {
+		case <-s.stopFlush:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	defer cancel()
+	defer rollupTimer.Stop()
 	defer ticker.Stop()
 	defer pruneTicker.Stop()
 	defer close(s.flushDone)
@@ -217,6 +233,22 @@ func (s *Store) periodicFlusher() {
 			if err := s.Save(); err != nil {
 				log.Printf("[Store] Save failed (will retry): %v", err)
 			}
+		case <-rollupTimer.C:
+			batchCtx, batchCancel := context.WithTimeout(ctx, 30*time.Second)
+			s.persistMu.Lock()
+			more, err := s.sdb.rollupHistoryBatch(batchCtx, time.Now())
+			s.persistMu.Unlock()
+			batchCancel()
+			if err != nil && ctx.Err() == nil {
+				log.Printf("[Store] History summary failed (will retry): %v", err)
+			}
+			delay := time.Minute // Also repair invalidated hours after late writes.
+			if more && err == nil {
+				delay = 10 * time.Millisecond
+			} else if untilMidnight := time.Until(time.Unix(historyDayStart(time.Now())+86400, 0)); untilMidnight > 0 && untilMidnight < delay {
+				delay = untilMidnight
+			}
+			rollupTimer.Reset(delay)
 
 		case <-pruneTicker.C:
 			s.persistMu.Lock()
@@ -229,6 +261,9 @@ func (s *Store) periodicFlusher() {
 				}
 				if _, err := s.sdb.pruneOldResourceHistory(time.Now().Unix() - resourceHistoryRetentionSec); err != nil {
 					log.Printf("[Store] Resource history cleanup failed: %v", err)
+				}
+				if err := s.sdb.pruneHistoryRollups(time.Now().Unix() - pingHistoryRetentionSec); err != nil {
+					log.Printf("[Store] History summary cleanup failed: %v", err)
 				}
 			}
 			s.persistMu.Unlock()
@@ -410,13 +445,52 @@ func (s *Store) load(defaultPassword, username string) error {
 		if n.Token != "" {
 			s.tokenIndex[n.Token] = uuid
 		}
-		// 加载每个 target 最新 24 个采样点到内存供卡片预览快速展示
-		targets := s.targetsLocked(n)
-		for _, target := range targets {
-			recent, err := s.sdb.getPingHistory(uuid, target.Name, target.Host, "", time.Now().Unix()-86400)
+		n.pingWindows = make(map[string]*pingLossWindow)
+		if n.PingObserved == nil {
+			n.PingObserved = make(map[string]PingObservation)
+		}
+		for _, target := range s.targetsLocked(n) {
+			method := s.sdb.getLatestPingMethod(uuid, target.Name, target.Host)
+			observation := n.PingObserved[target.Name]
+			var persisted PingObservation
+			if err := s.sdb.reader().QueryRow("SELECT host,method,started_at,last_sample_at FROM ping_observations WHERE node_uuid=? AND target_name=?", uuid, target.Name).Scan(&persisted.Host, &persisted.Method, &persisted.StartedAt, &persisted.LastSampleAt); err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return err
+			}
+			if persisted.Host == target.Host && persisted.LastSampleAt >= observation.LastSampleAt && persisted.StartedAt > 0 {
+				observation = persisted
+				n.PingObserved[target.Name] = observation
+			}
+			// Durable series metadata remains authoritative after its raw samples
+			// have aged out of the 90-day retention window.
+			if observation.Host == target.Host && observation.StartedAt > 0 && observation.Method != "" {
+				method = observation.Method
+			}
+			if observation.Host != target.Host || observation.Method != method || observation.StartedAt <= 0 {
+				var first int64
+				if err := s.sdb.reader().QueryRow("SELECT COALESCE(MIN(timestamp),0) FROM ping_history WHERE node_uuid=? AND target_name=? AND host=? AND method=? AND timestamp>COALESCE((SELECT MAX(timestamp) FROM ping_history WHERE node_uuid=? AND target_name=? AND host=? AND method<>?),0)", uuid, target.Name, target.Host, method, uuid, target.Name, target.Host, method).Scan(&first); err != nil {
+					return err
+				}
+				if first == 0 {
+					first = time.Now().Unix()
+				}
+				observation = PingObservation{Host: target.Host, Method: method, StartedAt: first}
+				n.PingObserved[target.Name] = observation
+			}
+			if observation.LastSampleAt == 0 {
+				if err := s.sdb.reader().QueryRow("SELECT COALESCE(MAX(timestamp),0) FROM ping_history WHERE node_uuid=? AND target_name=? AND host=? AND method=?", uuid, target.Name, target.Host, method).Scan(&observation.LastSampleAt); err != nil {
+					return err
+				}
+				n.PingObserved[target.Name] = observation
+			}
+			recent, err := s.sdb.getPingHistory(uuid, target.Name, target.Host, method, max(time.Now().Unix()-86400, observation.StartedAt))
 			if err != nil {
 				return fmt.Errorf("load ping history: %w", err)
 			}
+			window := &pingLossWindow{Host: target.Host, Method: method}
+			for _, sample := range recent {
+				window.append(sample)
+			}
+			n.pingWindows[target.Name] = window
 			if len(recent) > 24 {
 				recent = recent[len(recent)-24:]
 			}
@@ -633,7 +707,8 @@ func (s *Store) getNodes(compact bool) []*Node {
 			}
 			nodeCopy.Profile = &profile
 		}
-		nodeCopy.PingHistory = nil // Kept compact for dashboard list
+		nodeCopy.PingHistory = nil  // Kept compact for dashboard list
+		nodeCopy.PingObserved = nil // Target provenance is internal, not public dashboard metadata.
 		nodeCopy.PingPreview = s.pingPreviewLocked(n)
 		for i := range nodeCopy.PingPreview {
 			nodeCopy.PingPreview[i].Host = ""
@@ -771,6 +846,7 @@ func (s *Store) CreateNodeWithOptions(opts NodeOptions) (*Node, error) {
 		History:          make([]HistoryPoint, 0, MaxHistoryPoints),
 	}
 
+	s.pruneNodePingLocked(node)
 	s.nodes[uuid] = node
 	s.tokenIndex[token] = uuid
 
@@ -1043,6 +1119,7 @@ func (s *Store) ingestReportAt(token string, report protocol.Report, now time.Ti
 		}
 		nowUnix := receivedAt.Unix()
 		for _, p := range report.PingResults {
+			s.recordPingObservationLocked(node, p.Name, p.Host, p.Method, nowUnix)
 			samples := node.PingHistory[p.Name]
 			if len(samples) == 0 || (nowUnix-samples[len(samples)-1].Timestamp) >= PingSampleIntervalSec {
 				smp := PingSample{
@@ -1051,7 +1128,7 @@ func (s *Store) ingestReportAt(token string, report protocol.Report, now time.Ti
 					Method:    p.Method,
 					Latency:   p.Latency,
 				}
-				if !s.enqueueHistoryLocked(historySample{UUID: node.UUID, Timestamp: nowUnix, Target: p.Name, Host: p.Host, Method: p.Method, Latency: p.Latency, Ping: true}) {
+				if !s.enqueueHistoryLocked(historySample{UUID: node.UUID, Timestamp: nowUnix, Target: p.Name, Host: p.Host, Method: p.Method, Latency: p.Latency, Ping: true, ObservationStart: node.PingObserved[p.Name].StartedAt}) {
 					continue
 				}
 				sampled = true
@@ -1060,6 +1137,10 @@ func (s *Store) ingestReportAt(token string, report protocol.Report, now time.Ti
 					samples = samples[len(samples)-24:]
 				}
 				node.PingHistory[p.Name] = samples
+				node.pingWindows[p.Name].append(smp)
+				observation := node.PingObserved[p.Name]
+				observation.LastSampleAt = nowUnix
+				node.PingObserved[p.Name] = observation
 			}
 		}
 	}
@@ -1070,274 +1151,7 @@ func (s *Store) ingestReportAt(token string, report protocol.Report, now time.Ti
 	return &copy, nil
 }
 
-func (s *Store) GetPingHistory(uuid, targetName, timeRange string) (*PingHistoryResponse, error) {
-	s.mu.RLock()
-
-	node, ok := s.nodes[uuid]
-	if !ok {
-		s.mu.RUnlock()
-		return nil, errors.New("node not found")
-	}
-
-	targets := append([]protocol.PingTarget(nil), s.targetsLocked(node)...)
-	node = cloneNodeForSave(node)
-	s.mu.RUnlock()
-	if targetName == "" && len(targets) > 0 {
-		targetName = targets[0].Name
-	}
-	var targetHost string
-	for _, target := range targets {
-		if target.Name == targetName {
-			targetHost = target.Host
-			break
-		}
-	}
-	if targetHost == "" {
-		return &PingHistoryResponse{
-			Method:    "",
-			UUID:      uuid,
-			Target:    targetName,
-			Host:      "",
-			Range:     timeRange,
-			StartTime: time.Now().Unix() - 3600,
-			EndTime:   time.Now().Unix(),
-			Stats:     PingStats{Current: -1},
-			Samples:   []PingSample{},
-		}, nil
-	}
-	nowUnix := time.Now().Unix()
-	var duration int64 = 86400 // default 24h
-	var cutoff int64
-	switch timeRange {
-	case "1h":
-		duration = 3600
-		cutoff = nowUnix - duration
-	case "7d", "7*24h", "7x24h", "168h":
-		duration = 7 * 86400
-		cutoff = nowUnix - duration
-	case "31d", "31*24h", "31x24h", "744h":
-		duration = 31 * 86400
-		cutoff = nowUnix - duration
-	case "all":
-		duration = 0
-		cutoff = 0
-	default: // "24h"
-		timeRange = "24h"
-		duration = 86400
-		cutoff = nowUnix - duration
-	}
-
-	var filtered []PingSample
-	var method string
-	if s.sdb != nil {
-		method = s.sdb.getLatestPingMethod(uuid, targetName, targetHost)
-		filtered, _ = s.sdb.getPingHistory(uuid, targetName, targetHost, method, cutoff)
-	}
-	if len(filtered) == 0 && node.PingHistory != nil {
-		allSamples := node.PingHistory[targetName]
-		for i := len(allSamples) - 1; i >= 0; i-- {
-			if allSamples[i].Host == targetHost && targetHost != "" {
-				method = allSamples[i].Method
-				break
-			}
-		}
-		for _, smp := range allSamples {
-			if smp.Timestamp >= cutoff && targetHost != "" && smp.Host == targetHost && smp.Method == method {
-				filtered = append(filtered, smp)
-			}
-		}
-	}
-
-	// Detect offline intervals from gaps in persistent ping samples.
-	// Ping samples are recorded every PingSampleIntervalSec (60s).
-	// A gap significantly larger than this indicates the probe was offline.
-	sampleGapThreshold := int64(PingSampleIntervalSec * 3) // 180s
-	offlineIntervals := make([]OfflineInterval, 0)
-	nodeCreated := node.CreatedAt.Unix()
-	effectiveStart := cutoff
-	if timeRange == "all" || cutoff == 0 {
-		if nodeCreated > 0 {
-			effectiveStart = nodeCreated
-		} else if len(filtered) > 0 {
-			effectiveStart = filtered[0].Timestamp
-		} else {
-			effectiveStart = nowUnix - 86400
-		}
-	} else if nodeCreated > effectiveStart {
-		effectiveStart = nodeCreated
-	}
-
-	if len(filtered) > 0 {
-		// Leading edge: node existed before window but first sample arrives much later
-		if filtered[0].Timestamp-effectiveStart > sampleGapThreshold {
-			offlineIntervals = append(offlineIntervals, OfflineInterval{
-				Start: effectiveStart,
-				End:   filtered[0].Timestamp,
-			})
-		}
-
-		// Gaps between consecutive samples
-		for i := 1; i < len(filtered); i++ {
-			gap := filtered[i].Timestamp - filtered[i-1].Timestamp
-			if gap > sampleGapThreshold {
-				start := filtered[i-1].Timestamp + int64(PingSampleIntervalSec)
-				end := filtered[i].Timestamp
-				if end > start {
-					offlineIntervals = append(offlineIntervals, OfflineInterval{Start: start, End: end})
-				}
-			}
-		}
-
-		// Trailing edge: last sample is old — node currently offline or not reporting
-		lastSampleTime := filtered[len(filtered)-1].Timestamp
-		if nowUnix-lastSampleTime > sampleGapThreshold {
-			start := lastSampleTime + int64(PingSampleIntervalSec)
-			if start < nowUnix {
-				offlineIntervals = append(offlineIntervals, OfflineInterval{Start: start, End: nowUnix})
-			}
-		}
-	} else if !node.Online && node.LastSeen.Unix() > 0 {
-		// No samples in the window at all. If the node is offline,
-		// mark the relevant portion as an offline interval.
-		if nowUnix > effectiveStart {
-			offlineIntervals = append(offlineIntervals, OfflineInterval{Start: effectiveStart, End: nowUnix})
-		}
-	}
-
-	stats := PingStats{
-		Current:    -1,
-		TotalCount: len(filtered),
-	}
-
-	if len(filtered) > 0 {
-		stats.Current = filtered[len(filtered)-1].Latency
-		validCount := 0
-		lostCount := 0
-		var sum int64 = 0
-		minVal := 999999
-		maxVal := -1
-
-		for _, smp := range filtered {
-			if smp.Latency < 0 {
-				lostCount++
-			} else {
-				validCount++
-				sum += int64(smp.Latency)
-				if smp.Latency < minVal {
-					minVal = smp.Latency
-				}
-				if smp.Latency > maxVal {
-					maxVal = smp.Latency
-				}
-			}
-		}
-
-		if validCount > 0 {
-			stats.Avg = math.Round(float64(sum)/float64(validCount)*10.0) / 10.0
-			stats.Min = minVal
-			stats.Max = maxVal
-		} else {
-			stats.Min = -1
-			stats.Max = -1
-		}
-		stats.PacketLoss = math.Round(float64(lostCount)/float64(len(filtered))*1000.0) / 10.0
-	}
-	// Missing reports during probe outages represent missed expected samples.
-	// Count them in packet loss, while keeping the outage intervals separate in the response.
-	offlineSamples := 0
-	for _, interval := range offlineIntervals {
-		d := interval.End - interval.Start
-		if d > 0 {
-			offlineSamples += int((d + int64(PingSampleIntervalSec) - 1) / int64(PingSampleIntervalSec))
-		}
-	}
-	if offlineSamples > 0 {
-		observed := stats.TotalCount
-		stats.TotalCount += offlineSamples
-		lost := math.Round((stats.PacketLoss / 100.0) * float64(observed))
-		stats.PacketLoss = math.Round((lost+float64(offlineSamples))/float64(stats.TotalCount)*1000.0) / 10.0
-	}
-
-	startTime := effectiveStart
-	endTime := nowUnix
-	if startTime >= endTime {
-		startTime = endTime - 3600
-	}
-
-	chartSamples := downsamplePingSamples(filtered, maxChartSamples)
-
-	return &PingHistoryResponse{
-		Method:           method,
-		UUID:             uuid,
-		Target:           targetName,
-		Host:             targetHost,
-		Range:            timeRange,
-		StartTime:        startTime,
-		EndTime:          endTime,
-		Stats:            stats,
-		Samples:          chartSamples,
-		OfflineIntervals: offlineIntervals,
-	}, nil
-}
-
 const maxChartSamples = 720
-
-func downsamplePingSamples(samples []PingSample, maxPoints int) []PingSample {
-	if len(samples) <= maxPoints || maxPoints <= 0 {
-		return samples
-	}
-
-	result := make([]PingSample, 0, maxPoints)
-	bucketSize := float64(len(samples)) / float64(maxPoints)
-
-	for i := 0; i < maxPoints; i++ {
-		startIdx := int(float64(i) * bucketSize)
-		endIdx := int(float64(i+1) * bucketSize)
-		if endIdx > len(samples) {
-			endIdx = len(samples)
-		}
-		if startIdx >= endIdx {
-			continue
-		}
-
-		bucket := samples[startIdx:endIdx]
-		var lossSample *PingSample
-		var maxLatencySample PingSample
-		maxLatency := -1
-		var sumLatency int64
-		validCount := 0
-
-		for j := range bucket {
-			s := bucket[j]
-			if s.Latency < 0 {
-				if lossSample == nil {
-					lossCopy := s
-					lossSample = &lossCopy
-				}
-			} else {
-				validCount++
-				sumLatency += int64(s.Latency)
-				if s.Latency > maxLatency {
-					maxLatency = s.Latency
-					maxLatencySample = s
-				}
-			}
-		}
-
-		if lossSample != nil {
-			result = append(result, *lossSample)
-		} else if validCount > 0 {
-			avgLat := int(math.Round(float64(sumLatency) / float64(validCount)))
-			rep := maxLatencySample
-			if maxLatency <= avgLat+15 {
-				rep.Latency = avgLat
-			}
-			result = append(result, rep)
-		}
-	}
-
-	return result
-}
 
 func (s *Store) VerifyAdmin(username, password string) bool {
 	s.mu.RLock()
