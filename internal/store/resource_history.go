@@ -97,7 +97,7 @@ func (s *Store) GetResourceHistoryContext(ctx context.Context, uuid, metric, tim
 	exists := s.nodes[uuid] != nil
 	s.mu.RUnlock()
 	if !exists {
-		return nil, errors.New("node not found")
+		return nil, ErrNodeNotFound
 	}
 	now := time.Now().Unix()
 	start := now - duration

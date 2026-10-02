@@ -1137,6 +1137,13 @@ let cachedPingSamples = [];
 let pingChartRequest = 0;
 let pingChartController = null;
 
+function showHistoryLoading(svgId, tooltipId, startId, endId) {
+  document.getElementById(svgId).innerHTML = '<text x="350" y="120" text-anchor="middle" fill="#64748b" font-size="13" font-family="system-ui">正在加载历史数据…</text>';
+  document.getElementById(tooltipId).style.display = 'none';
+  document.getElementById(startId).textContent = '--';
+  document.getElementById(endId).textContent = '--';
+}
+
 function cancelPingHistory() {
   ++pingChartRequest;
   if (pingChartController) pingChartController.abort();
@@ -1231,6 +1238,8 @@ async function loadPingHistory() {
   if (!uuid) return;
   const controller = new AbortController();
   pingChartController = controller;
+  cachedPingSamples = [];
+  showHistoryLoading('pingChartSvg', 'chartTooltip', 'chartTimeStart', 'chartTimeEnd');
   const statCur = document.getElementById('statCurrent');
   const statAvg = document.getElementById('statAvg');
   const statMin = document.getElementById('statMin');
@@ -1412,6 +1421,11 @@ function renderPingSvgChart(samples, range, errorMsg, startSec, nowSec, offlineI
       prevPt = null;
     } else {
       hasValid = true;
+      if (inSegment && prevPt && offlineIntervals.some(iv => iv.start < pt.t && iv.end > prevPt.t)) {
+        areaD += ` L ${prevPt.x.toFixed(1)} ${padT + plotH} L ${segStart.x.toFixed(1)} ${padT + plotH} Z`;
+        inSegment = false;
+        segStart = null;
+      }
       if (!inSegment) {
         pathD += ` M ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`;
         areaD += ` M ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`;
@@ -1429,6 +1443,8 @@ function renderPingSvgChart(samples, range, errorMsg, startSec, nowSec, offlineI
   }
 
   const lineColor = hasValid ? '#06b6d4' : '#f43f5e';
+  const validPoints = points.filter(point => !point.isLoss);
+  const singlePoint = validPoints.length === 1 ? validPoints[0] : null;
   const gradId = 'pingGrad_' + Math.random().toString(36).substr(2, 6);
 
   svg.innerHTML = `
@@ -1443,6 +1459,7 @@ function renderPingSvgChart(samples, range, errorMsg, startSec, nowSec, offlineI
     ${areaD ? `<path d="${areaD}" fill="url(#${gradId})" />` : ''}
     ${pathD ? `<path d="${pathD}" fill="none" stroke="${lineColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />` : ''}
     ${lossDots}
+    ${singlePoint ? `<circle class="ping-sample-point" cx="${singlePoint.x.toFixed(1)}" cy="${singlePoint.y.toFixed(1)}" r="3.5" fill="${lineColor}"/>` : ''}
     <line id="hoverLine" x1="0" y1="${padT}" x2="0" y2="${padT + plotH}" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="2,2" style="display: none;" />
     <circle id="hoverPoint" cx="0" cy="0" r="4.5" fill="#38bdf8" stroke="#ffffff" stroke-width="2" style="display: none;" />
     <rect x="${padL}" y="${padT}" width="${plotW}" height="${plotH}" fill="transparent" id="chartHitBox" style="cursor: crosshair;" />
@@ -1580,6 +1597,7 @@ async function loadResourceHistory() {
   if (!uuid) return;
   const controller = new AbortController();
   resourceChartController = controller;
+  showHistoryLoading('resourceChartSvg', 'resourceChartTooltip', 'resourceChartTimeStart', 'resourceChartTimeEnd');
   ['Current', 'Avg', 'Min', 'Max'].forEach(name => {
     document.getElementById(`resourceStat${name}`).textContent = '...';
   });

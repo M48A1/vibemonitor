@@ -183,13 +183,13 @@ func (s *Server) Handler() http.Handler {
 			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "missing uuid parameter"})
 			return
 		}
-		if s.store.GetNode(uuid) == nil {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "node not found"})
-			return
-		}
 		resp, err := s.store.GetPingHistoryContext(r.Context(), uuid, target, timeRange)
 		if err != nil {
 			if r.Context().Err() != nil {
+				return
+			}
+			if errors.Is(err, store.ErrNodeNotFound) {
+				writeJSON(w, http.StatusNotFound, map[string]string{"error": "node not found"})
 				return
 			}
 			log.Printf("[Store] Ping history query failed: %v", err)
@@ -220,13 +220,13 @@ func (s *Server) Handler() http.Handler {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing uuid parameter"})
 			return
 		}
-		if s.store.GetNode(uuid) == nil {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "node not found"})
-			return
-		}
 		resp, err := s.store.GetResourceHistoryContext(r.Context(), uuid, metric, timeRange)
 		if err != nil {
 			if r.Context().Err() != nil {
+				return
+			}
+			if errors.Is(err, store.ErrNodeNotFound) {
+				writeJSON(w, http.StatusNotFound, map[string]string{"error": "node not found"})
 				return
 			}
 			log.Printf("[Store] Resource history query failed: %v", err)

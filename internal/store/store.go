@@ -788,7 +788,10 @@ type NodeOptions struct {
 	CycleUsedGB    *float64 // Optional replacement for the current cycle's total usage.
 }
 
-var ErrInvalidNodeOrder = errors.New("invalid node order")
+var (
+	ErrInvalidNodeOrder = errors.New("invalid node order")
+	ErrNodeNotFound     = errors.New("node not found")
+)
 
 func (s *Store) CreateNode(name, group, region string) (*Node, error) {
 	return s.CreateNodeWithOptions(NodeOptions{

@@ -115,6 +115,9 @@ func (c *Client) postRPCContext(ctx context.Context, method string, params any) 
 }
 
 func (c *Client) Run(ctx context.Context) error {
+	if ctx.Err() != nil {
+		return nil
+	}
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	log.Printf("[Agent] Starting VibeMonitor agent probe...")
@@ -125,11 +128,20 @@ func (c *Client) Run(ctx context.Context) error {
 	var lastBasicInfo time.Time
 	var basicFailures, reportFailures repeatedErrorLog
 	reportBasicInfo := func() {
+		if ctx.Err() != nil {
+			return
+		}
 		info, err := c.collector.GetBasicInfo()
+		if ctx.Err() != nil {
+			return
+		}
 		if err == nil {
 			info.ReportIntervalSeconds = c.interval.Seconds()
 			var resp *protocol.Response
 			resp, err = c.postRPCContext(ctx, protocol.MethodAgentBasicInfo, protocol.BasicInfoParams{Info: info})
+			if ctx.Err() != nil {
+				return
+			}
 			if err == nil {
 				basicFailures.reset()
 				lastBasicInfo = time.Now()
@@ -146,6 +158,9 @@ func (c *Client) Run(ctx context.Context) error {
 		}
 	}
 	reportBasicInfo()
+	if ctx.Err() != nil {
+		return nil
+	}
 
 	// 2. Start Ping monitoring worker
 	go c.runPingWorker(ctx)
@@ -172,6 +187,9 @@ func (c *Client) Run(ctx context.Context) error {
 		case <-basicTicker.C:
 			reportBasicInfo()
 		case <-ticker.C:
+			if ctx.Err() != nil {
+				return nil
+			}
 			var report protocol.Report
 			select {
 			case report = <-reports:

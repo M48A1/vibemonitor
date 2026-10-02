@@ -107,7 +107,7 @@ func (s *Store) GetPingHistoryContext(ctx context.Context, uuid, targetName, tim
 	n := s.nodes[uuid]
 	if n == nil {
 		s.mu.RUnlock()
-		return nil, errors.New("node not found")
+		return nil, ErrNodeNotFound
 	}
 	var host string
 	for i, target := range s.targetsLocked(n) {
