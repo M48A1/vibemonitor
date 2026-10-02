@@ -26,4 +26,6 @@ jobs:
           node-version: '22'
       - run: for file in internal/web/dist/*.js; do node --check "$file"; done
       - run: bash -n install.sh
+      - run: bash scripts/check_installer_health.sh
+      - run: bash scripts/check_installer_rollback.sh
       - run: make release-all
