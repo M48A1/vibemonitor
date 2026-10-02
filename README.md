@@ -35,6 +35,10 @@ curl -4 -fsSL -o install.sh https://raw.githubusercontent.com/M48A1/vibemonitor/
 
 安装主控时填写域名，脚本会配置 Nginx HTTP 反向代理、申请 HTTPS 证书并启用自动续期。留空域名时使用原有的直接端口访问方式。探针填写最终的主控访问地址。
 
+### 内置主题
+
+“主题管理”提供默认主题（现有玻璃外观）和 **Rakugaki · 手绘纸感**。后者参照 [monitor-theme-rakugaki](https://github.com/akanotanin/monitor-theme-rakugaki) 适配：米白点阵纸面、墨线描边、手绘圆角、硬偏移阴影、陶土橙点缀和等宽读数。概览改为四张统计卡片，保留节点指标、延迟与历史图表操作。内置主题不可删除，选择随数据库备份保存。
+
 ### 自定义主题包
 
 点击网站名称 → **主题管理**，管理员登录后可上传 ZIP、选择主题并点击“启用所选主题”。主题对所有访客生效，存储在 SQLite 中，随数据库备份和恢复。删除正在使用的自定义主题会恢复默认主题；默认主题不可删除。

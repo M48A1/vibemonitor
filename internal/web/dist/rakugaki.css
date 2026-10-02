@@ -1,0 +1,142 @@
+/* Native VibeMonitor adaptation of akanotanin/monitor-theme-rakugaki.
+ * Palette and sketch shapes adapted under MIT; see third-party-notices.txt.
+ * Loaded after the default stylesheet and removed when another theme is selected.
+ */
+:root {
+  color-scheme: light;
+  --paper: #faf9f5;
+  --paper-warm: #f0eee6;
+  --ink: #141413;
+  --fill-oat: #e3dacc;
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card-bg: #fff;
+  --card-hover: #fff;
+  --card-data-bg: var(--paper-warm);
+  --primary: #c4633f;
+  --primary-light: #f7e9df;
+  --primary-text: #141413;
+  --muted: var(--paper-warm);
+  --muted-foreground: #5e5d59;
+  --border: rgba(20, 20, 19, .24);
+  --border-focus: #a94f32;
+  --success: #4f7a42;
+  --warning: #9a7020;
+  --destructive: #b84a32;
+  --control-bg: #fff;
+  --shadow-sm: 4px 4px 0 var(--fill-oat);
+  --shadow-md: 6px 6px 0 var(--fill-oat);
+  --shadow-lg: 9px 9px 0 var(--fill-oat);
+  --r-card: 18px 220px 16px 200px / 200px 16px 220px 18px;
+  --r-card-alt: 200px 16px 220px 18px / 18px 220px 16px 200px;
+  --r-chip: 120px 10px 110px 12px / 12px 110px 10px 120px;
+  --r-bar: 5px 12px 7px 10px / 10px 7px 12px 5px;
+  --rak-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Microsoft YaHei UI", monospace;
+  --rak-display: "Songti SC", "Noto Serif SC", SimSun, Georgia, serif;
+  --squiggle: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='10' viewBox='0 0 240 10'%3E%3Cpath d='M0 5 C 40 1, 80 9, 120 5 S 200 9, 240 5' fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+body {
+  background: var(--paper);
+  background-image: radial-gradient(rgba(20, 20, 19, .045) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+body::before { display: none; }
+::selection { background: #f2d59b; color: var(--ink); }
+.container { max-width: 1480px; padding-top: 26px; }
+.navbar { padding-bottom: 22px; margin-bottom: 28px; }
+.navbar::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: -5px;
+  height: 10px; background: var(--ink); opacity: .4; pointer-events: none;
+  -webkit-mask: var(--squiggle) repeat-x left center / 240px 10px;
+  mask: var(--squiggle) repeat-x left center / 240px 10px;
+}
+.brand-title { font-family: var(--rak-display); font-size: 26px; font-weight: 700; color: var(--ink); }
+.hex-section-label { font-family: "Kaiti SC", KaiTi, var(--rak-display); font-size: 16px; color: var(--primary); }
+.hex-section-label::before { background: var(--primary); border-radius: var(--r-chip); }
+/* Overview reads as four paper cards. The globe remains available in the default theme. */
+.hex-stats { display: block; margin-bottom: 30px; }
+.hex-globe-panel { display: none; }
+.hex-stats-grid {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: auto;
+  gap: 22px; min-height: 0; overflow: visible; background: transparent; border: 0;
+  border-radius: 0; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+.hex-stat {
+  min-height: 154px; padding: 20px; background: #fff;
+  border: 2px solid var(--ink); border-radius: var(--r-card);
+  box-shadow: var(--shadow-md); gap: 12px;
+}
+.hex-stat:nth-child(even) { border: 2px solid var(--ink); border-radius: var(--r-card-alt); }
+.hex-stat:nth-child(n+3) { border-top: 2px solid var(--ink); }
+.hex-stat > span { font-family: "Kaiti SC", KaiTi, var(--rak-display); font-size: 16px; color: var(--primary); }
+.hex-stat > strong { font-family: var(--rak-mono); font-size: 25px; letter-spacing: -.5px; }
+.hex-stat em { color: var(--ink); }
+.hex-stat small { font-size: 12px; }
+.node-grid { gap: 24px; }
+.node-card, .node-card:hover {
+  background: #fff; border: 2px solid var(--ink); border-radius: var(--r-card);
+  box-shadow: var(--shadow-md); backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+.hex-card { padding: 24px; gap: 20px; }
+.hex-card:nth-child(even) { border-radius: var(--r-card-alt); }
+.hex-card:hover { transform: translate(-1px, -1px); border-color: var(--primary); }
+.hex-node-identity h2 { font-family: var(--rak-display); font-size: 18px; font-weight: 700; }
+.hex-system { font-size: 12px; }
+.hex-region { font-size: 14px; }
+.hex-status { border: 1px solid var(--border); border-radius: var(--r-chip); background: var(--paper-warm); padding: 4px 7px; }
+.hex-status.is-online { color: #365d2c; background: #edf3e9; }
+.hex-resources { gap: 18px 20px; }
+.hex-metric .metric-name { color: var(--ink); font-size: 13px; }
+.hex-metric .metric-meta strong, .hex-network strong, .hex-facts strong,
+.hex-billing strong, .hex-card-footer strong, .hex-metric small {
+  font-family: var(--rak-mono); font-variant-numeric: tabular-nums;
+}
+.hex-metric small { font-size: 11px; }
+.progress-track { height: 7px; border: 1px solid var(--ink); border-radius: var(--r-bar); background: var(--paper-warm); }
+.progress-bar { border-radius: 0; background: var(--ink); }
+.progress-bar.high { background: var(--primary); }
+.progress-bar.critical { background: var(--destructive); }
+.hex-network { border-top: 1px dashed var(--border); padding-top: 16px; }
+.hex-network span { color: var(--ink); }
+.hex-network > div:last-child span { color: var(--ink); }
+.hex-facts > div + div { border-left: 1px dashed var(--border); }
+.hex-probes, .hex-card-footer { border-top: 1px dashed var(--border); }
+.hex-billing { padding: 12px; background: var(--paper); border-radius: var(--r-chip); }
+.sample-bar { border-radius: var(--r-bar); }
+.sample-bar.fast { background: var(--ink); opacity: .75; }
+/* Apply the same paper controls to all management dialogs and charts. */
+.btn { border: 1.5px solid var(--ink); border-radius: var(--r-chip); background: #fff; color: var(--ink); }
+.btn:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--fill-oat); border-color: var(--primary); }
+.btn:active { transform: translate(1px, 1px); box-shadow: none; }
+.btn-primary, .btn.active { background: #d97757; color: var(--ink); border-color: var(--ink); }
+.btn-primary:hover { background: #e6a189; }
+.btn-danger { background: #b84a32; color: #fff; }
+.btn-danger:hover { background: #9b3925; color: #fff; }
+.form-input, .form-select, .form-textarea { border: 1px solid var(--border); border-radius: 7px 12px 6px 10px; background: #fff; }
+.site-menu-panel, .modal { background: #fff; border: 2px solid var(--ink); border-radius: var(--r-card); box-shadow: var(--shadow-lg); backdrop-filter: none; -webkit-backdrop-filter: none; }
+.site-menu-item:hover { background: var(--paper-warm); }
+.modal-title { font-family: var(--rak-display); }
+.modal-overlay { background: rgba(20, 20, 19, .4); }
+.theme-row { border: 1px dashed var(--border); border-radius: var(--r-chip); background: var(--paper); }
+.powered-by-pill { position: relative; left: auto; bottom: auto; width: fit-content; margin: 28px auto; transform: none; background: var(--paper); border: 1.5px solid var(--ink); border-radius: var(--r-chip); box-shadow: 3px 3px 0 var(--fill-oat); backdrop-filter: none; -webkit-backdrop-filter: none; }
+@media (max-width: 1120px) {
+  .hex-stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 720px) {
+  .container { padding: 18px 16px 92px; }
+  .navbar { padding-bottom: 18px; }
+  .brand-title { font-size: 23px; }
+  .hex-stats-grid { gap: 14px; }
+  .hex-stat { padding: 14px; min-height: 146px; gap: 10px; }
+  .hex-stat > span { font-size: 14px; }
+  .hex-stat > strong { font-size: 21px; }
+  .hex-stat small { font-size: 10px; }
+  .node-grid { gap: 20px; }
+  .hex-card { padding: 20px; }
+}
+@media (max-width: 360px) {
+  .hex-stats-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hex-card:hover, .btn:hover, .btn:active { transform: none; }
+}

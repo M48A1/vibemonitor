@@ -99,3 +99,25 @@ func TestThemeRoutes(t *testing.T) {
 		t.Fatal("deleted CSS accessible")
 	}
 }
+
+func TestRakugakiBuiltinRoutes(t *testing.T) {
+	s, err := New(Options{DataFile: filepath.Join(t.TempDir(), "data.db"), AdminPassword: "test-password"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	s.adminTokens.Store("test", time.Now().Add(time.Hour))
+	h := s.Handler()
+	r := httptest.NewRequest("POST", "/api/admin/themes/select", strings.NewReader(`{"id":"rakugaki"}`))
+	r.Header.Set("Authorization", "Bearer test")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != 200 || s.store.GetConfig().SiteTheme != store.RakugakiTheme {
+		t.Fatalf("builtin selection failed: %s", w.Body.String())
+	}
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/rakugaki.css", nil))
+	if w.Code != 200 || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/css") || !strings.Contains(w.Body.String(), "--paper: #faf9f5") {
+		t.Fatal("builtin stylesheet missing")
+	}
+}

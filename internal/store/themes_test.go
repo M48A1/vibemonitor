@@ -150,3 +150,56 @@ func TestLegacyThemeBackup(t *testing.T) {
 		t.Fatal("old backup did not restore default")
 	}
 }
+
+func TestRakugakiBuiltinLifecycle(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "data.db")
+	s, err := New(db, "test-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	themes, err := s.Themes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(themes) != 2 || themes[0].ID != DefaultTheme || themes[1].ID != RakugakiTheme || !themes[1].Builtin {
+		t.Fatalf("builtins: %+v", themes)
+	}
+	if s.GetConfig().SiteTheme != DefaultTheme {
+		t.Fatal("initial appearance changed")
+	}
+	if err = s.SelectTheme(RakugakiTheme); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.DeleteTheme(RakugakiTheme); err == nil {
+		t.Fatal("deleted builtin")
+	}
+	s.Close()
+	s, err = New(db, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.GetConfig().SiteTheme != RakugakiTheme {
+		t.Fatal("builtin selection lost on restart")
+	}
+	s.Close()
+	backup := filepath.Join(dir, "backup.db")
+	dest := filepath.Join(dir, "restored.db")
+	if err = ExportData(db, backup); err != nil {
+		t.Fatal(err)
+	}
+	if err = RestoreData(backup, dest); err != nil {
+		t.Fatal(err)
+	}
+	s, err = New(dest, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if s.GetConfig().SiteTheme != RakugakiTheme {
+		t.Fatal("builtin selection lost on restore")
+	}
+	if err = s.SelectTheme(DefaultTheme); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -8,9 +8,9 @@
   function apply(id) {
     active = id;
     const current = document.getElementById('customThemeStylesheet');
-    const valid = /^custom-[a-f0-9]{64}$/.test(id);
+    const valid = id === 'rakugaki' || /^custom-[a-f0-9]{64}$/.test(id);
     if (recovery || !valid) { if (current) current.remove(); return; }
-    const href = '/api/themes/' + id + '/style.css';
+    const href = id === 'rakugaki' ? '/rakugaki.css' : '/api/themes/' + id + '/style.css';
     if (current && current.getAttribute('href') === href) return;
     const link = document.createElement('link');
     link.id = 'customThemeStylesheet'; link.rel = 'stylesheet'; link.href = href;

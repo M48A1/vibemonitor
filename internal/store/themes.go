@@ -17,6 +17,9 @@ const MaxThemePackageBytes = 2 << 20
 const MaxThemeCSSBytes = 1 << 20
 const MaxCustomThemes = 32
 const DefaultTheme = "hex"
+const RakugakiTheme = "rakugaki"
+
+func isBuiltinTheme(id string) bool { return id == DefaultTheme || id == RakugakiTheme }
 
 type Theme struct {
 	ID          string `json:"id"`
@@ -109,7 +112,10 @@ func ParseThemePackage(data []byte) (Theme, error) {
 func (s *Store) Themes() ([]Theme, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	list := []Theme{{ID: DefaultTheme, Name: "默认主题", Description: "当前内置外观", Builtin: true}}
+	list := []Theme{
+		{ID: DefaultTheme, Name: "默认主题", Description: "当前内置外观", Builtin: true},
+		{ID: RakugakiTheme, Name: "Rakugaki · 手绘纸感", Version: "1.0.0", Description: "米白纸面、墨线边框、手绘圆角与陶土橙", Builtin: true},
+	}
 	rows, err := s.sdb.db.Query("SELECT id,name,version,description FROM site_themes ORDER BY name,id")
 	if err != nil {
 		return nil, err
@@ -151,7 +157,7 @@ func (s *Store) ImportTheme(data []byte) (Theme, error) {
 func (s *Store) SelectTheme(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if id != DefaultTheme {
+	if !isBuiltinTheme(id) {
 		var n int
 		if err := s.sdb.db.QueryRow("SELECT count(*) FROM site_themes WHERE id=?", id).Scan(&n); err != nil {
 			return err
@@ -165,8 +171,8 @@ func (s *Store) SelectTheme(id string) error {
 	return s.commitConfigLocked(next)
 }
 func (s *Store) DeleteTheme(id string) error {
-	if id == DefaultTheme {
-		return errors.New("默认主题不能删除")
+	if isBuiltinTheme(id) {
+		return errors.New("内置主题不能删除")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
