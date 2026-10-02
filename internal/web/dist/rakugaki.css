@@ -21,6 +21,9 @@
   --border: rgba(20, 20, 19, .24);
   --border-focus: #a94f32;
   --success: #4f7a42;
+  --label-green: #346327;
+  --label-blue: #27598f;
+  --label-orange: #964215;
   --warning: #9a7020;
   --destructive: #b84a32;
   --control-bg: #fff;

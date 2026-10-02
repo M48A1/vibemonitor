@@ -16,6 +16,9 @@
   --border: #e1dfd8;
   --border-focus: #b65b3c;
   --success: #059669;
+  --label-green: #0a7252;
+  --label-blue: #245d9c;
+  --label-orange: #a04b13;
   --warning: #b7791f;
   --destructive: #c2413c;
   --control-bg: #fffefa;
@@ -109,7 +112,6 @@ body::before {
 .hex-billing { grid-area: billing; padding: 0; gap: 6px; border: 0; background: transparent; border-radius: 0; }
 .hex-billing > div { gap: 2px; }
 .hex-card-footer { grid-area: price; min-width: 0; flex-direction: column; align-items: flex-start; gap: 2px; margin-top: 0; border: 0; padding: 0; font-size: 11px; }
-.hex-card-footer::before { content: "费用金额"; }
 .hex-card-footer strong { color: var(--foreground); font-size: 12px; }
 .hex-probes .ping-sample-row { padding-top: 4px; }
 .hex-probes .ping-row-heading { margin-bottom: 4px; }

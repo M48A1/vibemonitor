@@ -16,6 +16,9 @@
   --border: rgba(255, 255, 255, .6);
   --border-focus: #356dcc;
   --success: #238364;
+  --label-green: #07543f;
+  --label-blue: #1c4786;
+  --label-orange: #82380f;
   --warning: #986700;
   --destructive: #c23b50;
   --control-bg: rgba(255, 255, 255, .8);
@@ -151,6 +154,28 @@ body::before {
 .hex-card-footer { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding-top: 14px; margin-top: auto; border-top: 1px solid var(--border); color: var(--muted-foreground); font-size: 11px; overflow-wrap: anywhere; }
 .hex-card-footer strong { font-weight: 500; }
 .hex-card.offline .hex-network strong { color: var(--muted-foreground); }
+/* Shared caption colors take precedence over built-in theme text defaults. */
+body .hex-section-label,
+body .hex-stat:nth-child(1) > span,
+body .hex-metric:nth-child(2) .metric-name,
+body .hex-network > div:last-child span,
+body .hex-facts > div:nth-child(3) > span,
+body .hex-billing > div:nth-child(2) > span,
+body .hex-probes .ping-panel:nth-child(1) .panel-label { color: var(--label-green); }
+body .hex-stat:nth-child(2) > span,
+body .hex-metric:nth-child(1) .metric-name,
+body .hex-metric:nth-child(4) .metric-name,
+body .hex-network-total span,
+body .hex-facts > div:nth-child(2) > span,
+body .hex-probes .ping-panel:nth-child(2) .panel-label { color: var(--label-blue); }
+body .hex-stat:nth-child(3) > span,
+body .hex-stat:nth-child(4) > span,
+body .hex-metric:nth-child(3) .metric-name,
+body .hex-network > div:first-child span,
+body .hex-facts > div:nth-child(1) > span,
+body .hex-billing > div:nth-child(1) > span,
+body .hex-card-footer::before { color: var(--label-orange); }
+.hex-card-footer::before { content: "费用金额"; }
 .modal { border-radius: 14px; }
 @media (max-width: 1120px) {
   .node-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
