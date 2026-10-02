@@ -67,39 +67,53 @@ body::before {
 .hex-stat em { font-size: 16px; }
 .hex-stat small { font-size: 11px; }
 .controls-bar { margin-bottom: 14px; }
-.node-grid { grid-template-columns: minmax(0, 1fr); gap: 0; background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow-sm); }
+.node-grid { grid-template-columns: minmax(0, 1fr); gap: 0; background: transparent; border: 0; border-radius: 0; box-shadow: none; }
 .node-card, .node-card:hover { background: transparent; border: 0; border-radius: 0; box-shadow: none; }
 .hex-card {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(280px, 1.6fr) minmax(170px, 1fr);
+  grid-template-columns: repeat(3, minmax(90px, 1fr)) minmax(0, 7.8fr);
+  grid-template-areas:
+    "identity identity identity resources"
+    "network network network resources"
+    "facts facts facts probes"
+    "billing billing price probes";
   align-items: start;
-  gap: 18px 24px;
-  padding: 20px;
+  gap: 6px 6px;
+  padding: 10px 0;
 }
 .hex-card + .hex-card { border-top: 1px solid var(--border); }
 .hex-card:hover { transform: none; background: rgba(244, 242, 237, .55); }
-.hex-node-header { gap: 10px; }
+.hex-node-header { grid-area: identity; gap: 10px; }
 .hex-node-identity h2 { font-size: 14px; font-weight: 650; }
-.hex-system { line-height: 1.6; }
-.hex-status { padding: 4px 6px; border-radius: 5px; background: var(--card-data-bg); }
+.hex-node-identity { row-gap: 2px; }
+.hex-system { line-height: 1.4; }
+.hex-status { padding: 3px 6px; border-radius: 5px; background: var(--card-data-bg); }
 .hex-status.is-online { background: #e8f5ef; }
-.hex-resources { gap: 12px 18px; }
-.hex-metric { gap: 5px; }
+.hex-resources { grid-area: resources; margin-left: 18px; gap: 6px 16px; }
+.hex-metric { gap: 3px; }
 .hex-metric .metric-meta strong { font-size: 12px; font-weight: 500; }
 .hex-metric .metric-name { font-size: 11px; }
-.progress-track { height: 5px; border-radius: 99px; background: #e6e5e0; }
+.progress-track { height: 4px; border-radius: 99px; background: #e6e5e0; }
 .progress-bar { border-radius: 99px; background: var(--success); }
 .progress-bar.high { background: var(--warning); }
 .progress-bar.critical { background: var(--destructive); }
-.hex-network { padding-top: 3px; gap: 8px; }
+.hex-network { grid-area: network; padding-top: 0; gap: 8px; }
+.hex-network > div, .hex-network > button { align-items: flex-start; gap: 2px; text-align: left; }
 .hex-network strong { font-size: 13px; }
 .hex-network span { font-size: 10px; }
-.hex-facts { grid-column: 1; align-self: center; }
+.hex-facts { grid-area: facts; }
+.hex-facts > div { align-items: flex-start; gap: 2px; text-align: left; }
+.hex-facts > div + div { border: 0; }
 .hex-facts strong { font-size: 10px; }
-.hex-probes { grid-column: 2; padding: 0; border: 0; }
-.hex-billing { grid-column: 3; padding: 10px; gap: 10px; border: 1px solid var(--border); background: var(--card-data-bg); border-radius: 7px; }
-.hex-card-footer { grid-column: 1 / -1; border: 0; padding: 0; font-size: 10px; }
-.sample-bar { border-radius: 2px; }
+.hex-probes { grid-area: probes; margin-left: 18px; padding: 0; border: 0; }
+.hex-billing { grid-area: billing; padding: 0; gap: 6px; border: 0; background: transparent; border-radius: 0; }
+.hex-billing > div { gap: 2px; }
+.hex-card-footer { grid-area: price; min-width: 0; flex-direction: column; align-items: flex-start; gap: 2px; margin-top: 0; border: 0; padding: 0; font-size: 11px; }
+.hex-card-footer::before { content: "费用金额"; }
+.hex-card-footer strong { color: var(--foreground); font-size: 12px; }
+.hex-probes .ping-sample-row { padding-top: 4px; }
+.hex-probes .ping-row-heading { margin-bottom: 4px; }
+.sample-bar { height: 6px; border-radius: 2px; }
 .sample-bar.fast { background: var(--success); opacity: .8; }
 .btn { border-radius: 7px; background: var(--control-bg); box-shadow: var(--shadow-sm); }
 .btn:hover { background: var(--muted); }
@@ -116,11 +130,7 @@ body::before {
 /* Retain shared fixed positioning, safe-area inset and horizontal centering. */
 .powered-by-pill { background: rgba(253, 252, 249, .94); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-lg); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
 @media (max-width: 1120px) {
-  .hex-card { grid-template-columns: minmax(180px, 1fr) minmax(260px, 1.4fr); }
-  .hex-network { grid-column: 1; }
-  .hex-facts { grid-column: 2; }
-  .hex-probes { grid-column: 1; }
-  .hex-billing { grid-column: 2; }
+  .hex-card { grid-template-columns: repeat(3, minmax(80px, 1fr)) minmax(0, 5.4fr); }
   .hex-stat { padding: 14px; }
 }
 @media (max-width: 720px) {
@@ -129,7 +139,18 @@ body::before {
   .hex-stat:nth-child(odd) { border-left: 0; }
   .hex-stat:nth-child(n+3) { border-top: 1px solid var(--border); }
   .hex-stat > strong { font-size: 20px; }
-  .hex-card { grid-template-columns: minmax(0, 1fr); padding: 16px; gap: 18px; }
-  .hex-node-header, .hex-resources, .hex-network, .hex-facts, .hex-probes, .hex-billing, .hex-card-footer { grid-column: 1; }
+  .hex-card {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-areas:
+      "identity identity identity"
+      "network network network"
+      "facts facts facts"
+      "billing billing price"
+      "resources resources resources"
+      "probes probes probes";
+    padding: 10px 0;
+    gap: 8px 6px;
+  }
+  .hex-resources, .hex-probes { margin-left: 0; }
   .hex-facts strong { font-size: 11px; }
 }
