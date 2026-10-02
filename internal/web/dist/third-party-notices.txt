@@ -119,3 +119,10 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+Win2000 appearance reference
+============================
+
+VibeMonitor's Win2000 theme is independently written CSS inspired by the
+Windows 2000 appearance shown at https://github.com/guboysky/win2000.
+No upstream code, scripts, fonts or images are distributed with this theme.

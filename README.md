@@ -37,7 +37,7 @@ curl -4 -fsSL -o install.sh https://raw.githubusercontent.com/M48A1/vibemonitor/
 
 ### 内置主题
 
-“主题管理”提供默认主题（现有玻璃外观）和 **Rakugaki · 手绘纸感**。后者参照 [monitor-theme-rakugaki](https://github.com/akanotanin/monitor-theme-rakugaki) 适配：米白点阵纸面、墨线描边、手绘圆角、硬偏移阴影、陶土橙点缀和等宽读数。概览改为四张统计卡片，保留节点指标、延迟与历史图表操作。内置主题不可删除，选择随数据库备份保存。
+“主题管理”提供默认主题（现有玻璃外观）和 **Rakugaki · 手绘纸感**。后者参照 [monitor-theme-rakugaki](https://github.com/akanotanin/monitor-theme-rakugaki) 适配：米白点阵纸面、墨线描边、手绘圆角、硬偏移阴影、陶土橙点缀和等宽读数。概览改为四张统计卡片，保留节点指标、延迟与历史图表操作。第三个内置主题 **Win2000 · 经典桌面** 参照 [win2000](https://github.com/guboysky/win2000) 的 Windows 2000 界面自行编写样式：蓝色桌面、灰色立体窗口、蓝色渐变标题栏和分段进度条。三个内置主题的 Powered by VibeMonitor 均固定悬浮在屏幕底部。内置主题不可删除，选择随数据库备份保存。
 
 ### 自定义主题包
 
@@ -63,7 +63,7 @@ ZIP 包最大 2MB，根目录包含 `theme.json` 和其中指定的一个 CSS �
 
 ### 实时数据与性能
 
-首页使用 `/api/nodes?view=dashboard` 和 `/api/clients?view=dashboard` 获取精简节点数据，省去未使用的短期 `history` 数组。CPU、内存、网速及延迟曲线仍由原来的历史接口提供。不带 `view=dashboard` 的 HTTP / WebSocket 接口继续返回完整字段，两种主题共用同一组接口。
+首页使用 `/api/nodes?view=dashboard` 和 `/api/clients?view=dashboard` 获取精简节点数据，省去未使用的短期 `history` 数组。CPU、内存、网速及延迟曲线仍由原来的历史接口提供。不带 `view=dashboard` 的 HTTP / WebSocket 接口继续返回完整字段，所有主题共用同一组接口。
 
 节点响应按 UUID 固定排序，浏览器按原来的节点序号和名称展示。未变化的卡片复用已有 DOM；页面进入后台时停止卡片渲染及兜底轮询，返回前台后刷新最新状态。
 
