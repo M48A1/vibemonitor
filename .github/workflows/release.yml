@@ -2,11 +2,17 @@ name: Release and Build Binaries
 
 on:
   push:
+    branches: [main]
+    paths: [RELEASE_VERSION]
     tags:
       - 'v*'
 
 permissions:
   contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   build-and-release:
@@ -16,6 +22,25 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Resolve release version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            VERSION="$GITHUB_REF_NAME"
+          else
+            VERSION="$(cat RELEASE_VERSION)"
+            # Never overwrite a previously published version from a main push.
+            gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$VERSION" > /tmp/release-refs.json
+            if jq -e --arg ref "refs/tags/$VERSION" 'any(.[]; .ref == $ref)' /tmp/release-refs.json; then
+              echo "Release tag $VERSION already exists; bump RELEASE_VERSION."
+              exit 1
+            fi
+          fi
+          [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
@@ -23,7 +48,9 @@ jobs:
           check-latest: true
 
       - name: Test
-        run: go test -race ./...
+        run: |
+          go test -race ./...
+          go vet ./...
 
       - uses: actions/setup-node@v4
         with:
@@ -31,9 +58,10 @@ jobs:
       - run: for file in internal/web/dist/*.js; do node --check "$file"; done
 
       - name: Build Linux Binaries (AMD64 & ARM64)
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
         run: |
           mkdir -p dist
-          VERSION=${GITHUB_REF_NAME}
 
           echo "Building for tag: $VERSION"
 
@@ -59,8 +87,12 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.value }}
+          target_commitish: ${{ github.sha }}
+          fail_on_unmatched_files: true
           files: dist/*
           body_path: RELEASE_NOTES.md
           draft: false
           prerelease: false
           generate_release_notes: false
+
