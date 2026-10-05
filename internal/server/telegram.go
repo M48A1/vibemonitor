@@ -19,7 +19,14 @@ import (
 
 type telegramSender func(context.Context, store.Config, string) error
 
+type telegramRetry struct {
+	failures int
+	next     time.Time
+}
+
 type telegramAlerts struct {
+	retry  map[string]telegramRetry
+	kind   string
 	states map[string]store.TelegramAlertState
 	saved  map[string]store.TelegramAlertState
 	epoch  string
@@ -31,7 +38,7 @@ type telegramAlerts struct {
 }
 
 func newTelegramAlerts(send telegramSender) *telegramAlerts {
-	return &telegramAlerts{states: make(map[string]store.TelegramAlertState), saved: make(map[string]store.TelegramAlertState), send: send, now: time.Now}
+	return &telegramAlerts{states: make(map[string]store.TelegramAlertState), saved: make(map[string]store.TelegramAlertState), retry: make(map[string]telegramRetry), send: send, now: time.Now}
 }
 
 func (a *telegramAlerts) check(ctx context.Context, cfg store.Config, nodes []*store.Node) {
@@ -39,6 +46,7 @@ func (a *telegramAlerts) check(ctx context.Context, cfg store.Config, nodes []*s
 		a.states = make(map[string]store.TelegramAlertState)
 		a.saved = make(map[string]store.TelegramAlertState)
 		a.epoch = ""
+		a.retry = make(map[string]telegramRetry)
 		return
 	}
 	epoch := telegramAlertEpoch(cfg)
@@ -58,6 +66,7 @@ func (a *telegramAlerts) check(ctx context.Context, cfg store.Config, nodes []*s
 			a.saved[id] = state
 		}
 		a.epoch = epoch
+		a.retry = make(map[string]telegramRetry)
 	}
 	now := a.now()
 	zone := cfg.TelegramReminderTimezone
@@ -85,6 +94,7 @@ func (a *telegramAlerts) check(ctx context.Context, cfg store.Config, nodes []*s
 		label := alertNodeLabel(node)
 		state.Seen = true
 		state.Online = node.Online
+		a.kind = node.UUID + ":offline"
 		if !node.Online && !node.LastSeen.IsZero() && now.Sub(node.LastSeen) >= time.Duration(cfg.TelegramOfflineDelaySeconds)*time.Second && !state.OfflineAlerted {
 			message := renderTelegramTemplate(templates.Offline, map[string]string{
 				"node": label, "last_seen": node.LastSeen.In(location).Format("2006-01-02 15:04:05"),
@@ -93,31 +103,46 @@ func (a *telegramAlerts) check(ctx context.Context, cfg store.Config, nodes []*s
 				state.OfflineAlerted = true
 			}
 		} else if node.Online && state.OfflineAlerted {
+			a.kind = node.UUID + ":recovery"
 			if a.deliver(ctx, cfg, renderTelegramTemplate(templates.Recovery, map[string]string{"node": label})) {
 				state.OfflineAlerted = false
 			}
 		}
 		if node.Online && node.LastReport != nil {
 			if node.Profile != nil && node.Profile.CPUThreshold != nil {
-				cpuHigh := node.LastReport.CPU.Usage >= *node.Profile.CPUThreshold
+				a.kind = node.UUID + ":cpu"
+				if state.CPUThreshold != *node.Profile.CPUThreshold {
+					state.CPUHighSince, state.CPU = 0, false
+					state.CPUThreshold = *node.Profile.CPUThreshold
+				}
 				message := renderTelegramTemplate(templates.CPU, map[string]string{
 					"node": label, "cpu": fmt.Sprintf("%.1f", node.LastReport.CPU.Usage), "cpu_threshold": fmt.Sprintf("%.1f", *node.Profile.CPUThreshold),
 				})
-				state.CPU = a.threshold(ctx, cfg, state.CPU, cpuHigh, message)
+				state.CPU = a.sustainedThreshold(ctx, cfg, state.CPU, node.LastReport.CPU.Usage, *node.Profile.CPUThreshold, &state.CPUHighSince, &state.CPULastAlert, message)
 			} else {
 				state.CPU = false
+				state.CPUHighSince = 0
 			}
-			memoryHigh := node.LastReport.RAM.Total > 0 && float64(node.LastReport.RAM.Used)/float64(node.LastReport.RAM.Total) >= 0.85
+			a.kind = node.UUID + ":memory"
 			memoryMessage := renderTelegramTemplate(templates.Memory, map[string]string{
 				"node": label, "memory": fmt.Sprintf("%.1f", memoryPercent(node)), "memory_threshold": "85",
 			})
-			state.Memory = a.threshold(ctx, cfg, state.Memory, memoryHigh, memoryMessage)
+			if node.LastReport.RAM.Total > 0 {
+				state.Memory = a.sustainedThreshold(ctx, cfg, state.Memory, memoryPercent(node), 85, &state.MemoryHighSince, &state.MemoryLastAlert, memoryMessage)
+			} else {
+				state.MemoryHighSince = 0
+			}
 		}
+		if !node.Online {
+			state.CPUHighSince, state.MemoryHighSince = 0, 0
+		}
+		a.kind = node.UUID + ":traffic-warning"
 		a.trafficWarning(ctx, cfg, node, &state)
 		trafficHigh := node.TrafficLimit > 0 && node.CycleTotalUsed >= node.TrafficLimit
 		trafficMessage := renderTelegramTemplate(templates.Traffic, map[string]string{
 			"node": label, "used_gib": fmt.Sprintf("%.2f", gib(node.CycleTotalUsed)), "limit_gib": fmt.Sprintf("%.2f", gib(node.TrafficLimit)),
 		})
+		a.kind = node.UUID + ":traffic"
 		state.Traffic = a.threshold(ctx, cfg, state.Traffic, trafficHigh, trafficMessage)
 		if cfg.TelegramReminderDays > 0 && node.Profile != nil && node.Profile.DueDate != "" && localNow.Hour() >= cfg.TelegramReminderHour {
 			if days, ok := daysUntilDue(node.Profile.DueDate, localNow); ok && days >= 0 && days <= cfg.TelegramReminderDays {
@@ -126,6 +151,7 @@ func (a *telegramAlerts) check(ctx context.Context, cfg store.Config, nodes []*s
 					message := renderTelegramTemplate(templates.Due, map[string]string{
 						"node": label, "due_date": node.Profile.DueDate, "days": fmt.Sprint(days),
 					})
+					a.kind = node.UUID + ":due"
 					if a.deliver(ctx, cfg, message) {
 						state.ReminderDate, state.ReminderFor = today, node.Profile.DueDate
 					}
@@ -245,11 +271,50 @@ func (a *telegramAlerts) threshold(ctx context.Context, cfg store.Config, wasHig
 	return a.deliver(ctx, cfg, message)
 }
 
-func (a *telegramAlerts) deliver(ctx context.Context, cfg store.Config, message string) bool {
-	if err := a.send(ctx, cfg, message); err != nil {
-		log.Printf("[Telegram] Alert delivery failed: %v", err)
+// Require 30 seconds above threshold, recover 5 percentage points below it,
+// and wait at least five minutes between repeat alerts for the same resource.
+func (a *telegramAlerts) sustainedThreshold(ctx context.Context, cfg store.Config, active bool, value, threshold float64, since, last *int64, message string) bool {
+	now := a.now().Unix()
+	if value < threshold {
+		*since = 0
+	}
+	if value <= max(0, threshold-5) {
 		return false
 	}
+	if active {
+		return true
+	}
+	if value < threshold {
+		return false
+	}
+	if *since == 0 {
+		*since = now
+		return false
+	}
+	if now-*since < 30 || (*last > 0 && now-*last < 300) {
+		return false
+	}
+	if a.deliver(ctx, cfg, message) {
+		*last = now
+		return true
+	}
+	return false
+}
+
+func (a *telegramAlerts) deliver(ctx context.Context, cfg store.Config, message string) bool {
+	retry := a.retry[a.kind]
+	if a.now().Before(retry.next) {
+		return false
+	}
+	if err := a.send(ctx, cfg, message); err != nil {
+		retry.failures++
+		delay := min(300, 30<<min(retry.failures-1, 4))
+		retry.next = a.now().Add(time.Duration(delay) * time.Second)
+		a.retry[a.kind] = retry
+		log.Printf("[Telegram] Alert delivery failed; retry in %ds: %v", delay, err)
+		return false
+	}
+	delete(a.retry, a.kind)
 	return true
 }
 
@@ -295,30 +360,5 @@ func telegramHTTPClient() *http.Client {
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
-	}
-}
-
-func (s *Server) runTelegramAlerts(ctx context.Context) {
-	client := telegramHTTPClient()
-	alerts := newTelegramAlerts(func(ctx context.Context, cfg store.Config, text string) error {
-		return sendTelegramMessage(ctx, client, cfg, text)
-	})
-	alerts.load = s.store.LoadTelegramAlertStates
-	alerts.save = s.store.SaveTelegramAlertState
-	alerts.remove = s.store.DeleteTelegramAlertState
-	ticker := time.NewTicker(3 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			cfg := s.store.GetConfig()
-			if cfg.TelegramEnabled {
-				alerts.check(ctx, cfg, s.store.GetAlertNodes())
-			} else {
-				alerts.check(ctx, cfg, nil)
-			}
-		}
 	}
 }

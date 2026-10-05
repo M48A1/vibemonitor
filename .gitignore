@@ -27,3 +27,10 @@ integration_test.go
 *.test
 
 !internal/store/delete_node_test.go
+
+!internal/store/settings_concurrency_test.go
+!internal/server/telegram_policy_test.go
+
+!scripts/package.json
+!scripts/package-lock.json
+node_modules/

@@ -28,6 +28,14 @@ func (s *Store) UpdateSettingsWithIcon(title string, targets []protocol.PingTarg
 			return fmt.Errorf("%w: %v", ErrInvalidSettings, err)
 		}
 	}
+	var hashed string
+	if password != "" {
+		var err error
+		hashed, err = hashAdminPassword(password)
+		if err != nil {
+			return err
+		}
+	}
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
 	s.mu.Lock()
@@ -44,13 +52,10 @@ func (s *Store) UpdateSettingsWithIcon(title string, targets []protocol.PingTarg
 			next.PingTargets = targets
 		}
 	}
-	if password != "" {
-		hashed, err := hashAdminPassword(password)
-		if err != nil {
-			return err
-		}
+	if hashed != "" {
 		next.AdminPassword = hashed
 	}
+
 	return s.commitConfigLocked(next)
 }
 

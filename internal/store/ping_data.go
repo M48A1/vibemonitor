@@ -107,30 +107,23 @@ func (s *Store) pruneNodePingLocked(node *Node) {
 }
 
 // Config and the corresponding removal of stale history are one transaction.
+// Caller holds persistMu and mu. Only the private snapshot is changed until
+// commit. Reports arriving during disk I/O remain in the live store.
 func (s *Store) commitConfigLocked(next Config) error {
-	previous := s.config
-	type pingState struct {
-		history  map[string][]PingSample
-		report   *protocol.Report
-		observed map[string]PingObservation
-		windows  map[string]*pingLossWindow
+	staged := &Store{config: next, nodes: cloneNodesForSave(s.nodes)}
+	staged.prunePingDataLocked()
+	s.mu.Unlock()
+	var err error
+	if s.sdb != nil {
+		err = s.sdb.saveSnapshot(next, staged.nodes)
 	}
-	states := make(map[string]pingState, len(s.nodes))
-	for id, node := range s.nodes {
-		states[id] = pingState{node.PingHistory, node.LastReport, node.PingObserved, node.pingWindows}
+	s.mu.Lock()
+	if err != nil {
+		return err
 	}
 	s.config = next
 	s.prunePingDataLocked()
-	if err := s.saveLocked(); err != nil {
-		s.config = previous
-		for id, state := range states {
-			s.nodes[id].PingHistory = state.history
-			s.nodes[id].LastReport = state.report
-			s.nodes[id].PingObserved = state.observed
-			s.nodes[id].pingWindows = state.windows
-		}
-		return err
-	}
+	s.dirty = true
 	s.notifyUpdate()
 	return nil
 }

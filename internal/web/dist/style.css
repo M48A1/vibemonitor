@@ -857,3 +857,8 @@ body {
 .theme-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .theme-actions a { text-decoration: none; }
 #themeStatus { font-size: 13px; overflow-wrap: anywhere; }
+
+/* Shared by every theme: distinguish an old snapshot from current status. */
+.connection-status { margin: 8px auto; padding: 8px 14px; max-width: 1440px; font-size: 12px; color: var(--muted-foreground); }
+.connection-status[data-state="stale"] { color: #92400e; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 6px; }
+#nodeGrid[data-stale="true"] .node-card { opacity: .65; }

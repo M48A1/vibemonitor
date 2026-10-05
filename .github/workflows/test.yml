@@ -26,6 +26,8 @@ jobs:
         with:
           node-version: '22'
       - run: for file in internal/web/dist/*.js; do node --check "$file"; done
+      - run: npm ci --prefix scripts --ignore-scripts --no-audit --no-fund
+      - run: npm test --prefix scripts
       - run: bash -n install.sh
       - run: bash scripts/check_installer_health.sh
       - run: bash scripts/check_installer_rollback.sh

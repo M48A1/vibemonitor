@@ -1,21 +1,27 @@
 package store
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 )
 
 // TelegramAlertState records transitions that have already been observed or delivered.
 type TelegramAlertState struct {
-	Seen                bool   `json:"seen"`
-	Online              bool   `json:"online"`
-	OfflineAlerted      bool   `json:"offline_alerted"`
-	CPU                 bool   `json:"cpu"`
-	Memory              bool   `json:"memory"`
-	Traffic             bool   `json:"traffic"`
-	TrafficWarningCycle string `json:"traffic_warning_cycle,omitempty"`
-	ReminderDate        string `json:"reminder_date,omitempty"`
-	ReminderFor         string `json:"reminder_for,omitempty"`
+	CPUHighSince        int64   `json:"cpu_high_since,omitempty"`
+	MemoryHighSince     int64   `json:"memory_high_since,omitempty"`
+	CPULastAlert        int64   `json:"cpu_last_alert,omitempty"`
+	MemoryLastAlert     int64   `json:"memory_last_alert,omitempty"`
+	CPUThreshold        float64 `json:"cpu_threshold,omitempty"`
+	Seen                bool    `json:"seen"`
+	Online              bool    `json:"online"`
+	OfflineAlerted      bool    `json:"offline_alerted"`
+	CPU                 bool    `json:"cpu"`
+	Memory              bool    `json:"memory"`
+	Traffic             bool    `json:"traffic"`
+	TrafficWarningCycle string  `json:"traffic_warning_cycle,omitempty"`
+	ReminderDate        string  `json:"reminder_date,omitempty"`
+	ReminderFor         string  `json:"reminder_for,omitempty"`
 }
 
 func (s *Store) LoadTelegramAlertStates(epoch string) (map[string]TelegramAlertState, error) {
@@ -42,6 +48,13 @@ func (s *Store) LoadTelegramAlertStates(epoch string) (map[string]TelegramAlertS
 func (s *Store) SaveTelegramAlertState(epoch, id string, state TelegramAlertState) error {
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
+	s.mu.RLock()
+	node := s.nodes[id]
+	valid := node != nil && s.config.TelegramEnabled && (node.Profile == nil || !node.Profile.AlertsDisabled) && (s.config.TelegramAlertEpoch == "" || epoch == s.config.TelegramAlertEpoch)
+	s.mu.RUnlock()
+	if !valid {
+		return nil
+	}
 	raw, err := json.Marshal(state)
 	if err != nil {
 		return err
@@ -56,4 +69,23 @@ func (s *Store) DeleteTelegramAlertState(id string) error {
 	defer s.persistMu.Unlock()
 	_, err := s.sdb.db.Exec("DELETE FROM telegram_alert_state WHERE node_uuid = ?", id)
 	return err
+}
+
+// A queue worker loads only its node, not every node's alert state.
+func (s *Store) LoadTelegramAlertState(epoch, id string) (map[string]TelegramAlertState, error) {
+	states := make(map[string]TelegramAlertState)
+	var raw string
+	err := s.sdb.db.QueryRow("SELECT state_json FROM telegram_alert_state WHERE node_uuid=? AND config_epoch=?", id, epoch).Scan(&raw)
+	if err == sql.ErrNoRows {
+		return states, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var state TelegramAlertState
+	if err := json.Unmarshal([]byte(raw), &state); err != nil {
+		return nil, err
+	}
+	states[id] = state
+	return states, nil
 }

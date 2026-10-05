@@ -8,6 +8,32 @@ let isAdmin = false;
 let ws = null;
 let wsHasData = false;
 let lastWSDataAt = 0;
+let lastDashboardUpdate = 0;
+let dashboardRevision = 0;
+let dashboardConnectionFailed = false;
+const pendingNodeForms = new WeakSet();
+
+function updateConnectionStatus() {
+  const status = document.getElementById('connectionStatus');
+  if (!status) return;
+  const stale = !lastDashboardUpdate || Date.now() - lastDashboardUpdate > 20000;
+  const last = lastDashboardUpdate ? ' · 最后更新 ' + new Date(lastDashboardUpdate).toLocaleTimeString() : '';
+  status.dataset.state = stale ? 'stale' : 'live';
+  const message = stale
+    ? (dashboardConnectionFailed ? '连接中断，数据已过期，正在重试' : lastDashboardUpdate ? '数据已过期，正在重新同步' : '正在连接并加载数据') + last
+    : (ws && ws.readyState === 1 && !dashboardConnectionFailed ? '实时数据已同步' : '实时连接重连中，使用备用同步') + last;
+  if (status.textContent !== message) status.textContent = message;
+  document.getElementById('nodeGrid').dataset.stale = String(stale);
+}
+
+function acceptNodeSnapshot(data) {
+  nodes = data.filter(node => !deletedNodeIDs.has(node.uuid));
+  dashboardRevision++;
+  lastDashboardUpdate = Date.now();
+  dashboardConnectionFailed = false;
+  updateConnectionStatus();
+  scheduleDashboard();
+}
 let pollTimer = null;
 let lastNodeMarkup = '';
 const nodeCardCache = new Map();
@@ -483,16 +509,17 @@ function hasFreshWSData() {
 
 async function fetchNodes(force = false) {
   if (document.hidden || (!force && hasFreshWSData())) return;
+  const revision = dashboardRevision;
   try {
     const res = await fetch('/api/nodes?view=dashboard', { cache: 'no-store' });
     if (!res.ok) throw new Error('无法读取节点列表');
     const data = await res.json();
-    if (Array.isArray(data) && (force || !hasFreshWSData())) {
-      nodes = data.filter(node => !deletedNodeIDs.has(node.uuid));
-      scheduleDashboard();
+    if (Array.isArray(data) && revision === dashboardRevision && (force || !hasFreshWSData())) {
+      acceptNodeSnapshot(data);
     }
   } catch (e) {
     console.error('Failed to fetch nodes:', e);
+    if (!hasFreshWSData()) { dashboardConnectionFailed = true; updateConnectionStatus(); }
   }
 }
 
@@ -683,8 +710,7 @@ function connectWebSocket() {
       if (Array.isArray(msg.nodes)) {
         wsHasData = true;
         lastWSDataAt = Date.now();
-        nodes = msg.nodes.filter(node => !deletedNodeIDs.has(node.uuid));
-        scheduleDashboard();
+        acceptNodeSnapshot(msg.nodes);
       }
     } catch (e) {
       console.error('WS parse error:', e);
@@ -694,6 +720,9 @@ function connectWebSocket() {
   ws.onclose = () => {
     wsHasData = false;
     lastWSDataAt = 0;
+    dashboardConnectionFailed = true;
+    updateConnectionStatus();
+    void fetchNodes(true);
     console.warn('WebSocket disconnected, reconnecting in 3s...');
     setTimeout(connectWebSocket, 3000);
   };
@@ -743,6 +772,7 @@ async function deleteNodeAndRefresh(uuid) {
       throw new Error(data.error || '删除失败');
     }
     deletedNodeIDs.add(uuid);
+    dashboardRevision++;
     nodes = nodes.filter(node => node.uuid !== uuid);
     if (document.getElementById('editNodeUUID').value === uuid) closeModal('editNodeModal');
     if (currentPingNodeUUID === uuid) closeModal('pingChartModal');
@@ -1008,6 +1038,8 @@ if (addNodeBtn) addNodeBtn.addEventListener('click', () => {
 
 document.getElementById('addNodeForm').addEventListener('submit', async (e) => {
   e.preventDefault();
+  const form = e.currentTarget;
+  if (pendingNodeForms.has(form)) return;
   const name = document.getElementById('newNodeName').value;
   const region = document.getElementById('newNodeRegion').value;
   const trafficLimitGB = parseFloat(document.getElementById('newNodeTrafficLimit').value) || 0;
@@ -1015,6 +1047,9 @@ document.getElementById('addNodeForm').addEventListener('submit', async (e) => {
   const initialUsedGB = parseFloat(document.getElementById('newNodeInitialUsed').value) || 0;
   const token = getAdminToken();
 
+  const submit = form.querySelector('button[type="submit"]');
+  pendingNodeForms.add(form);
+  if (submit) submit.disabled = true;
   try {
     const res = await fetch('/api/admin/nodes', {
       method: 'POST',
@@ -1035,13 +1070,16 @@ document.getElementById('addNodeForm').addEventListener('submit', async (e) => {
     const data = await res.json();
     if (data.node) {
       closeModal('addNodeModal');
-      fetchNodes();
+      void fetchNodes(true);
       showGuide(data.node.uuid);
     } else {
       alert('创建失败: ' + (data.error || '未知错误'));
     }
   } catch (e) {
     alert('请求失败: ' + e.message);
+  } finally {
+    pendingNodeForms.delete(form);
+    if (submit) submit.disabled = false;
   }
 });
 
@@ -1083,6 +1121,8 @@ document.getElementById('editNodeGuideBtn').addEventListener('click', () => {
 
 document.getElementById('editNodeForm').addEventListener('submit', async (e) => {
   e.preventDefault();
+  const form = e.currentTarget;
+  if (pendingNodeForms.has(form)) return;
   const uuid = document.getElementById('editNodeUUID').value;
   const name = document.getElementById('editNodeName').value;
   const group = nodes.find(node => node.uuid === uuid)?.group || ''; // Preserve legacy metadata when editing.
@@ -1097,6 +1137,9 @@ document.getElementById('editNodeForm').addEventListener('submit', async (e) => 
   }
   const token = getAdminToken();
 
+  const submit = form.querySelector('button[type="submit"]');
+  pendingNodeForms.add(form);
+  if (submit) submit.disabled = true;
   try {
     const res = await fetch(`/api/admin/nodes/${uuid}`, {
       method: 'PUT',
@@ -1117,13 +1160,16 @@ document.getElementById('editNodeForm').addEventListener('submit', async (e) => 
     });
     if (res.ok) {
       closeModal('editNodeModal');
-      fetchNodes();
+      void fetchNodes(true);
     } else {
       const data = await res.json().catch(() => ({}));
       alert('修改失败: ' + (data.error || '未知错误'));
     }
   } catch (e) {
     alert('请求失败: ' + e.message);
+  } finally {
+    pendingNodeForms.delete(form);
+    if (submit) submit.disabled = false;
   }
 });
 
@@ -1741,6 +1787,8 @@ document.addEventListener('click', (e) => {
 });
 
 // Initialize
+updateConnectionStatus();
+setInterval(updateConnectionStatus, 1000);
 resetPasswordFields();
 fetchNodes();
 connectWebSocket();

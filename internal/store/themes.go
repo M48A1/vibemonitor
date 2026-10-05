@@ -148,8 +148,6 @@ func (s *Store) ImportTheme(data []byte) (Theme, error) {
 	}
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	var count, exists int
 	if err = s.sdb.db.QueryRow("SELECT count(*),count(CASE WHEN id=? THEN 1 END) FROM site_themes", t.ID).Scan(&count, &exists); err != nil {
 		return t, err
@@ -163,8 +161,6 @@ func (s *Store) ImportTheme(data []byte) (Theme, error) {
 func (s *Store) SelectTheme(id string) error {
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	if !isBuiltinTheme(id) {
 		var n int
 		if err := s.sdb.db.QueryRow("SELECT count(*) FROM site_themes WHERE id=?", id).Scan(&n); err != nil {
@@ -174,6 +170,8 @@ func (s *Store) SelectTheme(id string) error {
 			return errors.New("主题不存在")
 		}
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	next := s.config
 	next.SiteTheme = id
 	return s.commitConfigLocked(next)
@@ -184,8 +182,9 @@ func (s *Store) DeleteTheme(id string) error {
 	}
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	next := s.config
+	s.mu.RUnlock()
 	tx, err := s.sdb.db.Begin()
 	if err != nil {
 		return err
@@ -202,7 +201,6 @@ func (s *Store) DeleteTheme(id string) error {
 	if n == 0 {
 		return errors.New("主题不存在")
 	}
-	next := s.config
 	if next.SiteTheme == id {
 		next.SiteTheme = DefaultTheme
 		writer := &sqliteDB{tx: tx}
@@ -213,7 +211,9 @@ func (s *Store) DeleteTheme(id string) error {
 	if err = tx.Commit(); err != nil {
 		return err
 	}
+	s.mu.Lock()
 	s.config = next
 	s.notifyUpdate()
+	s.mu.Unlock()
 	return nil
 }

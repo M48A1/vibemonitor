@@ -540,10 +540,6 @@ func verifyAdminPasswordHash(hash, pwd string) bool {
 }
 
 func (s *Store) SetAdminPassword(newPwd string) error {
-	s.persistMu.Lock()
-	defer s.persistMu.Unlock()
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	if newPwd == "" {
 		return errors.New("admin password cannot be empty")
 	}
@@ -551,13 +547,13 @@ func (s *Store) SetAdminPassword(newPwd string) error {
 	if err != nil {
 		return err
 	}
-	previous := s.config
-	s.config.AdminPassword = hashed
-	if err := s.saveLocked(); err != nil {
-		s.config = previous
-		return err
-	}
-	return nil
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	next := s.config
+	next.AdminPassword = hashed
+	return s.commitConfigLocked(next)
 }
 
 func (s *Store) GetConfig() Config {
@@ -850,14 +846,21 @@ func (s *Store) CreateNodeWithOptions(opts NodeOptions) (*Node, error) {
 	}
 
 	s.pruneNodePingLocked(node)
-	s.nodes[uuid] = node
-	s.tokenIndex[token] = uuid
-
-	if err := s.saveLocked(); err != nil {
-		delete(s.nodes, uuid)
-		delete(s.tokenIndex, token)
+	snapshot := cloneNodesForSave(s.nodes)
+	snapshot[uuid] = node
+	config := s.config
+	s.mu.Unlock()
+	var err error
+	if s.sdb != nil {
+		err = s.sdb.saveSnapshot(config, snapshot)
+	}
+	s.mu.Lock()
+	if err != nil {
 		return nil, err
 	}
+	s.nodes[uuid] = node
+	s.tokenIndex[token] = uuid
+	s.dirty = true
 	s.notifyUpdate()
 	copy := *node
 	return &copy, nil
@@ -899,12 +902,41 @@ func (s *Store) UpdateNodeWithOptions(uuid string, opts NodeOptions) error {
 	if !ok {
 		return errors.New("node not found")
 	}
-	previous := *n
+	changedAt := time.Now()
+	priorUsage, priorCycle := n.CurrentCycleUsed, n.CycleStart
+	snapshot := cloneNodesForSave(s.nodes)
+	s.applyNodeOptionsLocked(snapshot[uuid], opts, cycleUsedBytes, changedAt)
+	config := s.config
+	s.mu.Unlock()
+	var err error
+	if s.sdb != nil {
+		err = s.sdb.saveSnapshot(config, snapshot)
+	}
+	s.mu.Lock()
+	if err != nil {
+		return err
+	}
+	// Reapply metadata to the latest live node instead of overwriting reports,
+	// traffic counters or history received during the transaction.
+	delta := max(int64(0), n.CurrentCycleUsed-priorUsage)
+	if !n.CycleStart.Equal(priorCycle) {
+		delta = n.CurrentCycleUsed
+	}
+	s.applyNodeOptionsLocked(n, opts, cycleUsedBytes, time.Now())
+	if opts.CycleUsedGB != nil {
+		n.CurrentCycleUsed = delta
+	}
+	s.dirty = true
+	s.notifyUpdate()
+	return nil
+}
+
+func (s *Store) applyNodeOptionsLocked(n *Node, opts NodeOptions, cycleUsedBytes int64, changedAt time.Time) {
 	if opts.Profile != nil {
 		n.Profile = opts.Profile
 		s.pruneNodePingLocked(n)
 	}
-	n.checkCycleRollover(time.Now())
+	n.checkCycleRollover(changedAt)
 	if opts.Name != "" {
 		n.Name = opts.Name
 	}
@@ -923,7 +955,7 @@ func (s *Store) UpdateNodeWithOptions(uuid string, opts NodeOptions) error {
 	if opts.ResetDay > 0 && opts.ResetDay <= 31 {
 		n.ResetDay = opts.ResetDay
 		if n.ResetDay > 0 {
-			n.CycleStart, _ = GetBillingCycleRange(n.ResetDay, time.Now())
+			n.CycleStart, _ = GetBillingCycleRange(n.ResetDay, changedAt)
 		}
 	}
 	if opts.InitialUsedGB >= 0 {
@@ -932,16 +964,10 @@ func (s *Store) UpdateNodeWithOptions(uuid string, opts NodeOptions) error {
 	if opts.CycleUsedGB != nil {
 		n.InitialUsed = cycleUsedBytes
 		n.CurrentCycleUsed = 0
-		correctedAt := time.Now().UTC()
+		correctedAt := changedAt.UTC()
 		n.TrafficManualAt = &correctedAt
 	}
 
-	if err := s.saveLocked(); err != nil {
-		*n = previous
-		return err
-	}
-	s.notifyUpdate()
-	return nil
 }
 
 func (s *Store) DeleteNode(uuid string) error {

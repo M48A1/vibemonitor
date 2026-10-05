@@ -28,13 +28,13 @@ func (s *Store) SaveSiteIcon(data []byte, kind string) (string, error) {
 	}
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
 	next := s.config
 	next.SiteIcon = ""
 	if len(data) > 0 {
 		next.SiteIcon = "/api/site-icon?v=" + GenerateToken(8)
 	}
+	s.mu.RUnlock()
 	tx, err := s.sdb.db.Begin()
 	if err != nil {
 		return "", err
@@ -55,8 +55,10 @@ func (s *Store) SaveSiteIcon(data []byte, kind string) (string, error) {
 	if err = tx.Commit(); err != nil {
 		return "", err
 	}
+	s.mu.Lock()
 	s.config = next
 	s.notifyUpdate()
+	s.mu.Unlock()
 	return next.SiteIcon, nil
 }
 
