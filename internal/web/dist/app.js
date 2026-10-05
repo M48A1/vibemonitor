@@ -1,6 +1,9 @@
 // VibeMonitor Modern Dashboard Script
 
 let nodes = [];
+// UUIDs are never reused. Ignore pre-deletion HTTP/WS snapshots for this page.
+const deletedNodeIDs = new Set();
+const deletingNodeIDs = new Set();
 let isAdmin = false;
 let ws = null;
 let wsHasData = false;
@@ -478,13 +481,14 @@ function hasFreshWSData() {
   return wsHasData && ws && ws.readyState === 1 && Date.now() - lastWSDataAt < 10000;
 }
 
-async function fetchNodes() {
-  if (document.hidden || hasFreshWSData()) return;
+async function fetchNodes(force = false) {
+  if (document.hidden || (!force && hasFreshWSData())) return;
   try {
-    const res = await fetch('/api/nodes?view=dashboard');
+    const res = await fetch('/api/nodes?view=dashboard', { cache: 'no-store' });
+    if (!res.ok) throw new Error('无法读取节点列表');
     const data = await res.json();
-    if (Array.isArray(data) && !hasFreshWSData()) {
-      nodes = data;
+    if (Array.isArray(data) && (force || !hasFreshWSData())) {
+      nodes = data.filter(node => !deletedNodeIDs.has(node.uuid));
       scheduleDashboard();
     }
   } catch (e) {
@@ -676,10 +680,10 @@ function connectWebSocket() {
       if (Object.hasOwn(msg, 'site_title') && Object.hasOwn(msg, 'site_icon')) {
         applyPublicSettings(msg);
       }
-      if (msg.nodes) {
+      if (Array.isArray(msg.nodes)) {
         wsHasData = true;
         lastWSDataAt = Date.now();
-        nodes = msg.nodes;
+        nodes = msg.nodes.filter(node => !deletedNodeIDs.has(node.uuid));
         scheduleDashboard();
       }
     } catch (e) {
@@ -727,21 +731,36 @@ window.copyGuideCommand = async function(id) {
   }
 };
 
+async function deleteNodeAndRefresh(uuid) {
+  if (deletingNodeIDs.has(uuid)) return;
+  deletingNodeIDs.add(uuid);
+  try {
+    const res = await fetch(`/api/admin/nodes/${encodeURIComponent(uuid)}`, {
+      method: 'DELETE', credentials: 'same-origin'
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || '删除失败');
+    }
+    deletedNodeIDs.add(uuid);
+    nodes = nodes.filter(node => node.uuid !== uuid);
+    if (document.getElementById('editNodeUUID').value === uuid) closeModal('editNodeModal');
+    if (currentPingNodeUUID === uuid) closeModal('pingChartModal');
+    if (currentResourceNodeUUID === uuid) closeModal('resourceChartModal');
+    scheduleDashboard();
+    // Update immediately, then reconcile even if the last WS report is fresh.
+    void fetchNodes(true);
+  } finally {
+    deletingNodeIDs.delete(uuid);
+  }
+}
+
 window.deleteNode = async function(uuid) {
   if (!confirm('确定要删除该监控节点吗？')) return;
-  const token = getAdminToken();
   try {
-    const res = await fetch(`/api/admin/nodes/${uuid}`, {
-      method: 'DELETE',
-      credentials: 'same-origin'
-    });
-    if (res.ok) {
-      fetchNodes();
-    } else {
-      alert('删除失败');
-    }
+    await deleteNodeAndRefresh(uuid);
   } catch (e) {
-    alert('请求失败: ' + e.message);
+    alert('删除失败: ' + e.message);
   }
 };
 
@@ -1110,22 +1129,16 @@ document.getElementById('editNodeForm').addEventListener('submit', async (e) => 
 
 document.getElementById('deleteNodeBtn').addEventListener('click', async () => {
   const uuid = document.getElementById('editNodeUUID').value;
-  if (!uuid) return;
+  if (!uuid || deletingNodeIDs.has(uuid)) return;
   if (!confirm('确定要删除该节点吗？此操作不可恢复。')) return;
-  const token = getAdminToken();
+  const button = document.getElementById('deleteNodeBtn');
+  button.disabled = true;
   try {
-    const res = await fetch(`/api/admin/nodes/${uuid}`, {
-      method: 'DELETE',
-      credentials: 'same-origin'
-    });
-    if (res.ok) {
-      closeModal('editNodeModal');
-      fetchNodes();
-    } else {
-      alert('删除失败');
-    }
+    await deleteNodeAndRefresh(uuid);
   } catch (e) {
-    alert('请求失败: ' + e.message);
+    alert('删除失败: ' + e.message);
+  } finally {
+    button.disabled = false;
   }
 });
 // --- Ping Fluctuation Chart State & Logic ---

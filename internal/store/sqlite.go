@@ -427,7 +427,20 @@ func (s *sqliteDB) deleteNode(uuid string) error {
 	if _, err := tx.Exec("DELETE FROM history_rollup_dirty WHERE node_uuid = ?", uuid); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if _, err := tx.Exec("DELETE FROM telegram_alert_state WHERE node_uuid = ?", uuid); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	delete(s.nodeCache, uuid)
+	delete(s.targetCache, uuid)
+	for key := range s.pingCache {
+		if strings.HasPrefix(key, uuid+"/") {
+			delete(s.pingCache, key)
+		}
+	}
+	return nil
 }
 
 func (s *sqliteDB) saveAllNodes(nodes map[string]*Node) (map[string]string, error) {

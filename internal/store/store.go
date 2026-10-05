@@ -947,21 +947,38 @@ func (s *Store) UpdateNodeWithOptions(uuid string, opts NodeOptions) error {
 func (s *Store) DeleteNode(uuid string) error {
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
-	s.mu.Lock()
-	defer s.mu.Unlock()
 
-	n, ok := s.nodes[uuid]
+	s.mu.RLock()
+	_, ok := s.nodes[uuid]
+	s.mu.RUnlock()
 	if !ok {
 		return errors.New("node not found")
 	}
+
+	// Serialize disk writers, but let dashboards and agent reports proceed
+	// while SQLite removes history. Publish the deletion only after commit;
+	// a failed transaction leaves the live node and its token intact.
+	if s.sdb != nil {
+		if err := s.sdb.deleteNode(uuid); err != nil {
+			return err
+		}
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := s.nodes[uuid] // Other node mutations also hold persistMu.
 	delete(s.tokenIndex, n.Token)
 	delete(s.nodes, uuid)
-
-	if err := s.saveLocked(); err != nil {
-		s.nodes[uuid] = n
-		s.tokenIndex[n.Token] = uuid
-		return err
+	// Reports may arrive while the transaction runs. Do not let their queued
+	// samples resurrect history on the next flush; preserve every other node.
+	kept := s.pendingSamples[:0]
+	for _, sample := range s.pendingSamples {
+		if sample.UUID != uuid {
+			kept = append(kept, sample)
+		}
 	}
+	clear(s.pendingSamples[len(kept):])
+	s.pendingSamples = kept
 	s.notifyUpdate()
 	return nil
 }

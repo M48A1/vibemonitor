@@ -25,3 +25,5 @@ integration_test.go
 /internal/web/dashboard-checks.cjs
 .DS_Store
 *.test
+
+!internal/store/delete_node_test.go
