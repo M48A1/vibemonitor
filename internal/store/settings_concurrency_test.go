@@ -8,11 +8,13 @@ import (
 )
 
 func TestSettingsWritesAllowLiveReports(t *testing.T) {
-	for _, kind := range []string{"create", "edit", "edit-traffic", "settings", "password", "icon", "theme"} {
+	for _, kind := range []string{"create", "edit", "edit-traffic", "reorder", "settings", "password", "icon", "theme"} {
 		t.Run(kind, func(t *testing.T) {
 			s := deletionStore(t)
 			mutate := func() error {
 				switch kind {
+				case "reorder":
+					return s.ReorderNodes(map[string]int{"survivor": 1, "deleted": 2})
 				case "create":
 					_, err := s.CreateNode("new", "", "")
 					return err

@@ -931,6 +931,51 @@ func (s *Store) UpdateNodeWithOptions(uuid string, opts NodeOptions) error {
 	return nil
 }
 
+// ReorderNodes batch-updates the display weight of every node whose UUID
+// appears in the order map.  Keys are node UUIDs, values are non-negative
+// weights.  Unknown UUIDs are silently skipped.
+func (s *Store) ReorderNodes(order map[string]int) error {
+	for _, w := range order {
+		if w < 0 {
+			return ErrInvalidNodeOrder
+		}
+	}
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	snapshot := cloneNodesForSave(s.nodes)
+	changed := false
+	for uuid, w := range order {
+		if n, ok := snapshot[uuid]; ok {
+			n.Weight = w
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	config := s.config
+	s.mu.Unlock()
+	var err error
+	if s.sdb != nil {
+		err = s.sdb.saveSnapshot(config, snapshot)
+	}
+	s.mu.Lock()
+	if err != nil {
+		return err
+	}
+	for uuid, w := range order {
+		if n, ok := s.nodes[uuid]; ok {
+			n.Weight = w
+		}
+	}
+	s.dirty = true
+	s.notifyUpdate()
+	return nil
+}
+
 func (s *Store) applyNodeOptionsLocked(n *Node, opts NodeOptions, cycleUsedBytes int64, changedAt time.Time) {
 	if opts.Profile != nil {
 		n.Profile = opts.Profile

@@ -21,6 +21,22 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
   w.initial = [{ uuid: 'a', name: 'original', online: true }, { uuid: 'b', name: 'other', online: true }];
   vm.runInContext('acceptNodeSnapshot(initial);updateGlobalStats();renderNodes();ws={readyState:1};wsHasData=true;lastWSDataAt=Date.now()', ctx);
   const fresh = () => vm.runInContext('wsHasData=true;lastWSDataAt=Date.now()', ctx);
+  // Reopening the sort dialog must move exactly one row per click.
+  vm.runInContext("acceptNodeSnapshot([{uuid:'a',name:'A'},{uuid:'b',name:'B'},{uuid:'c',name:'C'}]);openSortNodesModal();openSortNodesModal()", ctx);
+  const sortList = w.document.getElementById('sortNodesList');
+  sortList.querySelector('.sort-down-btn').click();
+  assert.deepEqual([...sortList.children].map(item => item.dataset.uuid), ['b', 'a', 'c']);
+  sortList.children[1].querySelector('.sort-up-btn').click();
+  assert.deepEqual([...sortList.children].map(item => item.dataset.uuid), ['a', 'b', 'c']);
+  let savedOrder;
+  w.fetch = async (url, options = {}) => {
+   if (options.method === 'PUT') savedOrder = JSON.parse(options.body).order;
+   return { ok: true, json: async () => w.initial };
+  };
+  w.document.getElementById('saveSortNodesBtn').click();
+  await settle(); await settle();
+  assert.deepEqual(savedOrder, [{uuid:'a',weight:1},{uuid:'b',weight:2},{uuid:'c',weight:3}]);
+  vm.runInContext('acceptNodeSnapshot(initial)', ctx);
   // Both forms reject duplicate submissions while a request is pending.
   for (const [id, method] of [['addNodeForm', 'POST'], ['editNodeForm', 'PUT']]) {
    let writes = 0, reads = 0, release;

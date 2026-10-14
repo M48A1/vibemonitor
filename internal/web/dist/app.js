@@ -1036,6 +1036,210 @@ if (addNodeBtn) addNodeBtn.addEventListener('click', () => {
   });
 });
 
+// --- Node Sort Modal ---
+const sortNodesBtn = document.getElementById('sortNodesBtn');
+if (sortNodesBtn) sortNodesBtn.addEventListener('click', () => {
+  nodeManagementMenu.open = false;
+  requireAdmin(() => {
+    openSortNodesModal();
+  });
+});
+
+function openSortNodesModal() {
+  const list = document.getElementById('sortNodesList');
+  document.getElementById('sortNodesStatus').textContent = '';
+  list.innerHTML = '';
+  if (nodes.length === 0) {
+    list.textContent = '暂无节点，请先通过"节点管理 → 新建节点"创建。';
+    openModal('sortNodesModal');
+    return;
+  }
+  const sorted = [...nodes].sort(compareNodes);
+  sorted.forEach((node, idx) => {
+    const item = document.createElement('div');
+    item.className = 'sort-node-item';
+    item.draggable = true;
+    item.dataset.uuid = node.uuid;
+    item.dataset.originalWeight = node.weight || 0;
+    const weight = Number(node.weight) || 0;
+    item.innerHTML = `<span class="sort-node-grip" title="拖动排序">⠿</span>`
+      + `<span class="sort-node-name">${escapeHtml(node.name || node.uuid)}</span>`
+      + `<span class="sort-node-order" title="当前序号">${weight}</span>`
+      + `<span class="sort-node-actions">`
+      + `<button type="button" class="sort-up-btn" title="上移" aria-label="上移">▲</button>`
+      + `<button type="button" class="sort-down-btn" title="下移" aria-label="下移">▼</button>`
+      + `</span>`;
+    list.appendChild(item);
+  });
+  updateSortButtons();
+  initSortDragDrop(list);
+  document.getElementById('sortNodesStatus').textContent = '';
+  openModal('sortNodesModal');
+}
+
+function updateSortButtons() {
+  const list = document.getElementById('sortNodesList');
+  const items = list.querySelectorAll('.sort-node-item');
+  items.forEach((item, i) => {
+    const upBtn = item.querySelector('.sort-up-btn');
+    const downBtn = item.querySelector('.sort-down-btn');
+    if (upBtn) upBtn.disabled = i === 0;
+    if (downBtn) downBtn.disabled = i === items.length - 1;
+  });
+}
+
+function updateSortOrderBadges() {
+  const items = document.getElementById('sortNodesList').querySelectorAll('.sort-node-item');
+  items.forEach((item, i) => {
+    const badge = item.querySelector('.sort-node-order');
+    if (badge) badge.textContent = String(i + 1);
+  });
+}
+
+function initSortDragDrop(list) {
+  if (list.dataset.sortInitialized) return;
+  list.dataset.sortInitialized = 'true';
+  let dragItem = null;
+
+  // Move up/down button clicks
+  list.addEventListener('click', (e) => {
+    const upBtn = e.target.closest('.sort-up-btn');
+    const downBtn = e.target.closest('.sort-down-btn');
+    if (!upBtn && !downBtn) return;
+    const item = e.target.closest('.sort-node-item');
+    if (!item) return;
+    if (upBtn && item.previousElementSibling) {
+      item.parentNode.insertBefore(item, item.previousElementSibling);
+    } else if (downBtn && item.nextElementSibling) {
+      item.parentNode.insertBefore(item.nextElementSibling, item);
+    }
+    updateSortButtons();
+    updateSortOrderBadges();
+  });
+
+  // Drag-and-drop
+  list.addEventListener('dragstart', (e) => {
+    dragItem = e.target.closest('.sort-node-item');
+    if (!dragItem) return;
+    dragItem.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', '');
+  });
+
+  list.addEventListener('dragend', () => {
+    if (dragItem) dragItem.classList.remove('dragging');
+    list.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+    dragItem = null;
+    updateSortButtons();
+    updateSortOrderBadges();
+  });
+
+  list.addEventListener('dragover', (e) => {
+    if (!dragItem) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const target = e.target.closest('.sort-node-item');
+    if (!target || target === dragItem) return;
+    list.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+    target.classList.add('drag-over');
+    const rect = target.getBoundingClientRect();
+    const midY = rect.top + rect.height / 2;
+    if (e.clientY < midY) {
+      list.insertBefore(dragItem, target);
+    } else {
+      list.insertBefore(dragItem, target.nextSibling);
+    }
+  });
+
+  list.addEventListener('dragleave', (e) => {
+    const target = e.target.closest('.sort-node-item');
+    if (target) target.classList.remove('drag-over');
+  });
+
+  list.addEventListener('drop', (e) => {
+    e.preventDefault();
+    list.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+  });
+
+  // Touch drag support for mobile
+  let touchItem = null;
+
+  list.addEventListener('touchstart', (e) => {
+    const grip = e.target.closest('.sort-node-grip');
+    if (!grip) return;
+    touchItem = grip.closest('.sort-node-item');
+    if (!touchItem) return;
+    touchItem.classList.add('dragging');
+  }, { passive: true });
+
+  list.addEventListener('touchmove', (e) => {
+    if (!touchItem) return;
+    e.preventDefault();
+    const touch = e.touches[0];
+    const items = [...list.querySelectorAll('.sort-node-item')];
+    for (const item of items) {
+      if (item === touchItem) continue;
+      const rect = item.getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+      if (touch.clientY < midY && item === touchItem.previousElementSibling) {
+        list.insertBefore(touchItem, item);
+        break;
+      } else if (touch.clientY > midY && item === touchItem.nextElementSibling) {
+        list.insertBefore(item, touchItem);
+        break;
+      }
+    }
+  }, { passive: false });
+
+  const finishTouchSort = () => {
+    if (touchItem) {
+      touchItem.classList.remove('dragging');
+      touchItem = null;
+      updateSortButtons();
+      updateSortOrderBadges();
+    }
+  };
+  list.addEventListener('touchend', finishTouchSort, { passive: true });
+  list.addEventListener('touchcancel', finishTouchSort, { passive: true });
+}
+
+document.getElementById('saveSortNodesBtn').addEventListener('click', async () => {
+  const items = document.getElementById('sortNodesList').querySelectorAll('.sort-node-item');
+  if (!items.length) return;
+  const btn = document.getElementById('saveSortNodesBtn');
+  const status = document.getElementById('sortNodesStatus');
+  btn.disabled = true;
+  status.textContent = '正在保存…';
+  status.style.color = '';
+  const order = [];
+  items.forEach((item, i) => {
+    order.push({ uuid: item.dataset.uuid, weight: i + 1 });
+  });
+  try {
+    const res = await fetch('/api/admin/nodes/reorder', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ order })
+    });
+    if (res.ok) {
+      status.textContent = '排序已保存';
+      status.style.color = 'var(--primary)';
+      void fetchNodes(true);
+      setTimeout(() => closeModal('sortNodesModal'), 600);
+    } else {
+      const data = await res.json().catch(() => ({}));
+      status.textContent = '保存失败: ' + (data.error || '未知错误');
+      status.style.color = 'var(--destructive)';
+    }
+  } catch (e) {
+    status.textContent = '请求失败: ' + e.message;
+    status.style.color = 'var(--destructive)';
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 document.getElementById('addNodeForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const form = e.currentTarget;

@@ -508,6 +508,36 @@ func (s *Server) Handler() http.Handler {
 		writeJSON(w, http.StatusOK, map[string]any{"status": "success"})
 	})
 
+	mux.HandleFunc("PUT /api/admin/nodes/reorder", func(w http.ResponseWriter, r *http.Request) {
+		if !s.checkAdmin(r) {
+			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
+			return
+		}
+		var req struct {
+			Order []struct {
+				UUID   string `json:"uuid"`
+				Weight int    `json:"weight"`
+			} `json:"order"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, jsonErrorStatus(err), map[string]any{"error": "invalid or oversized json"})
+			return
+		}
+		orderMap := make(map[string]int, len(req.Order))
+		for _, entry := range req.Order {
+			orderMap[entry.UUID] = entry.Weight
+		}
+		if err := s.store.ReorderNodes(orderMap); err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, store.ErrInvalidNodeOrder) {
+				status = http.StatusBadRequest
+			}
+			writeJSON(w, status, map[string]any{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"status": "success"})
+	})
+
 	// Settings & Icon Upload
 	mux.HandleFunc("POST /api/admin/upload-icon", func(w http.ResponseWriter, r *http.Request) {
 		if !s.checkAdmin(r) {

@@ -25,6 +25,7 @@
               <div class="node-management-menu">
                 <button type="button" class="site-menu-item site-menu-level-2" id="editExistingNodeBtn">编辑现有节点</button>
                 <button type="button" class="site-menu-item site-menu-level-2" id="addNodeBtn">新建节点</button>
+                <button type="button" class="site-menu-item site-menu-level-2" id="sortNodesBtn">节点排序</button>
               </div>
             </details>
             <button type="button" class="site-menu-item site-menu-level-1" id="externalSettingsBtn">外部通信设置</button>
@@ -190,6 +191,23 @@
       <div style="display: flex; justify-content: flex-end; margin-top: 14px;">
         <button type="button" class="btn" id="closeSelectNodeBottomBtn" data-close-modal="selectNodeModal">关闭</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Sort Nodes Modal -->
+  <div class="modal-overlay" id="sortNodesModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 class="modal-title">节点排序</h3>
+        <button type="button" class="modal-close" id="closeSortNodesModalBtn" data-close-modal="sortNodesModal" aria-label="关闭">&times;</button>
+      </div>
+      <p class="logo-upload-hint">拖动节点调整显示顺序，或使用上下按钮微调。保存后按当前列表顺序显示节点。</p>
+      <div class="sort-nodes-list" id="sortNodesList"></div>
+      <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px;">
+        <button type="button" class="btn" id="cancelSortNodesBtn" data-close-modal="sortNodesModal">取消</button>
+        <button type="button" class="btn btn-primary" id="saveSortNodesBtn">保存排序</button>
+      </div>
+      <p id="sortNodesStatus" role="status" aria-live="polite" style="margin-top: 8px; font-size: 13px;"></p>
     </div>
   </div>
 
