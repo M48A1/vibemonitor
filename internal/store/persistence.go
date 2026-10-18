@@ -112,6 +112,14 @@ func (s *Store) ackHistoryLocked(count int) {
 // Reports, basic info and profiles are replaced as whole values by the store.
 func cloneNodeForSave(n *Node) *Node {
 	c := *n
+	c.DailyTraffic = make(map[string]int64, len(n.DailyTraffic))
+	for day, value := range n.DailyTraffic {
+		c.DailyTraffic[day] = value
+	}
+	c.DailyOnline = make(map[string]int64, len(n.DailyOnline))
+	for day, value := range n.DailyOnline {
+		c.DailyOnline[day] = value
+	}
 	c.History = append([]HistoryPoint(nil), n.History...)
 	c.PingObserved = make(map[string]PingObservation, len(n.PingObserved))
 	for k, v := range n.PingObserved {

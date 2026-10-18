@@ -39,6 +39,35 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
   w.document.getElementById('resourceRange31d').click(); await settle(); await settle();
   assert.equal(diskQuery.searchParams.get('range'), '31d');
   w.document.getElementById('closeResourceChartModalBtn').click();
+  // Billing traffic has its own cycle ranges and daily bars in every theme.
+  w.fetch = async url => {
+   diskQuery = new URL(url, 'http://localhost');
+   return {ok:true,json:async()=>({start_date:'2026-10-15',end_date:'2026-11-14',reset_day:15,timezone:'UTC +00:00',total:3072,
+    days:[{date:'2026-10-15',bytes:1024,status:'online',complete:true},{date:'2026-10-16',bytes:2048,status:'partial',complete:true},{date:'2026-10-17',bytes:0,status:'offline',complete:true}]})};
+  };
+  const trafficButton = w.document.querySelector('[data-action="resource"][data-metric="traffic"]');
+  assert(trafficButton, theme + ' missing traffic history button');
+  trafficButton.click(); await settle(); await settle();
+  assert.equal(diskQuery.pathname, '/api/nodes/traffic-history');
+  assert.equal(diskQuery.searchParams.get('range'), 'current');
+  assert.equal(w.document.getElementById('resourceTimeRanges').style.display, 'none');
+  assert.notEqual(w.document.getElementById('trafficTimeRanges').style.display, 'none');
+  assert(w.document.getElementById('resourceModalTitle').textContent.includes('日流量汇总'));
+  assert(w.document.getElementById('resourceModalSubtitle').textContent.includes('2026-10-15 至 2026-11-14'));
+  assert.equal(w.document.querySelectorAll('#resourceChartSvg .traffic-day').length, 3);
+  assert(w.document.getElementById('resourceChartSvg').textContent.includes('0 B'));
+  assert.equal(w.document.querySelector('.traffic-day[data-status=online] rect').getAttribute('fill'), '#238364');
+  assert.equal(w.document.querySelector('.traffic-day[data-status=offline] rect').getAttribute('fill'), '#dc4444');
+  assert.equal(w.document.querySelector('.traffic-day[data-status=partial] rect').getAttribute('fill'), '#d49120');
+  assert.equal(w.document.getElementById('resourceStatCurrent').textContent, w.formatBytes(3072));
+  for (const range of ['previous','three']) {
+   w.document.getElementById(`trafficRange${range}`).click(); await settle(); await settle();
+   assert.equal(diskQuery.searchParams.get('range'),range);
+  }
+  diskButton.click(); await settle(); await settle();
+  assert.equal(w.document.getElementById('trafficTimeRanges').style.display, 'none');
+  assert.equal(w.document.getElementById('resourceChartSvg').style.minWidth, '');
+  w.document.getElementById('closeResourceChartModalBtn').click();
   const fresh = () => vm.runInContext('wsHasData=true;lastWSDataAt=Date.now()', ctx);
   // Reopening the sort dialog must move exactly one row per click.
   vm.runInContext("acceptNodeSnapshot([{uuid:'a',name:'A'},{uuid:'b',name:'B'},{uuid:'c',name:'C'}]);openSortNodesModal();openSortNodesModal()", ctx);
@@ -106,7 +135,7 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
   vm.runInContext("acceptNodeSnapshot([{uuid:'brand-new',name:'new'}]);renderNodes()", ctx);
   assert.equal(w.document.querySelectorAll('#nodeGrid article').length, 1);
   assert.equal(alerts.length, 2);
-  console.log(theme + ': form locks, retries, immediate refresh, stale response protection, connection status, deletion, disk history PASS');
+  console.log(theme + ': form locks, retries, immediate refresh, stale response protection, connection status, deletion, disk history, daily traffic PASS');
   dom.window.close();
  }
 })().catch(error => { console.error(error); process.exit(1); });

@@ -101,6 +101,12 @@ type Node struct {
 	TrafficBaselineSet bool       `json:"traffic_baseline_set"`
 	LastTotalDown      int64      `json:"last_total_down"` // Last reported raw totalDown
 
+	// Daily measured traffic, persisted with the counter baseline.
+	DailyTraffic       map[string]int64 `json:"daily_traffic,omitempty"`
+	DailyOnline        map[string]int64 `json:"daily_online_ns,omitempty"`
+	OnlineHistorySince time.Time        `json:"online_history_since,omitempty"`
+	DailyOnlineUntil   time.Time        `json:"daily_online_until,omitempty"`
+
 	// Computed dynamic fields
 	CycleTotalUsed int64   `json:"cycle_total_used"` // InitialUsed + CurrentCycleUsed
 	CycleRemaining int64   `json:"cycle_remaining"`  // TrafficLimit - CycleTotalUsed
@@ -416,6 +422,16 @@ func (s *Store) load(defaultPassword, username string) error {
 		if n == nil {
 			continue
 		}
+		if n.OnlineHistorySince.IsZero() {
+			n.OnlineHistorySince = time.Now().UTC()
+		}
+		if !n.CycleStart.IsZero() {
+			_, offset := n.CycleStart.Zone()
+			if offset != 8*3600 {
+				year, month, day := n.CycleStart.Date()
+				n.CycleStart = time.Date(year, month, day, 0, 0, 0, 0, trafficLocation)
+			}
+		}
 		if n.Profile == nil {
 			targets := append([]protocol.PingTarget{}, s.config.PingTargets...)
 			for i := range targets {
@@ -587,6 +603,7 @@ func (s *Store) UpdateConfig(title, autoKey string, pingTargets []protocol.PingT
 // For example, if resetDay is 15 and now is Sep 4, cycle is Aug 15 00:00 to Sep 15 00:00.
 // If resetDay is 15 and now is Sep 20, cycle is Sep 15 00:00 to Oct 15 00:00.
 func GetBillingCycleRange(resetDay int, now time.Time) (start, end time.Time) {
+	now = now.In(trafficLocation)
 	if resetDay < 1 {
 		resetDay = 1
 	} else if resetDay > 31 {
@@ -643,7 +660,7 @@ func (n *Node) checkCycleRollover(now time.Time) {
 	}
 }
 
-func (n *Node) calculateDynamicFields(now time.Time) {
+func (n *Node) offlineThreshold() time.Duration {
 	threshold := OfflineThreshold
 	var interval float64
 	if n.BasicInfo != nil {
@@ -657,7 +674,11 @@ func (n *Node) calculateDynamicFields(now time.Time) {
 			threshold = adaptive
 		}
 	}
-	n.Online = !n.LastSeen.IsZero() && now.Sub(n.LastSeen) < threshold
+	return threshold
+}
+
+func (n *Node) calculateDynamicFields(now time.Time) {
+	n.Online = !n.LastSeen.IsZero() && now.Sub(n.LastSeen) < n.offlineThreshold()
 
 	if n.ResetDay > 0 {
 		n.checkCycleRollover(now)
@@ -694,6 +715,8 @@ func (s *Store) getNodes(compact bool) []*Node {
 		} else {
 			nodeCopy.History = append([]HistoryPoint(nil), n.History...)
 		}
+		nodeCopy.DailyTraffic = nil
+		nodeCopy.DailyOnline = nil
 		nodeCopy.Token = "" // Credentials are only available through authenticated management.
 		if n.Profile != nil {
 			profile := *n.Profile
@@ -829,20 +852,21 @@ func (s *Store) CreateNodeWithOptions(opts NodeOptions) (*Node, error) {
 	cycleStart, _ := GetBillingCycleRange(opts.ResetDay, now)
 
 	node := &Node{
-		Profile:          opts.Profile,
-		UUID:             uuid,
-		Token:            token,
-		Name:             opts.Name,
-		Group:            opts.Group,
-		Region:           opts.Region,
-		Weight:           opts.Weight,
-		TrafficLimit:     trafficLimitBytes,
-		ResetDay:         opts.ResetDay,
-		InitialUsed:      initialUsedBytes,
-		CurrentCycleUsed: 0,
-		CycleStart:       cycleStart,
-		CreatedAt:        time.Now().UTC(),
-		History:          make([]HistoryPoint, 0, MaxHistoryPoints),
+		Profile:            opts.Profile,
+		UUID:               uuid,
+		Token:              token,
+		Name:               opts.Name,
+		Group:              opts.Group,
+		Region:             opts.Region,
+		Weight:             opts.Weight,
+		TrafficLimit:       trafficLimitBytes,
+		ResetDay:           opts.ResetDay,
+		InitialUsed:        initialUsedBytes,
+		CurrentCycleUsed:   0,
+		CycleStart:         cycleStart,
+		CreatedAt:          now.UTC(),
+		OnlineHistorySince: now.UTC(),
+		History:            make([]HistoryPoint, 0, MaxHistoryPoints),
 	}
 
 	s.pruneNodePingLocked(node)
@@ -1067,6 +1091,7 @@ func (s *Store) IngestBasicInfo(token string, info protocol.BasicInfo) (*Node, e
 	node.BasicInfo = &info
 	s.dirty = true
 	node.LastSeen = time.Now().UTC()
+	node.recordDailyOnline(node.LastSeen)
 	node.Online = true
 
 	s.notifyUpdate()
@@ -1137,6 +1162,7 @@ func (s *Store) ingestReportAt(token string, report protocol.Report, now time.Ti
 	node.LastReport = &report
 	s.dirty = true
 	node.LastSeen = receivedAt
+	node.recordDailyOnline(receivedAt)
 	node.Online = true
 
 	// Traffic delta accounting for billing cycle
@@ -1159,6 +1185,9 @@ func (s *Store) ingestReportAt(token string, report protocol.Report, now time.Ti
 				// Compatibility with probes that only send aggregate counters.
 				delta = networkCounterDelta(curUp, node.LastTotalUp) + networkCounterDelta(curDown, node.LastTotalDown)
 			}
+		}
+		if node.TrafficBaselineSet {
+			node.recordDailyTraffic(delta, previousAt, currentAt)
 		}
 		if delta > 0 {
 			start := node.CycleStart

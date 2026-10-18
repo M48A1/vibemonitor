@@ -236,6 +236,24 @@ func (s *Server) Handler() http.Handler {
 		writeJSON(w, http.StatusOK, resp)
 	})
 
+	mux.HandleFunc("GET /api/nodes/traffic-history", func(w http.ResponseWriter, r *http.Request) {
+		uuid, span := r.URL.Query().Get("uuid"), r.URL.Query().Get("range")
+		if uuid == "" || (span != "current" && span != "previous" && span != "three") {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid traffic history parameters"})
+			return
+		}
+		response, err := s.store.GetTrafficHistory(uuid, span)
+		if err != nil {
+			if errors.Is(err, store.ErrNodeNotFound) {
+				writeJSON(w, http.StatusNotFound, map[string]string{"error": "node not found"})
+			} else {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load traffic history"})
+			}
+			return
+		}
+		writeJSON(w, http.StatusOK, response)
+	})
+
 	// 3. WebSocket Clients endpoint
 	mux.HandleFunc("GET /api/clients", s.wsHub.HandleWS)
 

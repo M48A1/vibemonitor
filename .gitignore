@@ -38,3 +38,7 @@ integration_test.go
 node_modules/
 
 !internal/store/disk_history_test.go
+
+!internal/store/traffic_history_test.go
+
+!internal/server/traffic_history_test.go

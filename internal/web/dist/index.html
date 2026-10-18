@@ -458,12 +458,24 @@
       </div>
       <div class="resource-modal-body">
         <div class="resource-range-row">
-          <div class="time-range-group">
+          <div class="time-range-group" id="resourceTimeRanges">
             <button type="button" class="range-btn active" id="resourceRange1h">最近一小时</button>
             <button type="button" class="range-btn" id="resourceRange24h">最近24小时</button>
             <button type="button" class="range-btn" id="resourceRange7d">最近7天</button>
             <button type="button" class="range-btn" id="resourceRange31d">最近31天</button>
           </div>
+        </div>
+        <div class="time-range-group" id="trafficTimeRanges" style="display:none; margin-bottom:12px">
+          <button type="button" class="range-btn active" id="trafficRangecurrent">当前周期内</button>
+          <button type="button" class="range-btn" id="trafficRangeprevious">上一个周期内</button>
+          <button type="button" class="range-btn" id="trafficRangethree">三个周期内</button>
+        </div>
+        <div id="trafficLegend" style="display:none; flex-wrap:wrap; gap:12px; margin-bottom:12px; font-size:12px">
+          <span><span style="color:#238364">■</span> 全天在线</span>
+          <span><span style="color:#dc4444">■</span> 全天离线</span>
+          <span><span style="color:#d49120">■</span> 部分时段离线</span>
+          <span><span style="color:#8792a2">■</span> 状态记录不完整</span>
+          <span><span style="color:#b7bec8">■</span> 尚未到达</span>
         </div>
         <div class="ping-stats-grid resource-stats-grid">
           <div class="ping-stat-card"><div class="ping-stat-label" id="resourceLabelCurrent">最新记录</div><div class="ping-stat-value" id="resourceStatCurrent">--</div></div>
@@ -475,7 +487,7 @@
           <svg id="resourceChartSvg" viewBox="0 0 700 240" preserveAspectRatio="none" role="img" aria-label="资源占用历史曲线"></svg>
           <div class="chart-tooltip" id="resourceChartTooltip" style="display: none;"></div>
         </div>
-        <div class="resource-chart-footer"><span id="resourceChartTimeStart">--</span><span>空白处表示未收到采样</span><span id="resourceChartTimeEnd">现在</span></div>
+        <div class="resource-chart-footer"><span id="resourceChartTimeStart">--</span><span id="resourceChartHint">空白处表示未收到采样</span><span id="resourceChartTimeEnd">现在</span></div>
         <div class="resource-modal-actions"><button type="button" class="btn" id="closeResourceChartBottomBtn" data-close-modal="resourceChartModal">关闭</button></div>
       </div>
     </div>

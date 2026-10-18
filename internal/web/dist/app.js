@@ -241,6 +241,10 @@ guideCopyBtns.forEach(item => {
   if (btn) btn.addEventListener('click', () => switchResourceRange(range));
 });
 
+['current', 'previous', 'three'].forEach(range => {
+  document.getElementById(`trafficRange${range}`).addEventListener('click', () => switchResourceRange(range));
+});
+
 // Global event delegation (backdrop click, Escape key, [data-close-modal])
 if (typeof document.addEventListener === 'function') {
   document.addEventListener('click', (e) => {
@@ -1819,11 +1823,11 @@ function cancelResourceHistory() {
 }
 
 window.openResourceChart = function(uuid, nodeName, metric) {
-  if (!['cpu', 'memory', 'disk', 'network'].includes(metric)) return;
+  if (!['cpu', 'memory', 'disk', 'network', 'traffic'].includes(metric)) return;
   currentResourceNodeUUID = uuid;
   currentResourceMetric = metric;
-  currentResourceRange = '1h';
-  const label = metric === 'cpu' ? 'CPU' : metric === 'memory' ? '内存' : metric === 'disk' ? '硬盘' : '实时速率';
+  currentResourceRange = metric === 'traffic' ? 'current' : '1h';
+  const label = metric === 'cpu' ? 'CPU' : metric === 'memory' ? '内存' : metric === 'disk' ? '硬盘' : metric === 'traffic' ? '周期流量' : '实时速率';
   document.getElementById('resourceModalTitle').textContent = `${nodeName} ${label}${metric === 'network' ? '历史曲线' : '占用曲线'}`;
   document.getElementById('resourceModalSubtitle').textContent = `每 60 秒记录 · 保留 90 天 · ${metric === 'network' ? '上行＋下行（Bytes/s）' : `${label}占用率`}`;
   document.getElementById('resourceChartSvg').setAttribute('aria-label', `${label}历史曲线`);
@@ -1832,12 +1836,26 @@ window.openResourceChart = function(uuid, nodeName, metric) {
     : {Current: '最新记录', Avg: '平均占用', Min: '最低占用', Max: '最高占用'})) {
     document.getElementById(`resourceLabel${name}`).textContent = labelText;
   }
+  const traffic = metric === 'traffic';
+  document.getElementById('resourceTimeRanges').style.display = traffic ? 'none' : '';
+  document.getElementById('trafficTimeRanges').style.display = traffic ? '' : 'none';
+  document.getElementById('trafficLegend').style.display = traffic ? 'flex' : 'none';
+  document.getElementById('resourceChartHint').textContent = traffic ? '未采集流量按 0 计算 · 今日统计中 · 可横向滑动查看每日流量' : '空白处表示未收到采样';
+  if (traffic) {
+    document.getElementById('resourceModalTitle').textContent = `${nodeName} 日流量汇总`;
+    document.getElementById('resourceModalSubtitle').textContent = '按节点流量重置周期统计';
+    document.getElementById('resourceChartSvg').setAttribute('aria-label', '每日流量柱形图');
+    for (const [key, text] of Object.entries({Current:'周期累计流量',Avg:'已过日期日均',Min:'最低日流量',Max:'最高日流量'})) {
+      document.getElementById(`resourceLabel${key}`).textContent = text;
+    }
+  }
   updateResourceRangeButtons();
   openModal('resourceChartModal');
   loadResourceHistory();
 };
 
 function updateResourceRangeButtons() {
+  ['current', 'previous', 'three'].forEach(range => document.getElementById(`trafficRange${range}`).classList.toggle('active', range === currentResourceRange));
   ['1h', '24h', '7d', '31d'].forEach(range => {
     const button = document.getElementById(`resourceRange${range}`);
     button.classList.toggle('active', range === currentResourceRange);
@@ -1845,7 +1863,8 @@ function updateResourceRangeButtons() {
 }
 
 window.switchResourceRange = function(range) {
-  if (!['1h', '24h', '7d', '31d'].includes(range)) return;
+  const allowed = currentResourceMetric === 'traffic' ? ['current', 'previous', 'three'] : ['1h', '24h', '7d', '31d'];
+  if (!allowed.includes(range)) return;
   currentResourceRange = range;
   updateResourceRangeButtons();
   loadResourceHistory();
@@ -1860,16 +1879,22 @@ async function loadResourceHistory() {
   if (!uuid) return;
   const controller = new AbortController();
   resourceChartController = controller;
+  const svg = document.getElementById('resourceChartSvg');
+  svg.style.minWidth = '';
+  svg.setAttribute('viewBox', '0 0 700 240');
+  svg.parentElement.style.overflowX = metric === 'traffic' ? 'auto' : '';
   showHistoryLoading('resourceChartSvg', 'resourceChartTooltip', 'resourceChartTimeStart', 'resourceChartTimeEnd');
   ['Current', 'Avg', 'Min', 'Max'].forEach(name => {
     document.getElementById(`resourceStat${name}`).textContent = '...';
   });
   try {
     const query = new URLSearchParams({uuid, metric, range});
-    const response = await fetch(`/api/nodes/resource-history?${query}`, {signal: controller.signal});
+    const endpoint = metric === 'traffic' ? 'traffic-history' : 'resource-history';
+    const response = await fetch(`/api/nodes/${endpoint}?${query}`, {signal: controller.signal});
     if (!response.ok) throw new Error('加载失败');
     const data = await response.json();
     if (request !== resourceChartRequest || controller.signal.aborted) return;
+    if (metric === 'traffic') { renderTrafficHistory(data); return; }
     const stats = data.stats || {};
     document.getElementById('resourceStatCurrent').textContent = stats.count > 0 ? formatResourceValue(metric, stats.current) : '--';
     document.getElementById('resourceStatAvg').textContent = stats.count > 0 ? formatResourceValue(metric, stats.avg) : '--';
@@ -1887,6 +1912,45 @@ async function loadResourceHistory() {
   } finally {
     if (resourceChartController === controller) resourceChartController = null;
   }
+}
+
+function renderTrafficHistory(data) {
+  const days = data.days || [];
+  const measured = days.filter(day => day.status !== 'future');
+  const values = measured.map(day => Math.max(0, Number(day.bytes) || 0));
+  const stats = {Current: data.total || 0, Avg: values.length ? (data.total || 0) / values.length : 0,
+    Min: values.length ? Math.min(...values) : 0, Max: values.length ? Math.max(...values) : 0};
+  for (const [key, value] of Object.entries(stats)) {
+    document.getElementById(`resourceStat${key}`).textContent = values.length ? formatBytes(value) : '--';
+  }
+  document.getElementById('resourceModalSubtitle').textContent = `${data.start_date} 至 ${data.end_date} · 每月 ${data.reset_day || 1} 日重置 · ${data.timezone} · 上行＋下行；不含手动补录和校正；跨日流量按时间估算`;
+  document.getElementById('resourceChartTimeStart').textContent = data.start_date;
+  document.getElementById('resourceChartTimeEnd').textContent = data.end_date;
+  const svg = document.getElementById('resourceChartSvg');
+  const width = Math.max(700, days.length * 62 + 100), height = 240;
+  const left = 80, top = 30, bottom = 195, plot = width-left-20;
+  const peak = Math.max(1, ...values);
+  const cell = plot / Math.max(1, days.length);
+  svg.style.minWidth = `${width}px`;
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  const grid = [0, .5, 1].map(f => {
+    const y = bottom - (bottom-top)*f;
+    return `<line x1="${left}" y1="${y}" x2="${width-20}" y2="${y}" stroke="currentColor" opacity=".15"/><text x="${left-8}" y="${y+4}" text-anchor="end" fill="currentColor" font-size="10">${formatBytes(peak*f)}</text>`;
+  }).join('');
+  svg.innerHTML = grid + days.map((day, index) => {
+    const value = Math.max(0, Number(day.bytes) || 0);
+    const barHeight = Math.max(3,value/peak*(bottom-top));
+    const states = {online:['#238364','全天在线'],offline:['#dc4444','全天离线'],partial:['#d49120','部分时段离线'],unknown:['#8792a2','状态记录不完整'],future:['#b7bec8','尚未到达']};
+    const [color, state] = states[day.status] || states.unknown;
+    const x = left + index*cell, center = x+cell/2, y = bottom-barHeight;
+    const label = formatBytes(value);
+    const statusText = !day.complete && day.status !== 'future' ? `${state.replace('全天', '今日')} · 统计中` : state;
+    const title = `${day.date} · ${label} (${value.toLocaleString()} B) · ${statusText}`;
+    return `<g class="traffic-day" data-status="${escapeHtml(day.status || 'unknown')}" tabindex="0" role="img" aria-label="${escapeHtml(title)}"><title>${escapeHtml(title)}</title>
+      <rect x="${x+5}" y="${y}" width="${Math.max(1,cell-10)}" height="${barHeight}" rx="3" fill="${color}" opacity=".85"/>
+      <text x="${center}" y="${y-7}" text-anchor="middle" fill="currentColor" font-size="9">${label}</text>
+      <text x="${center}" y="${bottom+20}" text-anchor="middle" fill="currentColor" font-size="10">${escapeHtml(day.date.slice(5))}</text></g>`;
+  }).join('');
 }
 
 function formatResourceValue(metric, value) {
