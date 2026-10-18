@@ -20,6 +20,25 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
   w.document.documentElement.dataset.siteTheme = theme;
   w.initial = [{ uuid: 'a', name: 'original', online: true }, { uuid: 'b', name: 'other', online: true }];
   vm.runInContext('acceptNodeSnapshot(initial);updateGlobalStats();renderNodes();ws={readyState:1};wsHasData=true;lastWSDataAt=Date.now()', ctx);
+  // Every theme exposes disk history through the shared resource modal.
+  let diskQuery;
+  w.fetch = async url => {
+   diskQuery = new URL(url, 'http://localhost');
+   const end = Math.floor(Date.now() / 1000);
+   return {ok: true, json: async () => ({start_time: end-3600, end_time: end, step_seconds: 60,
+    stats: {count: 2, current: 75, avg: 50, min: 25, max: 75}, samples: [{t: end-120,v:25},{t:end-60,v:75}]})};
+  };
+  const diskButton = w.document.querySelector('[data-action="resource"][data-metric="disk"]');
+  assert(diskButton, theme + ' missing disk history button');
+  diskButton.click(); await settle(); await settle();
+  assert.equal(diskQuery.searchParams.get('metric'), 'disk');
+  assert.equal(diskQuery.searchParams.get('uuid'), 'a');
+  assert(w.document.getElementById('resourceModalTitle').textContent.includes('硬盘占用曲线'));
+  assert.equal(w.document.getElementById('resourceStatCurrent').textContent, '75.0%');
+  assert(w.document.querySelector('#resourceChartSvg path'));
+  w.document.getElementById('resourceRange31d').click(); await settle(); await settle();
+  assert.equal(diskQuery.searchParams.get('range'), '31d');
+  w.document.getElementById('closeResourceChartModalBtn').click();
   const fresh = () => vm.runInContext('wsHasData=true;lastWSDataAt=Date.now()', ctx);
   // Reopening the sort dialog must move exactly one row per click.
   vm.runInContext("acceptNodeSnapshot([{uuid:'a',name:'A'},{uuid:'b',name:'B'},{uuid:'c',name:'C'}]);openSortNodesModal();openSortNodesModal()", ctx);
@@ -87,7 +106,7 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
   vm.runInContext("acceptNodeSnapshot([{uuid:'brand-new',name:'new'}]);renderNodes()", ctx);
   assert.equal(w.document.querySelectorAll('#nodeGrid article').length, 1);
   assert.equal(alerts.length, 2);
-  console.log(theme + ': form locks, retries, immediate refresh, stale response protection, connection status, deletion PASS');
+  console.log(theme + ': form locks, retries, immediate refresh, stale response protection, connection status, deletion, disk history PASS');
   dom.window.close();
  }
 })().catch(error => { console.error(error); process.exit(1); });

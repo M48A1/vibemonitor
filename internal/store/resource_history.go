@@ -86,7 +86,7 @@ func (s *Store) GetResourceHistory(uuid, metric, timeRange string) (*ResourceHis
 }
 
 func (s *Store) GetResourceHistoryContext(ctx context.Context, uuid, metric, timeRange string) (*ResourceHistoryResponse, error) {
-	if metric != "cpu" && metric != "memory" && metric != "network" {
+	if metric != "cpu" && metric != "memory" && metric != "disk" && metric != "network" {
 		return nil, errors.New("invalid resource metric")
 	}
 	duration, ok := resourceDuration(timeRange)
@@ -113,6 +113,8 @@ func (s *Store) GetResourceHistoryContext(ctx context.Context, uuid, metric, tim
 	switch metric {
 	case "memory":
 		column = "ram_usage"
+	case "disk":
+		column = "disk_usage"
 	case "network":
 		column = "network_rate"
 	}

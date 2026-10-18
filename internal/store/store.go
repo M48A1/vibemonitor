@@ -1197,10 +1197,14 @@ func (s *Store) ingestReportAt(token string, report protocol.Report, now time.Ti
 	if receivedAt.Unix()-node.lastResourceSampleAt >= PingSampleIntervalSec {
 		cpu := sql.NullFloat64{Float64: report.CPU.Usage, Valid: validResourcePercent(report.CPU.Usage)}
 		ram := sql.NullFloat64{Float64: ramUsagePct, Valid: report.RAM.Total > 0 && report.RAM.Used >= 0 && report.RAM.Used <= report.RAM.Total}
+		disk := sql.NullFloat64{Valid: report.Disk.Total > 0 && report.Disk.Used >= 0 && report.Disk.Used <= report.Disk.Total}
+		if disk.Valid {
+			disk.Float64 = float64(report.Disk.Used) / float64(report.Disk.Total) * 100
+		}
 		rate, validRate := totalNetworkRate(report.Network.Up, report.Network.Down)
 		network := sql.NullInt64{Int64: rate, Valid: validRate}
-		if cpu.Valid || ram.Valid || network.Valid {
-			if s.enqueueHistoryLocked(historySample{UUID: node.UUID, Timestamp: receivedAt.Unix(), CPU: cpu, RAM: ram, Network: network}) {
+		if cpu.Valid || ram.Valid || disk.Valid || network.Valid {
+			if s.enqueueHistoryLocked(historySample{UUID: node.UUID, Timestamp: receivedAt.Unix(), CPU: cpu, RAM: ram, Disk: disk, Network: network}) {
 				node.lastResourceSampleAt = receivedAt.Unix()
 				sampled = true
 			}

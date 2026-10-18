@@ -36,3 +36,5 @@ integration_test.go
 !scripts/package.json
 !scripts/package-lock.json
 node_modules/
+
+!internal/store/disk_history_test.go

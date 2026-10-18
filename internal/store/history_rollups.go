@@ -69,7 +69,7 @@ INSERT OR IGNORE INTO history_rollup_state(id,completed_before) VALUES(1,0);
 				// valid. IS NOT handles nullable resource fields as well as zero.
 				columns := []string{"node_uuid", "timestamp", "target_name", "host", "method", "latency"}
 				if table.kind == "resource" {
-					columns = []string{"node_uuid", "timestamp", "cpu_usage", "ram_usage", "network_rate"}
+					columns = []string{"node_uuid", "timestamp", "cpu_usage", "ram_usage", "network_rate", "disk_usage"}
 				}
 				for i, column := range columns {
 					if i == 0 {
@@ -171,13 +171,13 @@ func rebuildHistoryRollups(ctx context.Context, tx *sql.Tx, start, end int64, no
 	if kind == "ping" {
 		filter += " AND kind='ping'"
 	} else if kind == "resource" {
-		filter += " AND kind IN ('cpu','memory','network')"
+		filter += " AND kind IN ('cpu','memory','network','disk')"
 	}
 	if _, err := tx.ExecContext(ctx, "DELETE FROM history_rollups WHERE "+filter, args...); err != nil {
 		return err
 	}
 	if kind != "ping" {
-		for _, metric := range []struct{ name, column string }{{"cpu", "cpu_usage"}, {"memory", "ram_usage"}, {"network", "network_rate"}} {
+		for _, metric := range []struct{ name, column string }{{"cpu", "cpu_usage"}, {"memory", "ram_usage"}, {"network", "network_rate"}, {"disk", "disk_usage"}} {
 			where, values := "timestamp>=? AND timestamp<? AND "+metric.column+" IS NOT NULL", []any{start, end}
 			index := " INDEXED BY idx_resource_history_time"
 			if node != "" {

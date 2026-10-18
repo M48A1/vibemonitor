@@ -115,6 +115,13 @@ func ValidateBackup(path string) error {
 		if hasNetworkRate {
 			columns += ",network_rate"
 		}
+		hasDiskUsage, err := db.hasResourceColumn("disk_usage")
+		if err != nil {
+			return err
+		}
+		if hasDiskUsage {
+			columns += ",disk_usage"
+		}
 		rows, err := db.db.Query("SELECT " + columns + " FROM resource_history LIMIT 0")
 		if err != nil {
 			return err
@@ -365,6 +372,7 @@ func RestoreData(source, destination string) error {
 	config, err := sourceDB.loadConfig()
 	telegramColumns := make(map[string]bool)
 	resourceRateColumn := false
+	resourceDiskColumn := false
 	if err == nil {
 		for _, name := range telegramConfigColumns {
 			telegramColumns[name], err = sourceDB.hasConfigColumn(name)
@@ -374,6 +382,9 @@ func RestoreData(source, destination string) error {
 		}
 		if err == nil {
 			resourceRateColumn, err = sourceDB.hasResourceColumn("network_rate")
+		}
+		if err == nil {
+			resourceDiskColumn, err = sourceDB.hasResourceColumn("disk_usage")
 		}
 	}
 	closeErr := sourceDB.Close()
@@ -472,6 +483,9 @@ func RestoreData(source, destination string) error {
 		columns := "node_uuid,timestamp,cpu_usage,ram_usage"
 		if resourceRateColumn {
 			columns += ",network_rate"
+		}
+		if resourceDiskColumn {
+			columns += ",disk_usage"
 		}
 		if _, err := tx.Exec("INSERT INTO main.resource_history(" + columns + ") SELECT " + columns + " FROM restore_source.resource_history"); err != nil {
 			return err

@@ -7,7 +7,7 @@ window.VibeHex = (() => {
   function metric(label, value, detail, uuid, resource) {
     const pct = value == null ? null : Math.max(0, Math.min(100, value));
     const level = pct >= 90 ? 'critical' : pct >= 80 ? 'high' : '';
-    const interactive = resource === 'cpu' || resource === 'memory';
+    const interactive = resource === 'cpu' || resource === 'memory' || resource === 'disk';
     const tag = interactive ? 'button' : 'div';
     const attributes = interactive ? ` type="button" data-action="resource" data-uuid="${escapeHtml(uuid)}" data-metric="${resource}" title="查看${label}历史曲线" aria-label="查看${label}历史曲线"` : '';
     return `<${tag} class="hex-metric${interactive ? ' metric-button' : ''}"${attributes}><div class="metric-meta"><span class="metric-name">${label}</span><strong>${pct == null ? '—' : pct.toFixed(1) + '%'}</strong></div><div class="progress-track"><div class="progress-bar ${level}" style="width:${pct || 0}%"></div></div><small>${detail}</small></${tag}>`;
@@ -73,6 +73,7 @@ window.VibeHex = (() => {
           <div class="ss-actions">
             <button class="btn" type="button" data-action="resource" data-uuid="${escapeHtml(node.uuid)}" data-metric="cpu">CPU 历史</button>
             <button class="btn" type="button" data-action="resource" data-uuid="${escapeHtml(node.uuid)}" data-metric="memory">内存历史</button>
+            <button class="btn" type="button" data-action="resource" data-uuid="${escapeHtml(node.uuid)}" data-metric="disk">硬盘历史</button>
             <button class="btn" type="button" data-action="resource" data-uuid="${escapeHtml(node.uuid)}" data-metric="network">网速历史</button>
           </div>
           <div class="hex-probes">${renderPingPanels(node)}</div>
@@ -115,7 +116,7 @@ window.VibeHex = (() => {
       <div class="hex-resources">
         ${metric('CPU', live ? number(cpu.usage) : null, `${info.cpu_cores || cpu.cores || '—'} 核`, node.uuid, 'cpu')}
         ${metric('内存', live ? percent(ram.used, ram.total) : null, capacity(ram), node.uuid, 'memory')}
-        ${metric('硬盘', live ? percent(disk.used, disk.total) : null, capacity(disk))}
+        ${metric('硬盘', live ? percent(disk.used, disk.total) : null, capacity(disk), node.uuid, 'disk')}
         ${metric('周期流量', traffic, limit > 0 ? `${formatBytes(used)} / ${formatBytes(limit)}` : '未设置流量配额')}
       </div>
       <div class="hex-network"><div><span>↑ 上行</span><strong>${speed(net.up)}</strong></div><button class="hex-network-total" type="button" data-action="resource" data-uuid="${escapeHtml(node.uuid)}" data-metric="network" title="查看实时速率历史曲线" aria-label="查看实时速率历史曲线"><span>实时速率</span><strong>${speed(totalRate)}</strong></button><div><span>↓ 下行</span><strong>${speed(net.down)}</strong></div></div>

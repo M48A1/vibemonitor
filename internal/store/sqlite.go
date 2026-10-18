@@ -181,6 +181,7 @@ func (s *sqliteDB) initSchema() error {
 		timestamp INTEGER NOT NULL,
 		cpu_usage REAL,
 		ram_usage REAL,
+		disk_usage REAL,
 		network_rate INTEGER,
 		PRIMARY KEY (node_uuid, timestamp)
 	);
@@ -201,6 +202,15 @@ func (s *sqliteDB) initSchema() error {
 	}
 	if !hasNetworkRate {
 		if _, err := s.db.Exec("ALTER TABLE resource_history ADD COLUMN network_rate INTEGER"); err != nil {
+			return err
+		}
+	}
+	hasDiskUsage, err := s.hasResourceColumn("disk_usage")
+	if err != nil {
+		return err
+	}
+	if !hasDiskUsage {
+		if _, err := s.db.Exec("ALTER TABLE resource_history ADD COLUMN disk_usage REAL"); err != nil {
 			return err
 		}
 	}

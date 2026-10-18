@@ -1805,7 +1805,7 @@ function renderPingSvgChart(samples, range, errorMsg, startSec, nowSec, offlineI
   });
 }
 
-// CPU, memory, and total network rate share the same history modal.
+// CPU, memory, disk, and total network rate share the same history modal.
 let currentResourceNodeUUID = '';
 let currentResourceMetric = 'cpu';
 let currentResourceRange = '1h';
@@ -1819,11 +1819,11 @@ function cancelResourceHistory() {
 }
 
 window.openResourceChart = function(uuid, nodeName, metric) {
-  if (!['cpu', 'memory', 'network'].includes(metric)) return;
+  if (!['cpu', 'memory', 'disk', 'network'].includes(metric)) return;
   currentResourceNodeUUID = uuid;
   currentResourceMetric = metric;
   currentResourceRange = '1h';
-  const label = metric === 'cpu' ? 'CPU' : metric === 'memory' ? '内存' : '实时速率';
+  const label = metric === 'cpu' ? 'CPU' : metric === 'memory' ? '内存' : metric === 'disk' ? '硬盘' : '实时速率';
   document.getElementById('resourceModalTitle').textContent = `${nodeName} ${label}${metric === 'network' ? '历史曲线' : '占用曲线'}`;
   document.getElementById('resourceModalSubtitle').textContent = `每 60 秒记录 · 保留 90 天 · ${metric === 'network' ? '上行＋下行（Bytes/s）' : `${label}占用率`}`;
   document.getElementById('resourceChartSvg').setAttribute('aria-label', `${label}历史曲线`);
@@ -1906,7 +1906,7 @@ function renderResourceSvgChart(samples, startSec, endSec, stepSeconds, metric, 
   }
   const duration = endSec - startSec;
   const gap = Math.max(180, Number(stepSeconds || 60) * 2.5);
-  const color = metric === 'cpu' ? '#356dcc' : metric === 'memory' ? '#238364' : '#986700';
+  const color = metric === 'cpu' ? '#356dcc' : metric === 'memory' ? '#238364' : metric === 'disk' ? '#8056b3' : '#986700';
   const validSamples = samples.filter(sample => Number.isFinite(sample.t) && Number.isFinite(sample.v));
   let axisMax = 100;
   if (metric === 'network') {
@@ -1964,7 +1964,7 @@ function renderResourceSvgChart(samples, startSec, endSec, stepSeconds, metric, 
     marker.setAttribute('cx', closest.x);
     marker.setAttribute('cy', closest.y);
     line.style.display = marker.style.display = tooltip.style.display = 'block';
-    tooltip.textContent = `${formatTooltipTime(closest.t)} · ${metric === 'cpu' ? 'CPU' : metric === 'memory' ? '内存' : '实时速率'} ${formatResourceValue(metric, closest.v)}`;
+    tooltip.textContent = `${formatTooltipTime(closest.t)} · ${metric === 'cpu' ? 'CPU' : metric === 'memory' ? '内存' : metric === 'disk' ? '硬盘' : '实时速率'} ${formatResourceValue(metric, closest.v)}`;
   });
   hitBox.addEventListener('mouseleave', () => {
     line.style.display = marker.style.display = tooltip.style.display = 'none';

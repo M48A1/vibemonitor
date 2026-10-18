@@ -18,7 +18,7 @@ func resourceRollupHours(start, end, watermark int64) (int64, int64) {
 // readResourceRollupHistory combines complete clean hours with live raw data.
 // A single read transaction prevents the midnight job's watermark and rows from
 // changing between selection and aggregation. Column is selected by the caller
-// from the fixed cpu_usage/ram_usage/network_rate allowlist.
+// from the fixed cpu_usage/ram_usage/disk_usage/network_rate allowlist.
 func (s *sqliteDB) readResourceRollupHistory(ctx context.Context, response *ResourceHistoryResponse, column string) (*ResourceHistoryResponse, error) {
 	tx, err := s.reader().BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {

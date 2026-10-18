@@ -206,7 +206,7 @@ func (s *Server) Handler() http.Handler {
 		uuid := r.URL.Query().Get("uuid")
 		metric := r.URL.Query().Get("metric")
 		timeRange := r.URL.Query().Get("range")
-		if metric != "cpu" && metric != "memory" && metric != "network" {
+		if metric != "cpu" && metric != "memory" && metric != "disk" && metric != "network" {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid resource metric"})
 			return
 		}
