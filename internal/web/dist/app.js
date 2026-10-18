@@ -1304,7 +1304,6 @@ window.openEditModal = async function(uuid) {
   }
   document.getElementById('editNodeUUID').value = node.uuid;
   document.getElementById('editNodeName').value = node.name || '';
-  document.getElementById('editNodeOrder').value = node.weight > 0 ? node.weight : '';
   document.getElementById('editNodeRegion').value = node.region || '';
   document.getElementById('editNodeTrafficLimit').value = node.traffic_limit > 0 ? (node.traffic_limit / (1024*1024*1024)).toFixed(1) : '';
   document.getElementById('editNodeResetDay').value = node.reset_day > 0 ? node.reset_day : '';
@@ -1329,7 +1328,8 @@ document.getElementById('editNodeForm').addEventListener('submit', async (e) => 
   if (pendingNodeForms.has(form)) return;
   const uuid = document.getElementById('editNodeUUID').value;
   const name = document.getElementById('editNodeName').value;
-  const group = nodes.find(node => node.uuid === uuid)?.group || ''; // Preserve legacy metadata when editing.
+  const node = nodes.find(node => node.uuid === uuid);
+  const group = node?.group || ''; // Preserve legacy metadata when editing.
   const region = document.getElementById('editNodeRegion').value;
   const trafficLimitGB = parseFloat(document.getElementById('editNodeTrafficLimit').value) || 0;
   const resetDay = parseInt(document.getElementById('editNodeResetDay').value) || 0;
@@ -1355,7 +1355,7 @@ document.getElementById('editNodeForm').addEventListener('submit', async (e) => 
         name,
         group,
         region,
-        weight: readNodeOrder('edit'),
+        weight: node?.weight || 0,
         traffic_limit_gb: trafficLimitGB,
         reset_day: resetDay,
         ...(cycleUsedGB === null ? {} : { cycle_used_gb: cycleUsedGB }),
