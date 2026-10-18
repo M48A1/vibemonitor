@@ -30,6 +30,7 @@ integration_test.go
 
 !internal/store/settings_concurrency_test.go
 !internal/store/reorder_test.go
+!internal/store/report_order_test.go
 !internal/server/telegram_policy_test.go
 
 !scripts/package.json

@@ -1113,7 +1113,12 @@ func (s *Store) ingestReportAt(token string, report protocol.Report, now time.Ti
 	receivedAt := now.UTC()
 	previousAt := trafficSampleTime(previousReport, previousSeen)
 	currentAt := trafficSampleTime(&report, receivedAt)
-	if previousReport != nil && !report.UpdatedAt.IsZero() && !previousReport.UpdatedAt.IsZero() && !report.UpdatedAt.After(previousReport.UpdatedAt) {
+	bootChanged := previousReport != nil && previousReport.Network.BootID != report.Network.BootID
+	// Uptime continues increasing when wall time is corrected backwards. A new
+	// boot also starts a new sampling timeline; neither is an out-of-order report.
+	clockReset := previousReport != nil && report.UpdatedAt.Before(previousReport.UpdatedAt) &&
+		!report.UpdatedAt.IsZero() && report.Uptime > previousReport.Uptime
+	if previousReport != nil && !bootChanged && !clockReset && !report.UpdatedAt.IsZero() && !previousReport.UpdatedAt.IsZero() && !report.UpdatedAt.After(previousReport.UpdatedAt) {
 		copy := *node
 		return &copy, nil // Ignore duplicate or out-of-order counter samples.
 	}
@@ -1121,12 +1126,11 @@ func (s *Store) ingestReportAt(token string, report protocol.Report, now time.Ti
 		node.TrafficBaselineSet = false
 	} else {
 		previousNetwork, currentNetwork := previousReport.Network, report.Network
-		bootChanged := previousNetwork.BootID != currentNetwork.BootID
 		selectionChanged := previousNetwork.Source != currentNetwork.Source && (previousNetwork.Source != "" || currentNetwork.Source != "")
 		bothDetailed := len(previousNetwork.Interfaces) > 0 && len(currentNetwork.Interfaces) > 0
 		// The same boot's per-interface counters remain comparable when another
 		// interface joins or leaves. Aggregate counters cannot make that distinction.
-		if bootChanged || (selectionChanged && !(bothDetailed && currentNetwork.BootID != "")) || (len(currentNetwork.Interfaces) > 0 && len(previousNetwork.Interfaces) == 0) || (len(currentNetwork.Interfaces) == 0 && len(previousNetwork.Interfaces) > 0) {
+		if bootChanged || clockReset || (selectionChanged && !(bothDetailed && currentNetwork.BootID != "")) || (len(currentNetwork.Interfaces) > 0 && len(previousNetwork.Interfaces) == 0) || (len(currentNetwork.Interfaces) == 0 && len(previousNetwork.Interfaces) > 0) {
 			node.TrafficBaselineSet = false
 		}
 	}
