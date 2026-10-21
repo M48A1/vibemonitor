@@ -11,6 +11,8 @@ for mode in delayed wrong-body stopped timeout https; do
     if (
         source "$PROJECT_DIR/install.sh"
         UPDATE_SERVICE=vibemonitor-server
+        # Disable Bash's wall clock so crossing a real second cannot shorten the fake timeout.
+        unset SECONDS
         SECONDS=0
         sleep() { SECONDS=$((SECONDS + $1)); }
         systemctl() {
