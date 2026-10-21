@@ -435,7 +435,6 @@ func (s *Server) Handler() http.Handler {
 			Name           string             `json:"name"`
 			Group          string             `json:"group"`
 			Region         string             `json:"region"`
-			Weight         int                `json:"weight"`
 			TrafficLimitGB float64            `json:"traffic_limit_gb"`
 			ResetDay       int                `json:"reset_day"`
 			InitialUsedGB  float64            `json:"initial_used_gb"`
@@ -450,7 +449,6 @@ func (s *Server) Handler() http.Handler {
 			Name:           req.Name,
 			Group:          req.Group,
 			Region:         req.Region,
-			Weight:         req.Weight,
 			TrafficLimitGB: req.TrafficLimitGB,
 			ResetDay:       req.ResetDay,
 			InitialUsedGB:  req.InitialUsedGB,
@@ -477,7 +475,6 @@ func (s *Server) Handler() http.Handler {
 			Name           string             `json:"name"`
 			Group          string             `json:"group"`
 			Region         string             `json:"region"`
-			Weight         int                `json:"weight"`
 			TrafficLimitGB float64            `json:"traffic_limit_gb"`
 			ResetDay       int                `json:"reset_day"`
 			InitialUsedGB  *float64           `json:"initial_used_gb"`
@@ -497,7 +494,6 @@ func (s *Server) Handler() http.Handler {
 			Name:           req.Name,
 			Group:          req.Group,
 			Region:         req.Region,
-			Weight:         req.Weight,
 			TrafficLimitGB: req.TrafficLimitGB,
 			ResetDay:       req.ResetDay,
 			InitialUsedGB:  initialUsedGB,

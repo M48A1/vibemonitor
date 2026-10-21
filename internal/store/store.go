@@ -800,7 +800,7 @@ type NodeOptions struct {
 	Name           string
 	Group          string
 	Region         string
-	Weight         int // Node order: 0 sorts before numbered nodes.
+	Weight         int // Deprecated: ordering is managed exclusively by ReorderNodes.
 	TrafficLimitGB float64
 	ResetDay       int
 	InitialUsedGB  float64
@@ -821,9 +821,6 @@ func (s *Store) CreateNode(name, group, region string) (*Node, error) {
 }
 
 func (s *Store) CreateNodeWithOptions(opts NodeOptions) (*Node, error) {
-	if opts.Weight < 0 {
-		return nil, ErrInvalidNodeOrder
-	}
 	if err := validateProfile(opts.Profile); err != nil {
 		return nil, err
 	}
@@ -834,6 +831,16 @@ func (s *Store) CreateNodeWithOptions(opts NodeOptions) (*Node, error) {
 	defer s.persistMu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// Append new nodes without disturbing the saved display order.
+	weight := 0
+	for _, existing := range s.nodes {
+		weight = max(weight, existing.Weight)
+	}
+	if weight == int(^uint(0)>>1) {
+		return nil, ErrInvalidNodeOrder
+	}
+	weight++
 
 	uuid := GenerateUUID()
 	token := GenerateToken(16)
@@ -858,7 +865,7 @@ func (s *Store) CreateNodeWithOptions(opts NodeOptions) (*Node, error) {
 		Name:               opts.Name,
 		Group:              opts.Group,
 		Region:             opts.Region,
-		Weight:             opts.Weight,
+		Weight:             weight,
 		TrafficLimit:       trafficLimitBytes,
 		ResetDay:           opts.ResetDay,
 		InitialUsed:        initialUsedBytes,
@@ -903,9 +910,6 @@ func (s *Store) UpdateNode(uuid, name, group, region string, weight int) error {
 }
 
 func (s *Store) UpdateNodeWithOptions(uuid string, opts NodeOptions) error {
-	if opts.Weight < 0 {
-		return ErrInvalidNodeOrder
-	}
 	if err := validateProfile(opts.Profile); err != nil {
 		return err
 	}
@@ -1013,7 +1017,6 @@ func (s *Store) applyNodeOptionsLocked(n *Node, opts NodeOptions, cycleUsedBytes
 	if opts.Region != "" {
 		n.Region = opts.Region
 	}
-	n.Weight = opts.Weight
 
 	if opts.TrafficLimitGB >= 0 {
 		n.TrafficLimit = int64(opts.TrafficLimitGB * 1024 * 1024 * 1024)

@@ -85,6 +85,7 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
   await settle(); await settle();
   assert.deepEqual(savedOrder, [{uuid:'a',weight:1},{uuid:'b',weight:2},{uuid:'c',weight:3}]);
   vm.runInContext('acceptNodeSnapshot(initial)', ctx);
+  assert.equal(w.document.getElementById('newNodeOrder'), null);
   // Both forms reject duplicate submissions while a request is pending.
   for (const [id, method] of [['addNodeForm', 'POST'], ['editNodeForm', 'PUT']]) {
    let writes = 0, reads = 0, release;
@@ -95,7 +96,7 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
    const form = w.document.getElementById(id);
    w.showGuide = async () => {};
    w.fetch = async (url, options = {}) => {
-    if (options.method === method) { writes++; await wait; return { ok: true, json: async () => ({ node: { uuid: 'new' } }) }; }
+    if (options.method === method) { assert.equal(Object.hasOwn(JSON.parse(options.body), 'weight'), false); writes++; await wait; return { ok: true, json: async () => ({ node: { uuid: 'new' } }) }; }
     reads++; return { ok: true, json: async () => [{ uuid: 'a', name: 'edited', online: true }, { uuid: 'new', name: 'created' }] };
    };
    fresh();

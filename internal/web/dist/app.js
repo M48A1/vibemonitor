@@ -311,13 +311,6 @@ function updateGlobalStats() {
   VibeHex.renderOverview(nodes);
 }
 
-function readNodeOrder(prefix) {
-  const text = document.getElementById(prefix + 'NodeOrder').value.trim();
-  const order = text === '' ? 0 : Number(text);
-  if (!Number.isSafeInteger(order) || order < 0) throw new Error('节点序号必须是非负整数');
-  return order;
-}
-
 function readNodeProfile(prefix) {
   const warningText = document.getElementById(prefix+'NodeTrafficWarning').value.trim();
   const trafficWarningPercent = warningText === '' ? 0 : Number(warningText);
@@ -1031,7 +1024,6 @@ if (addNodeBtn) addNodeBtn.addEventListener('click', () => {
   nodeManagementMenu.open = false;
   requireAdmin(() => {
     document.getElementById('newNodeName').value = '';
-    document.getElementById('newNodeOrder').value = '';
     document.getElementById('newNodeTrafficLimit').value = '';
     document.getElementById('newNodeResetDay').value = '';
     document.getElementById('newNodeInitialUsed').value = '';
@@ -1268,7 +1260,6 @@ document.getElementById('addNodeForm').addEventListener('submit', async (e) => {
       body: JSON.stringify({
         name,
         region,
-        weight: readNodeOrder('new'),
         traffic_limit_gb: trafficLimitGB,
         reset_day: resetDay,
         initial_used_gb: initialUsedGB,
@@ -1359,7 +1350,6 @@ document.getElementById('editNodeForm').addEventListener('submit', async (e) => 
         name,
         group,
         region,
-        weight: node?.weight || 0,
         traffic_limit_gb: trafficLimitGB,
         reset_day: resetDay,
         ...(cycleUsedGB === null ? {} : { cycle_used_gb: cycleUsedGB }),

@@ -39,3 +39,42 @@ func TestReorderNodesPersistenceAndInvalidOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestNodeCreationAndEditingPreserveDisplayOrder(t *testing.T) {
+	s := deletionStore(t)
+	if err := s.ReorderNodes(map[string]int{"survivor": 1, "deleted": 2}); err != nil {
+		t.Fatal(err)
+	}
+	// A legacy creation request must not insert ahead of the saved order.
+	node, err := s.CreateNodeWithOptions(NodeOptions{Name: "AAA", Weight: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if node.Weight != 3 {
+		t.Fatalf("new node weight = %d, want 3", node.Weight)
+	}
+	if err := s.ReorderNodes(map[string]int{node.UUID: 1, "survivor": 2, "deleted": 3}); err != nil {
+		t.Fatal(err)
+	}
+	// Editing with a stale weight must not undo the latest sort operation.
+	if err := s.UpdateNode(node.UUID, "ZZZ", "", "", 3); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.GetNode(node.UUID); got.Weight != 1 || got.Name != "ZZZ" {
+		t.Fatalf("edit changed display order or failed to rename: %+v", got)
+	}
+	var weight int
+	if err := s.sdb.db.QueryRow("SELECT json_extract(data_json, '$.weight') FROM nodes WHERE uuid = ?", node.UUID).Scan(&weight); err != nil {
+		t.Fatal(err)
+	}
+	if weight != 1 {
+		t.Fatalf("persisted weight = %d, want 1", weight)
+	}
+	next, err := s.CreateNode("Another", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Weight != 4 {
+		t.Fatalf("next node weight = %d, want 4", next.Weight)
+	}
+}
