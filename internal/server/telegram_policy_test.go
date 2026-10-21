@@ -159,3 +159,28 @@ func TestTelegramQueueAllowsOtherNodesAndStops(t *testing.T) {
 		t.Fatal("workers did not shut down")
 	}
 }
+
+func TestRecoveryNotificationIncludesLatestReportTime(t *testing.T) {
+	for _, template := range []string{"", "🟢 VibeMonitor 节点恢复：{node}"} {
+		var messages []string
+		a := newTelegramAlerts(func(_ context.Context, _ store.Config, message string) error {
+			messages = append(messages, message)
+			return nil
+		})
+		cfg := store.Config{TelegramEnabled: true, TelegramReminderTimezone: "Asia/Shanghai",
+			TelegramTemplates: store.TelegramTemplates{Recovery: template}}
+		now := time.Date(2026, 10, 21, 6, 5, 0, 0, time.UTC)
+		a.now = func() time.Time { return now }
+		node := &store.Node{UUID: "sgp", Name: "SGP", LastSeen: now.Add(-5 * time.Minute)}
+		a.check(context.Background(), cfg, []*store.Node{node})
+		node.Online = true
+		node.LastSeen = now.Add(-2 * time.Second)
+		a.check(context.Background(), cfg, []*store.Node{node})
+		if len(messages) != 2 {
+			t.Fatalf("got %d messages, want offline and recovery", len(messages))
+		}
+		if want := "🟢 VibeMonitor 节点恢复：SGP（最后上报：2026-10-21 14:04:58）"; messages[1] != want {
+			t.Fatalf("recovery = %q, want %q", messages[1], want)
+		}
+	}
+}

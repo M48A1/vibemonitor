@@ -27,7 +27,7 @@ type TelegramTemplates struct {
 func DefaultTelegramTemplates() TelegramTemplates {
 	return TelegramTemplates{
 		Offline:        "🔴 VibeMonitor 节点离线：{node}（最后上报：{last_seen}）",
-		Recovery:       "🟢 VibeMonitor 节点恢复：{node}",
+		Recovery:       "🟢 VibeMonitor 节点恢复：{node}（最后上报：{last_seen}）",
 		CPU:            "⚠️ VibeMonitor CPU 告警：{node}，当前 {cpu}%，阈值 {cpu_threshold}%",
 		Memory:         "⚠️ VibeMonitor 内存告警：{node}，使用率 {memory}%，阈值 {memory_threshold}%",
 		Traffic:        "⚠️ VibeMonitor 流量告警：{node}，本周期已用 {used_gib} GiB，额度 {limit_gib} GiB",
@@ -42,7 +42,7 @@ func (t TelegramTemplates) Effective() TelegramTemplates {
 	if strings.TrimSpace(t.Offline) == "" {
 		t.Offline = defaults.Offline
 	}
-	if strings.TrimSpace(t.Recovery) == "" {
+	if strings.TrimSpace(t.Recovery) == "" || t.Recovery == "🟢 VibeMonitor 节点恢复：{node}" {
 		t.Recovery = defaults.Recovery
 	}
 	if strings.TrimSpace(t.CPU) == "" {
@@ -69,7 +69,7 @@ func validateTelegramTemplates(t TelegramTemplates) error {
 		variables   string
 	}{
 		{"offline", t.Offline, "node,last_seen"},
-		{"recovery", t.Recovery, "node"},
+		{"recovery", t.Recovery, "node,last_seen"},
 		{"cpu", t.CPU, "node,cpu,cpu_threshold"},
 		{"memory", t.Memory, "node,memory,memory_threshold"},
 		{"traffic", t.Traffic, "node,used_gib,limit_gib"},

@@ -104,7 +104,10 @@ func (a *telegramAlerts) check(ctx context.Context, cfg store.Config, nodes []*s
 			}
 		} else if node.Online && state.OfflineAlerted {
 			a.kind = node.UUID + ":recovery"
-			if a.deliver(ctx, cfg, renderTelegramTemplate(templates.Recovery, map[string]string{"node": label})) {
+			message := renderTelegramTemplate(templates.Recovery, map[string]string{
+				"node": label, "last_seen": node.LastSeen.In(location).Format("2006-01-02 15:04:05"),
+			})
+			if a.deliver(ctx, cfg, message) {
 				state.OfflineAlerted = false
 			}
 		}
