@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"time"
 
@@ -9,6 +10,47 @@ import (
 )
 
 var ErrInvalidCycleUsage = errors.New("invalid current cycle usage")
+var ErrInvalidNodeOptions = errors.New("invalid node options")
+
+// Internal updates use exactly -1 to preserve an existing value. HTTP handlers
+// reject negative inputs before translating omitted fields to this sentinel.
+func validateTrafficOptions(opts NodeOptions, updating bool) error {
+	if !(updating && opts.ResetDay == -1) && (opts.ResetDay < 0 || opts.ResetDay > 31) {
+		return fmt.Errorf("%w: reset day must be between 1 and 31 (0 defaults to 1)", ErrInvalidNodeOptions)
+	}
+	for _, field := range []struct {
+		name  string
+		value float64
+	}{{"traffic limit", opts.TrafficLimitGB}, {"initial usage", opts.InitialUsedGB}} {
+		if updating && field.value == -1 {
+			continue
+		}
+		if _, err := trafficGBToBytes(field.value); err != nil {
+			return fmt.Errorf("%w: %s must be nonnegative and less than 8589934592 GiB", ErrInvalidNodeOptions, field.name)
+		}
+	}
+	return nil
+}
+
+// A different cycle start cannot retain usage or manual offsets belonging to
+// the previous range. Daily history contains measured traffic only.
+func (n *Node) changeResetDay(resetDay int, now time.Time) {
+	start, _ := GetBillingCycleRange(resetDay, now)
+	n.ResetDay = resetDay
+	if n.CycleStart.Equal(start) {
+		return
+	}
+	n.CycleStart = start
+	n.CurrentCycleUsed = 0
+	n.InitialUsed = 0
+	n.TrafficManualAt = nil
+	first, last := start.Format("2006-01-02"), now.In(trafficLocation).Format("2006-01-02")
+	for day, measured := range n.DailyTraffic {
+		if day >= first && day <= last {
+			n.CurrentCycleUsed += measured
+		}
+	}
+}
 
 func trafficGBToBytes(gb float64) (int64, error) {
 	const gib = float64(1024 * 1024 * 1024)

@@ -821,6 +821,9 @@ func (s *Store) CreateNode(name, group, region string) (*Node, error) {
 }
 
 func (s *Store) CreateNodeWithOptions(opts NodeOptions) (*Node, error) {
+	if err := validateTrafficOptions(opts, false); err != nil {
+		return nil, err
+	}
 	if err := validateProfile(opts.Profile); err != nil {
 		return nil, err
 	}
@@ -852,8 +855,8 @@ func (s *Store) CreateNodeWithOptions(opts NodeOptions) (*Node, error) {
 		opts.Region = "DEFAULT"
 	}
 
-	trafficLimitBytes := int64(opts.TrafficLimitGB * 1024 * 1024 * 1024)
-	initialUsedBytes := int64(opts.InitialUsedGB * 1024 * 1024 * 1024)
+	trafficLimitBytes, _ := trafficGBToBytes(opts.TrafficLimitGB) // Validated above.
+	initialUsedBytes, _ := trafficGBToBytes(opts.InitialUsedGB)
 
 	now := time.Now()
 	cycleStart, _ := GetBillingCycleRange(opts.ResetDay, now)
@@ -910,6 +913,9 @@ func (s *Store) UpdateNode(uuid, name, group, region string, weight int) error {
 }
 
 func (s *Store) UpdateNodeWithOptions(uuid string, opts NodeOptions) error {
+	if err := validateTrafficOptions(opts, true); err != nil {
+		return err
+	}
 	if err := validateProfile(opts.Profile); err != nil {
 		return err
 	}
@@ -1019,19 +1025,16 @@ func (s *Store) applyNodeOptionsLocked(n *Node, opts NodeOptions, cycleUsedBytes
 	}
 
 	if opts.TrafficLimitGB >= 0 {
-		n.TrafficLimit = int64(opts.TrafficLimitGB * 1024 * 1024 * 1024)
+		n.TrafficLimit, _ = trafficGBToBytes(opts.TrafficLimitGB)
 	}
 	if opts.ResetDay == 0 {
 		opts.ResetDay = 1
 	}
 	if opts.ResetDay > 0 && opts.ResetDay <= 31 {
-		n.ResetDay = opts.ResetDay
-		if n.ResetDay > 0 {
-			n.CycleStart, _ = GetBillingCycleRange(n.ResetDay, changedAt)
-		}
+		n.changeResetDay(opts.ResetDay, changedAt)
 	}
 	if opts.InitialUsedGB >= 0 {
-		n.InitialUsed = int64(opts.InitialUsedGB * 1024 * 1024 * 1024)
+		n.InitialUsed, _ = trafficGBToBytes(opts.InitialUsedGB)
 	}
 	if opts.CycleUsedGB != nil {
 		n.InitialUsed = cycleUsedBytes

@@ -176,3 +176,49 @@ func TestDailyOnlineStatusUTC8(t *testing.T) {
 		t.Fatalf("UTC+8 reset: %v %v", start, err)
 	}
 }
+
+func TestDailyTrafficSumsUploadAndDownload(t *testing.T) {
+	for _, detailed := range []bool{false, true} {
+		t.Run(map[bool]string{false: "aggregate", true: "per-interface"}[detailed], func(t *testing.T) {
+			s, err := New(filepath.Join(t.TempDir(), "data.db"), "test-password")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer s.Close()
+			n, err := s.CreateNodeWithOptions(NodeOptions{Name: "bidirectional", ResetDay: 15})
+			if err != nil {
+				t.Fatal(err)
+			}
+			base := time.Date(2026, 10, 15, 10, 0, 0, 0, trafficLocation)
+			for _, sample := range []struct {
+				hours    int
+				up, down int64
+			}{{0, 1000, 2000}, {1, 1100, 2200}, {14, 1200, 2400}, {15, 1230, 2470}, {15, 1230, 2470}} {
+				at := base.Add(time.Duration(sample.hours) * time.Hour)
+				r := protocol.Report{UpdatedAt: at, Uptime: int64(100 + sample.hours*3600)}
+				r.Network.BootID = "same-boot"
+				r.Network.TotalUp, r.Network.TotalDown = sample.up, sample.down
+				if detailed {
+					r.Network.Interfaces = map[string]protocol.InterfaceCounters{"eth0": {Up: sample.up, Down: sample.down}}
+				}
+				if _, err := s.ingestReportAt(n.Token, r, at); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got, err := s.trafficHistoryAt(n.UUID, "current", base.Add(15*time.Hour))
+			if err != nil {
+				t.Fatal(err)
+			}
+			// First day: upload 200 + download 400; second day: upload 30 + download 70.
+			if got.Days[0].Bytes != 600 || got.Days[1].Bytes != 100 || got.Total != 700 {
+				t.Fatalf("daily upload+download sum: first=%d second=%d total=%d", got.Days[0].Bytes, got.Days[1].Bytes, got.Total)
+			}
+			s.mu.RLock()
+			cycleUsed := s.nodes[n.UUID].CurrentCycleUsed
+			s.mu.RUnlock()
+			if cycleUsed != got.Total {
+				t.Fatalf("cycle=%d, sum of days=%d", cycleUsed, got.Total)
+			}
+		})
+	}
+}

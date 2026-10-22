@@ -295,7 +295,8 @@
           </div>
           <div class="form-group">
             <label class="form-label">每月重置日 (1-31，留空为 1 日)</label>
-            <input type="number" class="form-input" id="editNodeResetDay" min="1" max="31">
+            <input type="number" class="form-input" id="editNodeResetDay" min="1" max="31" aria-describedby="editNodeResetDayHint">
+            <small id="editNodeResetDayHint">修改后若账期起点变化，将按新账期已采集日流量重算并清除旧补录；未采集部分按 0 计算。可同时填写当前已用流量进行校正。</small>
           </div>
         </div>
         <div class="form-group">
@@ -491,6 +492,12 @@
   <script src="/globe.js"></script>
   <script src="/themes.js"></script>
   <script src="/theme-manager.js"></script>
-  <script src="/app.js"></script>
+  <script src="/app.js" data-dashboard-module></script>
+  <script src="/auth.js" data-dashboard-module></script>
+  <script src="/settings.js" data-dashboard-module></script>
+  <script src="/nodes.js" data-dashboard-module></script>
+  <script src="/ping-history.js" data-dashboard-module></script>
+  <script src="/resource-history.js" data-dashboard-module></script>
+  <script src="/bootstrap.js"></script>
 </body>
 </html>

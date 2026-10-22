@@ -6,7 +6,52 @@ const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const root = path.join(__dirname, '../internal/web/dist');
 const settle = () => new Promise(resolve => setImmediate(resolve));
+// Exercise the real HTML script order, including bootstrap and theme setup.
+async function checkStartup() {
+ const dom = new JSDOM(fs.readFileSync(path.join(root, 'index.html'), 'utf8'), {
+  url: 'https://monitor.example.test', runScripts: 'outside-only', pretendToBeVisual: true
+ });
+ const w = dom.window, ctx = dom.getInternalVMContext(), requests = [], sockets = [], errors = [];
+ const intervals = [];
+ w.HTMLCanvasElement.prototype.getContext = () => null;
+ w.matchMedia = () => ({matches: false, addEventListener() {}});
+ w.setInterval = (fn, delay) => { intervals.push(delay); return intervals.length; };
+ w.console.error = (...args) => errors.push(args.join(' '));
+ w.console.log = () => {};
+ w.WebSocket = class {
+  constructor(url) { this.url = url; this.readyState = 1; sockets.push(this); }
+  close() {}
+ };
+ w.fetch = async url => {
+  requests.push(url);
+  let data;
+  if (url.startsWith('/api/nodes')) data = [{uuid:'startup', name:'Startup node', online:true}];
+  else if (url === '/api/admin/status') data = {is_admin:true};
+  else if (url === '/api/public') data = {site_title:'Startup title', site_theme:'hex', site_icon:''};
+  else throw new Error('Unexpected startup request: ' + url);
+  return {ok: true, json: async () => data};
+ };
+ try {
+  for (const script of w.document.querySelectorAll('script[src]')) {
+   const filename = script.getAttribute('src').slice(1);
+   vm.runInContext(fs.readFileSync(path.join(root, filename), 'utf8'), ctx, {filename});
+  }
+  await settle(); await settle();
+  assert.deepEqual(intervals, [1000, 5000, 15000]);
+  assert.equal(sockets.length, 1);
+  assert.equal(sockets[0].url, 'wss://monitor.example.test/api/clients?view=dashboard');
+  assert(requests.includes('/api/admin/status'));
+  assert.equal(w.document.title, 'Startup title');
+  assert.equal(w.document.getElementById('adminQuickActions').style.display, 'block');
+  sockets[0].onmessage({data: JSON.stringify({nodes:[{uuid:'live',name:'Live node',online:true}]})});
+  vm.runInContext('renderNodes()',ctx);
+  assert(w.document.getElementById('nodeGrid').textContent.includes('Live node'));
+  assert.deepEqual(errors, []);
+  console.log('HTML script order, bootstrap, authentication, settings, and live updates PASS');
+ } finally { dom.window.close(); }
+}
 (async () => {
+ await checkStartup();
  for (const theme of ['hex', 'rakugaki', 'win2000', 'design', 'serverstatus']) {
   const dom = new JSDOM(fs.readFileSync(path.join(root, 'index.html'), 'utf8'), {
    url: 'http://localhost', runScripts: 'outside-only', pretendToBeVisual: true
@@ -16,7 +61,10 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
   w.confirm = () => true;
   const alerts = []; w.alert = text => alerts.push(text);
   vm.runInContext(fs.readFileSync(path.join(root, 'themes.js'), 'utf8'), ctx);
-  vm.runInContext(fs.readFileSync(path.join(root, 'app.js'), 'utf8').split('// Initialize')[0], ctx);
+  for (const script of w.document.querySelectorAll('script[data-dashboard-module]')) {
+   const filename = script.getAttribute('src').slice(1);
+   vm.runInContext(fs.readFileSync(path.join(root, filename), 'utf8'), ctx, {filename});
+  }
   w.document.documentElement.dataset.siteTheme = theme;
   w.initial = [{ uuid: 'a', name: 'original', online: true }, { uuid: 'b', name: 'other', online: true }];
   vm.runInContext('acceptNodeSnapshot(initial);updateGlobalStats();renderNodes();ws={readyState:1};wsHasData=true;lastWSDataAt=Date.now()', ctx);
@@ -135,8 +183,36 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
   assert(w.document.getElementById('nodeGrid').textContent.includes('暂无监控节点'));
   vm.runInContext("acceptNodeSnapshot([{uuid:'brand-new',name:'new'}]);renderNodes()", ctx);
   assert.equal(w.document.querySelectorAll('#nodeGrid article').length, 1);
+  // Editing unrelated metadata must preserve the exact stored quota, including
+  // values smaller than 0.1 GiB and byte counts beyond JS integer precision.
+  for (const quota of [Math.floor(0.04 * 2**30), Math.floor(100.04 * 2**30), 2**53 + 2]) {
+   let saved;
+   w.quotaNode = {uuid: 'quota', name: 'before', traffic_limit: quota, reset_day: 15, online: true};
+   vm.runInContext('setAdminState(true);acceptNodeSnapshot([quotaNode])', ctx);
+   w.fetch = async (url, options = {}) => {
+    if (url.endsWith('/profile')) return {ok: true, json: async () => ({profile: {targets: []}})};
+    if (options.method === 'PUT') saved = JSON.parse(options.body);
+    return {ok: true, json: async () => [w.quotaNode]};
+   };
+   await w.openEditModal('quota');
+   const input = w.document.getElementById('editNodeTrafficLimit');
+   assert(Number(input.value) > 0, 'small quota rounded to zero');
+   w.document.getElementById('editNodeName').value = 'after';
+   const form = w.document.getElementById('editNodeForm');
+   form.dispatchEvent(new w.Event('submit', {cancelable: true}));
+   await settle(); await settle();
+   assert.equal(saved.name, 'after');
+   assert.equal(Object.hasOwn(saved, 'traffic_limit_gb'), false, 'unchanged quota must be omitted');
+   for (const value of ['100.04', '0']) {
+    await w.openEditModal('quota');
+    input.value = value;
+    form.dispatchEvent(new w.Event('submit', {cancelable: true}));
+    await settle(); await settle();
+    assert.equal(saved.traffic_limit_gb, Number(value), 'explicit quota edit lost');
+   }
+  }
   assert.equal(alerts.length, 2);
-  console.log(theme + ': form locks, retries, immediate refresh, stale response protection, connection status, deletion, disk history, daily traffic PASS');
+  console.log(theme + ': form locks, retries, immediate refresh, stale response protection, connection status, deletion, disk history, daily traffic, quota precision PASS');
   dom.window.close();
  }
 })().catch(error => { console.error(error); process.exit(1); });
