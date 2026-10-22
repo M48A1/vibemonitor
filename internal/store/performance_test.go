@@ -17,6 +17,11 @@ func perfStore(t *testing.T) *Store {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// These tests explicitly control persistence and occupy SQL connections.
+	// Keep the startup rollup/periodic saver from consuming the wait signal or
+	// holding persistMu before the operation under test reaches the database.
+	close(s.stopFlush)
+	<-s.flushDone
 	t.Cleanup(func() { s.Close() })
 	return s
 }

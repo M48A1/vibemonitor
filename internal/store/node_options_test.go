@@ -96,6 +96,9 @@ func TestResetDayChangePreservesConcurrentTrafficAndPersists(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
+	// Only the metadata update under test may contend for the writer connection.
+	close(s.stopFlush)
+	<-s.flushDone
 	n, err := s.CreateNodeWithOptions(NodeOptions{Name: "concurrent", ResetDay: 1})
 	if err != nil {
 		t.Fatal(err)
