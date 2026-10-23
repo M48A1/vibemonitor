@@ -369,21 +369,38 @@ document.getElementById('addNodeForm').addEventListener('submit', async (e) => {
   }
 });
 
+let editNodeLoadController = null;
+let editNodeProfileReady = false;
+
+function cancelEditNodeLoad() {
+  if (editNodeLoadController) editNodeLoadController.abort();
+  editNodeLoadController = null;
+}
+
+function setEditNodeBusy(message) {
+  const form = document.getElementById('editNodeForm');
+  form.setAttribute('aria-busy', String(!!message));
+  for (const control of form.querySelectorAll('input, textarea, select, button')) {
+    if (control.id !== 'cancelEditNodeModalBtn') control.disabled = !!message;
+  }
+  const status = document.getElementById('editNodeStatus');
+  status.textContent = message;
+  status.hidden = !message;
+}
+
+document.getElementById('retryEditNodeBtn').addEventListener('click', () => {
+  openEditModal(document.getElementById('editNodeUUID').value);
+});
+
 window.openEditModal = async function(uuid) {
   const node = nodes.find(n => n.uuid === uuid);
   if (!node || !isAdmin) return;
-  let profile;
-  try {
-    const res = await fetch(`/api/admin/nodes/${encodeURIComponent(uuid)}/profile`, {
-      credentials: 'same-origin',
-      cache: 'no-store'
-    });
-    if (!res.ok) throw new Error('无法读取节点配置，请确认登录状态后重试');
-    profile = (await res.json()).profile;
-  } catch (e) {
-    alert(e.message);
-    return;
-  }
+  const form = document.getElementById('editNodeForm');
+  if (pendingNodeForms.has(form) || deletingNodeIDs.has(document.getElementById('editNodeUUID').value)) return;
+  cancelEditNodeLoad();
+  const controller = new AbortController();
+  editNodeLoadController = controller;
+  editNodeProfileReady = false;
   document.getElementById('editNodeUUID').value = node.uuid;
   document.getElementById('editNodeName').value = node.name || '';
   document.getElementById('editNodeRegion').value = node.region || '';
@@ -397,8 +414,28 @@ window.openEditModal = async function(uuid) {
   document.getElementById('editNodeCycleUsed').value = '';
   document.getElementById('editNodeCycleUsed').placeholder = (currentUsed / (1024*1024*1024)).toFixed(3);
   document.getElementById('editNodeCycleUsedHint').textContent = `当前已用 ${formatBytes(currentUsed)}；${sampleHint}。留空不修改，填 0 可清零。`;
-  fillNodeProfile('edit', profile);
+  fillNodeProfile('edit', null);
+  setEditNodeBusy('正在加载节点配置…');
+  document.getElementById('retryEditNodeBtn').hidden = true;
   openModal('editNodeModal');
+  try {
+    const res = await fetch(`/api/admin/nodes/${encodeURIComponent(uuid)}/profile`, {
+      credentials: 'same-origin', cache: 'no-store', signal: controller.signal
+    });
+    if (!res.ok) throw new Error('无法读取节点配置，请确认登录状态后重试');
+    const data = await res.json();
+    if (controller !== editNodeLoadController || controller.signal.aborted) return;
+    fillNodeProfile('edit', data.profile);
+    editNodeProfileReady = true;
+    setEditNodeBusy('');
+  } catch (error) {
+    if (controller !== editNodeLoadController || controller.signal.aborted) return;
+    setEditNodeBusy('加载失败：' + error.message);
+    form.setAttribute('aria-busy', 'false');
+    document.getElementById('retryEditNodeBtn').hidden = false;
+  } finally {
+    if (controller === editNodeLoadController) editNodeLoadController = null;
+  }
 };
 
 document.getElementById('editNodeGuideBtn').addEventListener('click', () => {
@@ -409,7 +446,7 @@ document.getElementById('editNodeGuideBtn').addEventListener('click', () => {
 document.getElementById('editNodeForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const form = e.currentTarget;
-  if (pendingNodeForms.has(form)) return;
+  if (!editNodeProfileReady || pendingNodeForms.has(form) || deletingNodeIDs.has(document.getElementById('editNodeUUID').value)) return;
   const uuid = document.getElementById('editNodeUUID').value;
   const name = document.getElementById('editNodeName').value;
   const node = nodes.find(node => node.uuid === uuid);
@@ -428,7 +465,8 @@ document.getElementById('editNodeForm').addEventListener('submit', async (e) => 
 
   const submit = form.querySelector('button[type="submit"]');
   pendingNodeForms.add(form);
-  if (submit) submit.disabled = true;
+  setEditNodeBusy('正在保存修改…');
+  if (submit) submit.textContent = '保存中…';
   try {
     const res = await fetch(`/api/admin/nodes/${uuid}`, {
       method: 'PUT',
@@ -457,21 +495,24 @@ document.getElementById('editNodeForm').addEventListener('submit', async (e) => 
     alert('请求失败: ' + e.message);
   } finally {
     pendingNodeForms.delete(form);
-    if (submit) submit.disabled = false;
+    setEditNodeBusy('');
+    if (submit) submit.textContent = '保存修改';
   }
 });
 
 document.getElementById('deleteNodeBtn').addEventListener('click', async () => {
   const uuid = document.getElementById('editNodeUUID').value;
-  if (!uuid || deletingNodeIDs.has(uuid)) return;
+  if (!uuid || !editNodeProfileReady || deletingNodeIDs.has(uuid) || pendingNodeForms.has(document.getElementById('editNodeForm'))) return;
   if (!confirm('确定要删除该节点吗？此操作不可恢复。')) return;
   const button = document.getElementById('deleteNodeBtn');
-  button.disabled = true;
+  setEditNodeBusy('正在删除节点及历史数据…');
+  button.textContent = '删除中…';
   try {
     await deleteNodeAndRefresh(uuid);
   } catch (e) {
     alert('删除失败: ' + e.message);
   } finally {
-    button.disabled = false;
+    setEditNodeBusy('');
+    button.textContent = '删除节点';
   }
 });

@@ -417,6 +417,10 @@ func (s *sqliteDB) deleteNode(uuid string) error {
 	}
 	defer tx.Rollback()
 
+	// Suppress per-sample summary invalidation only for this atomic deletion.
+	if _, err := tx.Exec("INSERT INTO history_rollup_delete_guard(node_uuid) VALUES(?)", uuid); err != nil {
+		return err
+	}
 	if _, err := tx.Exec("DELETE FROM nodes WHERE uuid = ?", uuid); err != nil {
 		return err
 	}
@@ -432,12 +436,14 @@ func (s *sqliteDB) deleteNode(uuid string) error {
 	if _, err := tx.Exec("DELETE FROM history_rollups WHERE node_uuid = ?", uuid); err != nil {
 		return err
 	}
-	// Deleting raw rows may trigger dirty-hour bookkeeping; the node is gone,
-	// so remove both pre-existing and newly created jobs in the same transaction.
+	// The node is gone, so discard any previously queued summary repairs too.
 	if _, err := tx.Exec("DELETE FROM history_rollup_dirty WHERE node_uuid = ?", uuid); err != nil {
 		return err
 	}
 	if _, err := tx.Exec("DELETE FROM telegram_alert_state WHERE node_uuid = ?", uuid); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("DELETE FROM history_rollup_delete_guard WHERE node_uuid=?", uuid); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
@@ -474,6 +480,16 @@ func (s *sqliteDB) saveAllNodes(nodes map[string]*Node) (map[string]string, erro
 		if _, err := tx.Exec("DELETE FROM nodes"); err != nil {
 			return nil, err
 		}
+	}
+
+	return s.saveNodeRows(nodes)
+}
+
+// Upsert only the supplied nodes; callers decide whether other rows are removed.
+func (s *sqliteDB) saveNodeRows(nodes map[string]*Node) (map[string]string, error) {
+	tx := s.tx
+	if tx == nil {
+		return nil, errors.New("node writes require a transaction")
 	}
 
 	query := `

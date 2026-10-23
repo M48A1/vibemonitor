@@ -130,6 +130,7 @@ function resetPasswordFields() {
 
 window.closeModal = function(id) {
   if (!id) {
+    if (typeof cancelEditNodeLoad === 'function') cancelEditNodeLoad();
     cancelPingHistory();
     cancelResourceHistory();
     const activeModals = typeof document.querySelectorAll === 'function'
@@ -148,6 +149,7 @@ window.closeModal = function(id) {
     m.classList.remove('active');
   }
   const modalId = (m && m.id) || id;
+  if (modalId === 'editNodeModal' && typeof cancelEditNodeLoad === 'function') cancelEditNodeLoad();
   if (modalId === 'pingChartModal') cancelPingHistory();
   if (modalId === 'resourceChartModal') cancelResourceHistory();
   if (modalId === 'loginModal') {

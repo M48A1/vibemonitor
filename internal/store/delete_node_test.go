@@ -139,6 +139,7 @@ func TestDeleteNodeFailureKeepsLiveAndPersistedState(t *testing.T) {
 	if err := s.DeleteNode("deleted"); err == nil {
 		t.Fatal("expected deletion failure")
 	}
+	assertDBRowCount(t, s.sdb, "history_rollup_delete_guard", 0)
 	if len(s.GetDashboardNodes()) != 2 || len(s.pendingSamples) != 2 {
 		t.Fatal("failure changed live state")
 	}

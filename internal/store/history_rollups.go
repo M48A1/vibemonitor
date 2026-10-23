@@ -34,6 +34,10 @@ CREATE TABLE IF NOT EXISTS history_rollups (
  PRIMARY KEY(node_uuid,kind,target_name,host,method,hour)
 );
 CREATE INDEX IF NOT EXISTS idx_history_rollups_time ON history_rollups(hour);
+-- Entries exist only inside a node-deletion transaction and roll back on failure.
+CREATE TABLE IF NOT EXISTS history_rollup_delete_guard (
+ node_uuid TEXT PRIMARY KEY
+);
 CREATE TABLE IF NOT EXISTS history_rollup_state (
  id INTEGER PRIMARY KEY CHECK(id=1), completed_before INTEGER NOT NULL
 );
@@ -56,6 +60,9 @@ INSERT OR IGNORE INTO history_rollup_state(id,completed_before) VALUES(1,0);
 			ref := "NEW"
 			if event == "DELETE" {
 				ref = "OLD"
+				// Whole-node deletion also removes every summary. Retention and
+				// target changes must still invalidate surviving summaries normally.
+				when = " WHEN NOT EXISTS (SELECT 1 FROM history_rollup_delete_guard WHERE node_uuid=OLD.node_uuid)"
 			}
 			// Explicit UPSERT is necessary here: INSERT OR IGNORE inside a
 			// trigger can inherit an outer raw UPSERT's conflict policy and

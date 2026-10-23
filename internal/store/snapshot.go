@@ -3,58 +3,77 @@ package store
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // saveSnapshot commits configuration, changed nodes and history together.
 // Caches are advanced only after commit, so failed writes can be retried.
 func (s *sqliteDB) saveSnapshot(config Config, nodes map[string]*Node, samples ...historySample) error {
+	return s.saveSnapshotRows(config, nodes, true, samples...)
+}
+
+// A metadata edit must not copy, serialize or persist unrelated nodes/history.
+// The caller holds persistMu and supplies an owned copy of the edited node.
+func (s *sqliteDB) saveNodeSnapshot(config Config, node *Node) error {
+	return s.saveSnapshotRows(config, map[string]*Node{node.UUID: node}, false)
+}
+
+func (s *sqliteDB) saveSnapshotRows(config Config, nodes map[string]*Node, replaceAll bool, samples ...historySample) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 	w := &sqliteDB{db: s.db, tx: tx, nodeCache: s.nodeCache}
-	if err = w.saveConfig(&config); err != nil {
-		return err
-	}
-	nextNodes, err := w.saveAllNodes(nodes)
-	if err != nil {
-		return err
-	}
-	if _, err = tx.Exec("DELETE FROM telegram_alert_state WHERE node_uuid NOT IN (SELECT uuid FROM nodes)"); err != nil {
-		return err
-	}
-	if s.nodeCache == nil {
-		if _, err = tx.Exec("DELETE FROM ping_history WHERE node_uuid NOT IN (SELECT uuid FROM nodes)"); err != nil {
+	var nextNodes map[string]string
+	if replaceAll {
+		if err = w.saveConfig(&config); err != nil {
 			return err
 		}
-		if _, err = tx.Exec("DELETE FROM resource_history WHERE node_uuid NOT IN (SELECT uuid FROM nodes)"); err != nil {
+		nextNodes, err = w.saveAllNodes(nodes)
+		if err != nil {
 			return err
 		}
-		for _, table := range []string{"history_rollups", "history_rollup_dirty"} {
-			if _, err = tx.Exec("DELETE FROM " + table + " WHERE node_uuid NOT IN (SELECT uuid FROM nodes)"); err != nil {
+		if _, err = tx.Exec("DELETE FROM telegram_alert_state WHERE node_uuid NOT IN (SELECT uuid FROM nodes)"); err != nil {
+			return err
+		}
+		if s.nodeCache == nil {
+			if _, err = tx.Exec("DELETE FROM ping_history WHERE node_uuid NOT IN (SELECT uuid FROM nodes)"); err != nil {
 				return err
 			}
-		}
-	} else {
-		for id := range s.nodeCache {
-			if _, exists := nodes[id]; !exists {
-				if _, err = tx.Exec("DELETE FROM ping_history WHERE node_uuid=?", id); err != nil {
+			if _, err = tx.Exec("DELETE FROM resource_history WHERE node_uuid NOT IN (SELECT uuid FROM nodes)"); err != nil {
+				return err
+			}
+			for _, table := range []string{"history_rollups", "history_rollup_dirty"} {
+				if _, err = tx.Exec("DELETE FROM " + table + " WHERE node_uuid NOT IN (SELECT uuid FROM nodes)"); err != nil {
 					return err
 				}
-				if _, err = tx.Exec("DELETE FROM resource_history WHERE node_uuid=?", id); err != nil {
-					return err
-				}
-				for _, table := range []string{"history_rollups", "history_rollup_dirty"} {
-					if _, err = tx.Exec("DELETE FROM "+table+" WHERE node_uuid=?", id); err != nil {
+			}
+		} else {
+			for id := range s.nodeCache {
+				if _, exists := nodes[id]; !exists {
+					if _, err = tx.Exec("DELETE FROM ping_history WHERE node_uuid=?", id); err != nil {
 						return err
+					}
+					if _, err = tx.Exec("DELETE FROM resource_history WHERE node_uuid=?", id); err != nil {
+						return err
+					}
+					for _, table := range []string{"history_rollups", "history_rollup_dirty"} {
+						if _, err = tx.Exec("DELETE FROM "+table+" WHERE node_uuid=?", id); err != nil {
+							return err
+						}
 					}
 				}
 			}
 		}
-	}
-	if _, err = tx.Exec("DELETE FROM ping_observations WHERE node_uuid NOT IN (SELECT uuid FROM nodes)"); err != nil {
-		return err
+		if _, err = tx.Exec("DELETE FROM ping_observations WHERE node_uuid NOT IN (SELECT uuid FROM nodes)"); err != nil {
+			return err
+		}
+	} else {
+		nextNodes, err = w.saveNodeRows(nodes)
+		if err != nil {
+			return err
+		}
 	}
 	observations, err := tx.Prepare(pingObservationUpsert)
 	if err != nil {
@@ -124,7 +143,36 @@ func (s *sqliteDB) saveSnapshot(config Config, nodes map[string]*Node, samples .
 	if err = tx.Commit(); err != nil {
 		return err
 	}
-	s.nodeCache, s.pingCache = nextNodes, nextPings
-	s.targetCache = nextTargets
+	if replaceAll {
+		s.nodeCache, s.pingCache = nextNodes, nextPings
+		s.targetCache = nextTargets
+	} else {
+		if s.nodeCache == nil {
+			s.nodeCache = make(map[string]string)
+		}
+		if s.targetCache == nil {
+			s.targetCache = make(map[string]string)
+		}
+		if s.pingCache == nil {
+			s.pingCache = make(map[string]PingSample)
+		}
+		for id, value := range nextNodes {
+			s.nodeCache[id] = value
+		}
+		for id, value := range nextTargets {
+			// Only target changes can invalidate already persisted samples.
+			if s.targetCache[id] != value {
+				for key := range s.pingCache {
+					if strings.HasPrefix(key, id+"/") {
+						delete(s.pingCache, key)
+					}
+				}
+			}
+			s.targetCache[id] = value
+		}
+		for key, sample := range nextPings {
+			s.pingCache[key] = sample
+		}
+	}
 	return nil
 }

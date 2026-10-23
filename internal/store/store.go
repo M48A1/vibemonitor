@@ -938,13 +938,13 @@ func (s *Store) UpdateNodeWithOptions(uuid string, opts NodeOptions) error {
 	}
 	changedAt := time.Now()
 	priorUsage, priorCycle := n.CurrentCycleUsed, n.CycleStart
-	snapshot := cloneNodesForSave(s.nodes)
-	s.applyNodeOptionsLocked(snapshot[uuid], opts, cycleUsedBytes, changedAt)
+	snapshot := cloneNodeForSave(n)
+	s.applyNodeOptionsLocked(snapshot, opts, cycleUsedBytes, changedAt)
 	config := s.config
 	s.mu.Unlock()
 	var err error
 	if s.sdb != nil {
-		err = s.sdb.saveSnapshot(config, snapshot)
+		err = s.sdb.saveNodeSnapshot(config, snapshot)
 	}
 	s.mu.Lock()
 	if err != nil {

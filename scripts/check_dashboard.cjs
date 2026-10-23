@@ -134,6 +134,46 @@ async function checkStartup() {
   assert.deepEqual(savedOrder, [{uuid:'a',weight:1},{uuid:'b',weight:2},{uuid:'c',weight:3}]);
   vm.runInContext('acceptNodeSnapshot(initial)', ctx);
   assert.equal(w.document.getElementById('newNodeOrder'), null);
+  // Open immediately, lock incomplete forms, and reject stale profile responses.
+  vm.runInContext('setAdminState(true)', ctx);
+  const profiles = [];
+  w.fetch = (url, options) => new Promise((resolve, reject) => profiles.push({url, options, resolve, reject}));
+  const editForm = w.document.getElementById('editNodeForm');
+  const editStatus = w.document.getElementById('editNodeStatus');
+  const editSubmit = editForm.querySelector('[type="submit"]');
+  const firstProfile = w.openEditModal('a');
+  assert(w.document.getElementById('editNodeModal').classList.contains('active'));
+  assert(editStatus.textContent.includes('加载'));
+  assert(editSubmit.disabled);
+  editForm.dispatchEvent(new w.Event('submit', {cancelable:true}));
+  assert.equal(profiles.length, 1, 'incomplete profile was submitted');
+  const secondProfile = w.openEditModal('b');
+  assert(profiles[0].options.signal.aborted);
+  profiles[1].resolve({ok:true,json:async()=>({profile:{targets:[],due_date:'2027-01-02'}})});
+  await secondProfile;
+  profiles[0].resolve({ok:true,json:async()=>({profile:{targets:[],due_date:'2026-01-01'}})});
+  await firstProfile;
+  assert.equal(w.document.getElementById('editNodeUUID').value, 'b');
+  assert.equal(w.document.getElementById('editNodeDue').value, '2027-01-02');
+  assert.equal(editSubmit.disabled, false);
+  const closedProfile = w.openEditModal('a');
+  w.closeModal('editNodeModal');
+  assert(profiles[2].options.signal.aborted);
+  profiles[2].resolve({ok:true,json:async()=>({profile:{targets:[],due_date:'2026-01-01'}})});
+  await closedProfile;
+  assert.equal(w.document.getElementById('editNodeModal').classList.contains('active'), false);
+  const failedProfile = w.openEditModal('a');
+  profiles[3].reject(new Error('offline'));
+  await failedProfile;
+  assert(editStatus.textContent.includes('加载失败'));
+  assert(editSubmit.disabled);
+  assert.equal(w.document.getElementById('retryEditNodeBtn').hidden, false);
+  w.document.getElementById('retryEditNodeBtn').click();
+  profiles[4].resolve({ok:true,json:async()=>({profile:{targets:[]}})});
+  await settle();
+  assert.equal(editSubmit.disabled, false);
+  assert(editStatus.hidden);
+  assert(w.document.getElementById('retryEditNodeBtn').hidden);
   // Both forms reject duplicate submissions while a request is pending.
   for (const [id, method] of [['addNodeForm', 'POST'], ['editNodeForm', 'PUT']]) {
    let writes = 0, reads = 0, release;
@@ -152,6 +192,13 @@ async function checkStartup() {
    form.dispatchEvent(new w.Event('submit', { cancelable: true }));
    assert.equal(writes, 1, id + ' duplicate submission');
    assert(form.querySelector('[type="submit"]').disabled);
+   if (method === 'PUT') {
+    assert(editStatus.textContent.includes('正在保存'));
+    assert(w.document.getElementById('deleteNodeBtn').disabled);
+    const requestsBefore = writes;
+    w.document.getElementById('deleteNodeBtn').click();
+    assert.equal(writes, requestsBefore);
+   }
    release(); await settle(); await settle();
    assert.equal(reads, 1, id + ' skipped fresh-WS refresh');
    assert.equal(form.querySelector('[type="submit"]').disabled, false);
@@ -176,6 +223,24 @@ async function checkStartup() {
   assert.equal(w.document.getElementById('nodeGrid').dataset.stale, 'true');
   vm.runInContext("acceptNodeSnapshot([{uuid:'a',name:'latest',online:true}])", ctx);
   assert.equal(w.document.getElementById('nodeGrid').dataset.stale, 'false');
+  // A slow/failed deletion shows progress and keeps the node available for retry.
+  w.fetch = async () => ({ok:true,json:async()=>({profile:{targets:[]}})});
+  await w.openEditModal('a');
+  let finishDelete;
+  w.fetch = () => new Promise(resolve => finishDelete = resolve);
+  const deleteButton = w.document.getElementById('deleteNodeBtn');
+  deleteButton.click();
+  assert(editStatus.textContent.includes('正在删除'));
+  assert(deleteButton.disabled);
+  assert(editSubmit.disabled);
+  assert.equal(vm.runInContext('nodes.length', ctx), 1);
+  finishDelete({ok:false,json:async()=>({error:'simulated delete failure'})});
+  await settle(); await settle();
+  assert.equal(deleteButton.disabled, false);
+  assert.equal(editSubmit.disabled, false);
+  assert.equal(vm.runInContext('nodes.length', ctx), 1);
+  assert(w.document.getElementById('editNodeModal').classList.contains('active'));
+  assert(alerts.pop().includes('simulated delete failure'));
   // Successful deletion survives stale HTTP/WS data, including the last node.
   fresh(); w.fetch = async (url, options = {}) => ({ ok: true, json: async () => options.method ? {} : [{uuid:'a',name:'old'}] });
   await w.deleteNode('a'); await settle();

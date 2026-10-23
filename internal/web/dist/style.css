@@ -891,3 +891,6 @@ body {
 .connection-status { margin: 8px auto; padding: 8px 14px; max-width: 1440px; font-size: 12px; color: var(--muted-foreground); }
 .connection-status[data-state="stale"] { color: #92400e; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 6px; }
 #nodeGrid[data-stale="true"] .node-card { opacity: .65; }
+
+/* Keep loading/retry controls hidden across button display styles and themes. */
+#editNodeModal [hidden] { display: none !important; }

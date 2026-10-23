@@ -278,6 +278,8 @@
         <h3 class="modal-title">编辑监控节点</h3>
         <button type="button" class="modal-close" id="closeEditNodeModalBtn" data-close-modal="editNodeModal" aria-label="关闭">&times;</button>
       </div>
+      <p id="editNodeStatus" role="status" aria-live="polite" hidden></p>
+      <button type="button" class="btn" id="retryEditNodeBtn" hidden>重新加载</button>
       <form id="editNodeForm">
         <input type="hidden" id="editNodeUUID">
         <div class="form-group">

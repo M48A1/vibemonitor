@@ -107,6 +107,9 @@ func TestSettingsTransactionFailureDoesNotPublish(t *testing.T) {
 	if s.GetConfig().SiteTitle != previous.SiteTitle {
 		t.Fatal("uncommitted config visible")
 	}
+	if _, err := s.sdb.db.Exec(`CREATE TRIGGER fail_node BEFORE UPDATE ON nodes BEGIN SELECT RAISE(ABORT,'injected failure'); END`); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.UpdateNode("survivor", "should not appear", "", "", 0); err == nil {
 		t.Fatal("expected failure")
 	}
