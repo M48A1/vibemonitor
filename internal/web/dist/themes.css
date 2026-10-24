@@ -77,7 +77,7 @@ body::before {
 .btn { border-radius: 8px; font-weight: 500; }
 .hex-section-heading { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
 .hex-section-label { font-size: 11px; font-weight: 400; color: var(--success); }
-.hex-section-label::before, .hex-live-dot { content: ''; display: inline-block; width: 6px; height: 6px; background: var(--success); border-radius: 50%; margin-right: 6px; }
+.hex-section-label::before { content: ''; display: inline-block; width: 6px; height: 6px; background: var(--success); border-radius: 50%; margin-right: 6px; }
 .hex-stats { display: grid; grid-template-columns: minmax(0, 0.42fr) minmax(0, 0.58fr); gap: 18px; margin-bottom: 24px; align-items: center; }
 .hex-stats-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); min-width: 0; min-height: 240px; overflow: hidden; background: rgba(255, 255, 255, .61); border: 1px solid rgba(255, 255, 255, .68); border-radius: 20px; box-shadow: 0 22px 55px rgba(42, 55, 99, .16), inset 0 1px 0 rgba(255, 255, 255, .72); backdrop-filter: blur(22px) saturate(145%); -webkit-backdrop-filter: blur(22px) saturate(145%); }
 .hex-stat { padding: 18px 20px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }

@@ -152,7 +152,6 @@ window.VibeHex = (() => {
     const down = total('down');
     const values = {
       online: String(online), count: String(nodes.length),
-      status: `${online} 个在线 · ${nodes.length - online} 个离线`,
       memoryBusy: String(memoryBusy),
       speed: formatSpeed(up + down),
       busy: String(busy),
@@ -162,7 +161,7 @@ window.VibeHex = (() => {
     const banner = document.getElementById('statsBanner');
     if (!overviewFields) {
       banner.innerHTML = `
-        <div class="hex-stat"><span>节点状态</span><strong><span data-stat="online">${values.online}</span><em> / <span data-stat="count">${values.count}</span></em></strong><small><i class="hex-live-dot"></i><span data-stat="status">${values.status}</span></small></div>
+        <div class="hex-stat"><span>节点状态</span><strong><span data-stat="online">${values.online}</span><em> / <span data-stat="count">${values.count}</span></em></strong></div>
         <div class="hex-stat"><span>内存紧张节点</span><strong><span data-stat="memoryBusy">${values.memoryBusy}</span><em> 台</em></strong></div>
         <div class="hex-stat"><span>实时网速</span><strong data-stat="speed">${values.speed}</strong></div>
         <div class="hex-stat"><span>高负载节点</span><strong><span data-stat="busy">${values.busy}</span><em> 台</em></strong></div>
