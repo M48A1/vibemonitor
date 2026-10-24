@@ -10,13 +10,14 @@ import (
 const maxPendingHistorySamples = 65536
 
 type historySample struct {
-	UUID, Target, Host, Method string
-	ObservationStart           int64
-	Timestamp                  int64
-	CPU, RAM, Disk             sql.NullFloat64
-	Network                    sql.NullInt64
-	Latency                    int
-	Ping                       bool
+	UUID, Target, Host, Method        string
+	ObservationStart                  int64
+	Timestamp                         int64
+	CPU, RAM, Disk                    sql.NullFloat64
+	Connections, Load, ConnectionRate sql.NullFloat64
+	Network                           sql.NullInt64
+	Latency                           int
+	Ping                              bool
 }
 
 func (s *Store) enqueueHistoryLocked(sample historySample) bool {
@@ -31,8 +32,9 @@ func writeHistorySamples(tx *sql.Tx, samples []historySample) error {
 	if len(samples) == 0 {
 		return nil
 	}
-	resource, err := tx.Prepare(`INSERT INTO resource_history(node_uuid,timestamp,cpu_usage,ram_usage,network_rate,disk_usage) VALUES(?,?,?,?,?,?)
- ON CONFLICT(node_uuid,timestamp) DO UPDATE SET cpu_usage=excluded.cpu_usage,ram_usage=excluded.ram_usage,network_rate=excluded.network_rate,disk_usage=excluded.disk_usage`)
+	resource, err := tx.Prepare(`INSERT INTO resource_history(node_uuid,timestamp,cpu_usage,ram_usage,network_rate,disk_usage,connections,load1,connection_rate) VALUES(?,?,?,?,?,?,?,?,?)
+ ON CONFLICT(node_uuid,timestamp) DO UPDATE SET cpu_usage=excluded.cpu_usage,ram_usage=excluded.ram_usage,network_rate=excluded.network_rate,disk_usage=excluded.disk_usage,
+ connections=excluded.connections,load1=excluded.load1,connection_rate=excluded.connection_rate`)
 	if err != nil {
 		return err
 	}
@@ -55,7 +57,7 @@ func writeHistorySamples(tx *sql.Tx, samples []historySample) error {
 				_, err = observation.Exec(v.UUID, v.Target, v.Host, v.Method, v.ObservationStart, v.Timestamp)
 			}
 		} else {
-			_, err = resource.Exec(v.UUID, v.Timestamp, v.CPU, v.RAM, v.Network, v.Disk)
+			_, err = resource.Exec(v.UUID, v.Timestamp, v.CPU, v.RAM, v.Network, v.Disk, v.Connections, v.Load, v.ConnectionRate)
 		}
 		if err != nil {
 			return err

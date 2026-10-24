@@ -1238,8 +1238,14 @@ func (s *Store) ingestReportAt(token string, report protocol.Report, now time.Ti
 		}
 		rate, validRate := totalNetworkRate(report.Network.Up, report.Network.Down)
 		network := sql.NullInt64{Int64: rate, Valid: validRate}
-		if cpu.Valid || ram.Valid || disk.Valid || network.Valid {
-			if s.enqueueHistoryLocked(historySample{UUID: node.UUID, Timestamp: receivedAt.Unix(), CPU: cpu, RAM: ram, Disk: disk, Network: network}) {
+		connections := sql.NullFloat64{Float64: float64(report.Connections.TCP) + float64(report.Connections.UDP), Valid: report.Connections.TCP >= 0 && report.Connections.UDP >= 0}
+		load := nonnegativeResource(report.Load.Load1)
+		var connectionRate sql.NullFloat64
+		if report.Connections.TCPNewPerSecond != nil {
+			connectionRate = nonnegativeResource(*report.Connections.TCPNewPerSecond)
+		}
+		if cpu.Valid || ram.Valid || disk.Valid || network.Valid || connections.Valid || load.Valid || connectionRate.Valid {
+			if s.enqueueHistoryLocked(historySample{UUID: node.UUID, Timestamp: receivedAt.Unix(), CPU: cpu, RAM: ram, Disk: disk, Network: network, Connections: connections, Load: load, ConnectionRate: connectionRate}) {
 				node.lastResourceSampleAt = receivedAt.Unix()
 				sampled = true
 			}

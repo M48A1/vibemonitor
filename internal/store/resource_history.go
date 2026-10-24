@@ -10,6 +10,15 @@ import (
 
 const resourceHistoryRetentionSec = 90 * 86400
 
+var resourceMetrics = []struct{ name, column string }{
+	{"cpu", "cpu_usage"}, {"memory", "ram_usage"}, {"network", "network_rate"}, {"disk", "disk_usage"},
+	{"connections", "connections"}, {"load", "load1"}, {"connection_rate", "connection_rate"},
+}
+
+func nonnegativeResource(value float64) sql.NullFloat64 {
+	return sql.NullFloat64{Float64: value, Valid: value >= 0 && !math.IsNaN(value) && !math.IsInf(value, 0)}
+}
+
 type ResourceSample struct {
 	Timestamp int64   `json:"t"`
 	Usage     float64 `json:"v"`

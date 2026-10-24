@@ -214,6 +214,17 @@ func (s *sqliteDB) initSchema() error {
 			return err
 		}
 	}
+	for _, column := range []string{"connections", "load1", "connection_rate"} {
+		exists, err := s.hasResourceColumn(column)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			if _, err := s.db.Exec("ALTER TABLE resource_history ADD COLUMN " + column + " REAL"); err != nil {
+				return err
+			}
+		}
+	}
 	// 兼容已有旧测试创建的数据库，确保 data_json 列存在
 	_, _ = s.db.Exec("ALTER TABLE nodes ADD COLUMN data_json TEXT DEFAULT ''")
 	for _, column := range []struct{ name, fallback string }{{"site_theme", "hex"}, {"color_mode", "light"}, {"telegram_bot_token", ""}, {"telegram_chat_id", ""}} {

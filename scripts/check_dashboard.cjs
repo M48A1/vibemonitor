@@ -50,8 +50,68 @@ async function checkStartup() {
   console.log('HTML script order, bootstrap, authentication, settings, and live updates PASS');
  } finally { dom.window.close(); }
 }
+async function checkRankings() {
+ const dom = new JSDOM(fs.readFileSync(path.join(root, 'index.html'), 'utf8'), {
+  url: 'http://localhost', runScripts: 'outside-only', pretendToBeVisual: true
+ });
+ const w = dom.window, ctx = dom.getInternalVMContext(), requests = [];
+ w.matchMedia = () => ({matches: false, addEventListener() {}});
+ w.fetch = (url, options) => new Promise((resolve, reject) => requests.push({url, options, resolve, reject}));
+ const reply = (request, data, ok = true) => request.resolve({ok, json: async () => data});
+ const data = (name, empty = false) => ({start_time: 1792771200, end_time: 1792814400,
+  groups: ['connections', 'load', 'memory', 'connection_rate', 'traffic'].map(metric => ({metric,
+   entries: empty ? [] : [{uuid: 'x', name, value: 20}, {uuid: 'zero', name: 'Zero', value: 0}]}))});
+ try {
+  vm.runInContext(fs.readFileSync(path.join(root, 'themes.js'), 'utf8'), ctx);
+  for (const script of w.document.querySelectorAll('script[data-dashboard-module]')) {
+   vm.runInContext(fs.readFileSync(path.join(root, script.getAttribute('src').slice(1)), 'utf8'), ctx);
+  }
+  vm.runInContext('updateGlobalStats()', ctx);
+  assert.equal(w.document.querySelectorAll('#statsBanner [data-ranking]').length, 0);
+  assert.equal(w.document.querySelectorAll('#statsBanner .hex-stat').length, 6);
+  w.document.getElementById('siteMenu').open = true;
+  w.document.getElementById('rankingsBtn').click();
+  assert(w.document.getElementById('rankingsModal').classList.contains('active'));
+  assert(!w.document.getElementById('siteMenu').open);
+  assert(!w.document.getElementById('loginModal').classList.contains('active'));
+  assert.equal(requests[0].url, '/api/rankings?period=day');
+  w.document.querySelector('[data-ranking-period="week"]').click();
+  assert(requests[0].options.signal.aborted);
+  reply(requests[1], data('<img src=x onerror=alert(1)>'));
+  await settle(); await settle();
+  assert.equal(w.document.querySelectorAll('.ranking-card').length, 5);
+  assert.equal(w.document.querySelectorAll('.ranking-row').length, 10);
+  assert.equal(w.document.querySelectorAll('#rankingsGrid img').length, 0);
+  assert.equal(w.document.querySelector('.ranking-node').textContent, '<img src=x onerror=alert(1)>');
+  assert(w.document.getElementById('rankingsGrid').textContent.includes('0.0%'));
+  reply(requests[0], data('Stale day'));
+  await settle();
+  assert(!w.document.getElementById('rankingsGrid').textContent.includes('Stale day'));
+  w.document.querySelector('[data-ranking-period="month"]').click();
+  reply(requests[2], data('', true)); await settle(); await settle();
+  assert.equal(w.document.querySelectorAll('.ranking-empty').length, 5);
+  w.document.getElementById('refreshRankingsBtn').click();
+  reply(requests[3], {}, false); await settle(); await settle();
+  assert(w.document.getElementById('rankingsStatus').textContent.includes('加载失败'));
+  assert(!w.document.getElementById('refreshRankingsBtn').disabled);
+  w.document.getElementById('refreshRankingsBtn').click();
+  w.document.getElementById('closeRankingsBtn').click();
+  assert(requests[4].options.signal.aborted);
+  reply(requests[4], data('Closed request')); await settle(); await settle();
+  assert(!w.document.getElementById('rankingsModal').classList.contains('active'));
+  assert.equal(w.document.activeElement.id, 'siteMenuTrigger');
+  assert(!w.document.getElementById('rankingsGrid').textContent.includes('Closed request'));
+  w.document.getElementById('rankingsBtn').click();
+  assert.equal(requests[5].url, '/api/rankings?period=month');
+  reply(requests[5], data('Recovered')); await settle(); await settle();
+  assert(w.document.getElementById('rankingsGrid').textContent.includes('Recovered'));
+  console.log('Rankings: public menu, period switching, cancellation, escaping, zero/empty data, retry, close and reopen PASS');
+ } finally { dom.window.close(); }
+}
+
 (async () => {
  await checkStartup();
+ await checkRankings();
  for (const theme of ['hex', 'rakugaki', 'win2000', 'design', 'serverstatus']) {
   const dom = new JSDOM(fs.readFileSync(path.join(root, 'index.html'), 'utf8'), {
    url: 'http://localhost', runScripts: 'outside-only', pretendToBeVisual: true

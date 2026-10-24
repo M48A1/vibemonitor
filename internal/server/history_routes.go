@@ -9,6 +9,26 @@ import (
 )
 
 func (s *Server) registerHistoryRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/rankings", func(w http.ResponseWriter, r *http.Request) {
+		period := r.URL.Query().Get("period")
+		if period == "" {
+			period = "day"
+		}
+		response, err := s.store.GetRankingsContext(r.Context(), period)
+		if err != nil {
+			if r.Context().Err() != nil {
+				return
+			}
+			if errors.Is(err, store.ErrRankingPeriod) {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid ranking period"})
+				return
+			}
+			log.Printf("[Store] Rankings query failed: %v", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load rankings"})
+			return
+		}
+		writeJSON(w, http.StatusOK, response)
+	})
 	// 2. Public Nodes Info & Ping History
 	mux.HandleFunc("GET /api/nodes", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("view") == "dashboard" {

@@ -133,6 +133,7 @@ window.closeModal = function(id) {
     if (typeof cancelEditNodeLoad === 'function') cancelEditNodeLoad();
     cancelPingHistory();
     cancelResourceHistory();
+    if (typeof cancelRankings === 'function') cancelRankings();
     const activeModals = typeof document.querySelectorAll === 'function'
       ? document.querySelectorAll('.modal-overlay.active')
       : [];
@@ -152,6 +153,7 @@ window.closeModal = function(id) {
   if (modalId === 'editNodeModal' && typeof cancelEditNodeLoad === 'function') cancelEditNodeLoad();
   if (modalId === 'pingChartModal') cancelPingHistory();
   if (modalId === 'resourceChartModal') cancelResourceHistory();
+  if (modalId === 'rankingsModal' && typeof cancelRankings === 'function') cancelRankings();
   if (modalId === 'loginModal') {
     resetLoginPasswordFields();
     pendingAdminAction = null;
@@ -166,6 +168,7 @@ window.closeModal = function(id) {
 
 // Bind modal overlay backdrop click to close
 const modalOverlayIds = [
+  'rankingsModal',
   'themeManagementModal',
   'settingsModal',
   'externalSettingsModal',

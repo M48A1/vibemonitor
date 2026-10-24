@@ -18,6 +18,7 @@
             <span class="brand-title" id="siteTitle">VibeMonitor</span>
           </summary>
           <div class="site-menu-panel">
+            <button type="button" class="site-menu-item site-menu-level-1" id="rankingsBtn">排行榜</button>
             <button type="button" class="site-menu-item site-menu-level-1" id="adminBtn">基本设置</button>
             <button type="button" class="site-menu-item site-menu-level-1" id="themeManagementBtn">主题管理</button>
             <details class="node-management" id="nodeManagementMenu">
@@ -78,6 +79,25 @@
       <div class="theme-actions"><label class="btn" id="themeUploadLabel">上传主题包<input type="file" id="themePackageFile" accept=".zip,application/zip" hidden></label><a class="btn" href="/api/admin/themes/example" download>下载示例包</a><button type="button" class="btn btn-primary" id="activateThemeBtn">启用所选主题</button></div>
       <p class="logo-upload-hint">ZIP 最大 2MB，包含 theme.json 和一个 UTF-8 CSS 文件。主题包与启用状态随数据库备份。</p>
       <p id="themeStatus" role="status" aria-live="polite"></p>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="rankingsModal">
+    <div class="modal rankings-modal" role="dialog" aria-modal="true" aria-labelledby="rankingsTitle" aria-describedby="rankingsDescription">
+      <div class="modal-header"><h3 class="modal-title" id="rankingsTitle">排行榜</h3><button type="button" class="modal-close" id="closeRankingsBtn" data-close-modal="rankingsModal" aria-label="关闭排行榜">&times;</button></div>
+      <p class="rankings-description" id="rankingsDescription">五项指标 · 各取前三名</p>
+      <div class="rankings-toolbar">
+        <div class="time-range-group" role="group" aria-label="排行周期">
+          <button type="button" class="range-btn active" data-ranking-period="day" aria-pressed="true">日榜</button>
+          <button type="button" class="range-btn" data-ranking-period="week" aria-pressed="false">周榜</button>
+          <button type="button" class="range-btn" data-ranking-period="month" aria-pressed="false">月榜</button>
+        </div>
+        <button type="button" class="btn" id="refreshRankingsBtn">刷新</button>
+      </div>
+      <p class="rankings-period" id="rankingsPeriod"></p>
+      <p class="rankings-status" id="rankingsStatus" role="status" aria-live="polite"></p>
+      <div class="rankings-grid" id="rankingsGrid"></div>
+      <p class="rankings-footnote">按北京时间统计今天、本周（周一起）或本月至今。前四项取有效采样平均值，流量累计上传与下载，不含手动校正；缺少历史记录的节点不参与对应排名。</p>
     </div>
   </div>
 
@@ -500,6 +520,7 @@
   <script src="/nodes.js" data-dashboard-module></script>
   <script src="/ping-history.js" data-dashboard-module></script>
   <script src="/resource-history.js" data-dashboard-module></script>
+  <script src="/rankings.js" data-dashboard-module></script>
   <script src="/bootstrap.js"></script>
 </body>
 </html>
