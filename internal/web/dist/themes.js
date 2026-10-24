@@ -128,6 +128,18 @@ window.VibeHex = (() => {
     </article>`;
   }
 
+  function renderRanking(nodes, getValue) {
+    const ranked = nodes.map(node => ({ node, value: getValue(node) }))
+      .filter(entry => entry.value != null && Number.isFinite(entry.value) && entry.value >= 0)
+      .sort((a, b) => b.value - a.value || String(a.node.uuid).localeCompare(String(b.node.uuid)))
+      .slice(0, 3);
+    if (!ranked.length) return '<small>暂无排名数据</small>';
+    return `<ol class="hex-ranking-list">${ranked.map(({ node }) => {
+      const name = escapeHtml(node.name || node.uuid || '未命名节点');
+      return `<li><span class="hex-ranking-name" title="${name}">${name}</span></li>`;
+    }).join('')}</ol>`;
+  }
+
   function renderOverview(nodes) {
     const live = nodes.filter(n => n.online && n.last_report);
     const online = nodes.filter(n => n.online).length;
@@ -157,6 +169,14 @@ window.VibeHex = (() => {
     const connectionRate = connectionRates.reduce((sum, rate) => sum + rate, 0);
     const up = total('up');
     const down = total('down');
+    const rankings = {
+      speed: renderRanking(live, node => {
+        const network = node.last_report.network || {};
+        const upload = number(network.up), download = number(network.down);
+        return upload != null && download != null && upload >= 0 && download >= 0 ? upload + download : null;
+      }),
+      connectionRate: renderRanking(live, node => number((node.last_report.connections || {}).tcp_new_per_sec)),
+    };
     const values = {
       online: String(online), count: String(nodes.length),
       status: `${online} 个在线 · ${nodes.length - online} 个离线`,
@@ -175,16 +195,20 @@ window.VibeHex = (() => {
       banner.innerHTML = `
         <div class="hex-stat"><span>节点状态</span><strong><span data-stat="online">${values.online}</span><em> / <span data-stat="count">${values.count}</span></em></strong><small><i class="hex-live-dot"></i><span data-stat="status">${values.status}</span></small></div>
         <div class="hex-stat"><span>内存紧张节点</span><strong><span data-stat="memoryBusy">${values.memoryBusy}</span><em> 台</em></strong><small data-stat="memoryStatus">${values.memoryStatus}</small></div>
-        <div class="hex-stat"><span>实时网速</span><strong data-stat="speed">${values.speed}</strong><small class="hex-stat-network"><span data-stat="up">${values.up}</span><span data-stat="down">${values.down}</span></small></div>
+        <div class="hex-stat"><span>实时网速</span><strong data-stat="speed">${values.speed}</strong><small class="hex-stat-network"><span data-stat="up">${values.up}</span><span data-stat="down">${values.down}</span></small><div class="hex-ranking"><small>网速前三名</small><div data-ranking="speed">${rankings.speed}</div></div></div>
         <div class="hex-stat"><span>高负载节点</span><strong><span data-stat="busy">${values.busy}</span><em> 台</em></strong><small>负载阈值请在节点信息内修改</small></div>
         <div class="hex-stat"><span>探测异常节点</span><strong><span data-stat="abnormalPing">${values.abnormalPing}</span><em> 台</em></strong><small data-stat="pingStatus">${values.pingStatus}</small></div>
-        <div class="hex-stat"><span>连接速率</span><strong data-stat="connectionRate">${values.connectionRate}</strong><small data-stat="connectionStatus">${values.connectionStatus}</small></div>`;
+        <div class="hex-stat"><span>连接速率</span><strong data-stat="connectionRate">${values.connectionRate}</strong><small data-stat="connectionStatus">${values.connectionStatus}</small><div class="hex-ranking"><small>建连速率前三名</small><div data-ranking="connectionRate">${rankings.connectionRate}</div></div></div>`;
       if (banner.querySelectorAll) {
         overviewFields = Object.fromEntries(Array.from(banner.querySelectorAll('[data-stat]')).map(element => [element.dataset.stat, element]));
       }
     } else {
       for (const [name, value] of Object.entries(values)) {
         if (overviewFields[name].textContent !== value) overviewFields[name].textContent = value;
+      }
+      for (const [name, markup] of Object.entries(rankings)) {
+        const element = banner.querySelector(`[data-ranking="${name}"]`);
+        if (element.innerHTML !== markup) element.innerHTML = markup;
       }
     }
     if (window.VibeGlobe) window.VibeGlobe.setNodes(nodes);
