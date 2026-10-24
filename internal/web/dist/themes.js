@@ -154,16 +154,9 @@ window.VibeHex = (() => {
       const usage = number((n.last_report.cpu || {}).usage);
       return threshold != null && usage != null && usage >= threshold;
     }).length;
-    const pingData = live.map(n => {
-      const results = n.last_report.ping_results || [];
-      const previews = n.ping_preview || [];
-      const measured = results.some(p => number(p.latency) != null) || previews.some(p => number(p.loss) != null);
-      const abnormal = results.some(p => number(p.latency) != null && number(p.latency) < 0) ||
-        previews.some(p => number(p.loss) != null && number(p.loss) >= 20);
-      return { measured, abnormal };
-    });
-    const measuredPing = pingData.filter(p => p.measured).length;
-    const abnormalPing = pingData.filter(p => p.abnormal).length;
+    const cycleUsages = nodes.map(n => number(n.cycle_total_used))
+      .filter(used => used != null && used >= 0);
+    const cycleTraffic = cycleUsages.reduce((sum, used) => sum + used, 0);
     const connectionRates = live.map(n => number((n.last_report.connections || {}).tcp_new_per_sec))
       .filter(rate => rate != null);
     const connectionRate = connectionRates.reduce((sum, rate) => sum + rate, 0);
@@ -176,29 +169,26 @@ window.VibeHex = (() => {
         return upload != null && download != null && upload >= 0 && download >= 0 ? upload + download : null;
       }),
       connectionRate: renderRanking(live, node => number((node.last_report.connections || {}).tcp_new_per_sec)),
+      cycleTraffic: renderRanking(nodes, node => number(node.cycle_total_used)),
     };
     const values = {
       online: String(online), count: String(nodes.length),
       status: `${online} 个在线 · ${nodes.length - online} 个离线`,
       memoryBusy: String(memoryBusy),
-      memoryStatus: memoryUsages.length ? `内存使用率 ≥ 85% · 已监测 ${memoryUsages.length} 台` : '暂无内存数据',
       speed: formatSpeed(up + down),
-      up: `↑ ${formatSpeed(up)}`, down: `↓ ${formatSpeed(down)}`,
       busy: String(busy),
-      abnormalPing: String(abnormalPing),
-      pingStatus: measuredPing ? `当前超时或近 24 小时丢包 ≥ 20% · 已监测 ${measuredPing} 台` : '暂无探测数据',
+      cycleTraffic: cycleUsages.length ? formatBytes(cycleTraffic) : '—',
       connectionRate: connectionRates.length ? `${connectionRate.toLocaleString('zh-CN', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} 次/s` : '—',
-      connectionStatus: connectionRates.length ? `TCP 建连尝试/秒 · 已监测 ${connectionRates.length} 台` : '暂无连接速率数据',
     };
     const banner = document.getElementById('statsBanner');
     if (!overviewFields) {
       banner.innerHTML = `
         <div class="hex-stat"><span>节点状态</span><strong><span data-stat="online">${values.online}</span><em> / <span data-stat="count">${values.count}</span></em></strong><small><i class="hex-live-dot"></i><span data-stat="status">${values.status}</span></small></div>
-        <div class="hex-stat"><span>内存紧张节点</span><strong><span data-stat="memoryBusy">${values.memoryBusy}</span><em> 台</em></strong><small data-stat="memoryStatus">${values.memoryStatus}</small></div>
-        <div class="hex-stat"><span>实时网速</span><strong data-stat="speed">${values.speed}</strong><small class="hex-stat-network"><span data-stat="up">${values.up}</span><span data-stat="down">${values.down}</span></small><div class="hex-ranking"><small>网速前三名</small><div data-ranking="speed">${rankings.speed}</div></div></div>
-        <div class="hex-stat"><span>高负载节点</span><strong><span data-stat="busy">${values.busy}</span><em> 台</em></strong><small>负载阈值请在节点信息内修改</small></div>
-        <div class="hex-stat"><span>探测异常节点</span><strong><span data-stat="abnormalPing">${values.abnormalPing}</span><em> 台</em></strong><small data-stat="pingStatus">${values.pingStatus}</small></div>
-        <div class="hex-stat"><span>连接速率</span><strong data-stat="connectionRate">${values.connectionRate}</strong><small data-stat="connectionStatus">${values.connectionStatus}</small><div class="hex-ranking"><small>建连速率前三名</small><div data-ranking="connectionRate">${rankings.connectionRate}</div></div></div>`;
+        <div class="hex-stat"><span>内存紧张节点</span><strong><span data-stat="memoryBusy">${values.memoryBusy}</span><em> 台</em></strong></div>
+        <div class="hex-stat"><span>实时网速</span><strong data-stat="speed">${values.speed}</strong><div class="hex-ranking"><div data-ranking="speed">${rankings.speed}</div></div></div>
+        <div class="hex-stat"><span>高负载节点</span><strong><span data-stat="busy">${values.busy}</span><em> 台</em></strong></div>
+        <div class="hex-stat"><span>周期流量</span><strong data-stat="cycleTraffic">${values.cycleTraffic}</strong><div class="hex-ranking"><div data-ranking="cycleTraffic">${rankings.cycleTraffic}</div></div></div>
+        <div class="hex-stat"><span>连接速率</span><strong data-stat="connectionRate">${values.connectionRate}</strong><div class="hex-ranking"><div data-ranking="connectionRate">${rankings.connectionRate}</div></div></div>`;
       if (banner.querySelectorAll) {
         overviewFields = Object.fromEntries(Array.from(banner.querySelectorAll('[data-stat]')).map(element => [element.dataset.stat, element]));
       }
