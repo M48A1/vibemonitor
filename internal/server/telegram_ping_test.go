@@ -14,9 +14,9 @@ import (
 
 func pingAlertNode(now time.Time) *store.Node {
 	targets := []protocol.PingTarget{
-		{Name: "上海电信", Host: "ct:80"},
-		{Name: "上海联通", Host: "cu:80"},
-		{Name: "上海移动", Host: "cm:80"},
+		{Name: "目标 A", Host: "ct:80"},
+		{Name: "目标 B", Host: "cu:80"},
+		{Name: "目标 C", Host: "cm:80"},
 	}
 	results := make([]protocol.PingResult, len(targets))
 	for i, target := range targets {
@@ -29,7 +29,7 @@ func pingAlertNode(now time.Time) *store.Node {
 	}
 }
 
-func TestThreeNetworkPingRequiresCompleteCarrierResults(t *testing.T) {
+func TestAllTargetsPingRequiresCompleteResults(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		change func(*store.Node)
@@ -40,18 +40,18 @@ func TestThreeNetworkPingRequiresCompleteCarrierResults(t *testing.T) {
 		{"missing result", func(n *store.Node) { n.LastReport.PingResults = n.LastReport.PingResults[:2] }, false, false},
 		{"no report", func(n *store.Node) { n.LastReport = nil }, false, false},
 		{"old host", func(n *store.Node) { n.LastReport.PingResults[0].Host = "old:80" }, false, false},
-		{"missing carrier", func(n *store.Node) { n.Profile.Targets = n.Profile.Targets[:2] }, false, false},
+		{"two configured targets", func(n *store.Node) { n.Profile.Targets = n.Profile.Targets[:2] }, true, true},
 		{"unrelated target", func(n *store.Node) {
 			n.Profile.Targets = append(n.Profile.Targets, protocol.PingTarget{Name: "Google", Host: "google:80"})
 			n.LastReport.PingResults = append(n.LastReport.PingResults, protocol.PingResult{Name: "Google", Host: "google:80", Latency: 10})
-		}, true, true},
+		}, true, false},
 		{"invalid negative latency", func(n *store.Node) { n.LastReport.PingResults[0].Latency = -2 }, false, false},
-		{"duplicate carrier cannot replace mobile", func(n *store.Node) { n.Profile.Targets[2].Name = "北京电信" }, false, false},
+		{"no configured targets", func(n *store.Node) { n.Profile.Targets = nil }, false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			node := pingAlertNode(time.Now())
 			tc.change(node)
-			_, complete, timeout := threeNetworkPing(node, store.Config{})
+			_, complete, timeout := allTargetsPing(node, store.Config{})
 			if complete != tc.complete || timeout != tc.timeout {
 				t.Fatalf("got complete=%v timeout=%v", complete, timeout)
 			}
@@ -60,17 +60,12 @@ func TestThreeNetworkPingRequiresCompleteCarrierResults(t *testing.T) {
 	node := pingAlertNode(time.Now())
 	cfg := store.Config{PingTargets: node.Profile.Targets}
 	node.Profile = nil
-	if _, complete, timeout := threeNetworkPing(node, cfg); !complete || !timeout {
+	if _, complete, timeout := allTargetsPing(node, cfg); !complete || !timeout {
 		t.Fatal("legacy global targets not recognized")
-	}
-	for i, name := range []string{"China Telecom", "China Unicom", "China Mobile"} {
-		if pingCarrier(name) != i {
-			t.Fatalf("carrier not recognized: %s", name)
-		}
 	}
 }
 
-func TestThreeNetworkPingDelayRecoveryAndPersistence(t *testing.T) {
+func TestAllTargetsPingDelayRecoveryAndPersistence(t *testing.T) {
 	now := time.Unix(1000, 0)
 	cfg := store.Config{TelegramEnabled: true, TelegramOfflineDelaySeconds: 60}
 	node := pingAlertNode(now)
@@ -94,7 +89,7 @@ func TestThreeNetworkPingDelayRecoveryAndPersistence(t *testing.T) {
 	now = now.Add(time.Second)
 	check()
 	check()
-	if len(messages) != 1 || !strings.Contains(messages[0], "电信、联通、移动同时超时") {
+	if len(messages) != 1 || !strings.Contains(messages[0], "全部测试目标无回应") {
 		t.Fatalf("expected one timeout notification, got %v", messages)
 	}
 	// Exercise the JSON representation used by the existing SQLite persistence.
@@ -117,7 +112,7 @@ func TestThreeNetworkPingDelayRecoveryAndPersistence(t *testing.T) {
 	node.LastReport.PingResults[0].Latency = 25
 	check()
 	check()
-	if len(messages) != 2 || !strings.Contains(messages[1], "至少一网已恢复") {
+	if len(messages) != 2 || !strings.Contains(messages[1], "至少一个测试目标已恢复") {
 		t.Fatalf("expected one recovery, got %v", messages)
 	}
 	node.LastReport.PingResults[0].Latency = -1
@@ -127,7 +122,7 @@ func TestThreeNetworkPingDelayRecoveryAndPersistence(t *testing.T) {
 	if len(messages) != 3 { t.Fatal("new outage did not rearm") }
 }
 
-func TestThreeNetworkPingRetryOptOutAndConfigChange(t *testing.T) {
+func TestAllTargetsPingRetryOptOutAndConfigChange(t *testing.T) {
 	now := time.Unix(1000, 0)
 	cfg := store.Config{TelegramEnabled: true}
 	node := pingAlertNode(now)
@@ -172,4 +167,34 @@ func TestThreeNetworkPingRetryOptOutAndConfigChange(t *testing.T) {
 	cfg.TelegramEnabled = false
 	check()
 	if calls != 2 { t.Fatal("disabled Telegram alerted") }
+}
+
+func TestAllTargetsPingNotificationForOneTwoAndThreeTargets(t *testing.T) {
+	for count := 1; count <= 3; count++ {
+		t.Run(string(rune('0'+count)), func(t *testing.T) {
+			now := time.Unix(1000, 0)
+			node := pingAlertNode(now)
+			node.Profile.Targets = node.Profile.Targets[:count]
+			node.LastReport.PingResults = node.LastReport.PingResults[:count]
+			var messages []string
+			a := newTelegramAlerts(func(_ context.Context, _ store.Config, message string) error {
+				messages = append(messages, message)
+				return nil
+			})
+			cfg := store.Config{TelegramEnabled: true}
+			a.now = func() time.Time { return now }
+			check := func() { a.check(context.Background(), cfg, []*store.Node{node}) }
+			check()
+			check()
+			if len(messages) != 1 || !strings.Contains(messages[0], "全部测试目标无回应") {
+				t.Fatalf("expected one outage for %d targets, got %v", count, messages)
+			}
+			node.LastReport.PingResults[count-1].Latency = 10
+			check()
+			check()
+			if len(messages) != 2 || !strings.Contains(messages[1], "至少一个测试目标已恢复") {
+				t.Fatalf("expected one recovery for %d targets, got %v", count, messages)
+			}
+		})
+	}
 }

@@ -9,52 +9,27 @@ import (
 	"time"
 
 	"vibemonitor/internal/store"
-	"vibemonitor/pkg/protocol"
 )
 
-// Recognize the carrier in display names such as "上海电信" or "China Telecom".
-// Unrelated targets must neither trigger nor suppress the three-carrier alert.
-func pingCarrier(name string) int {
-	name = strings.ToLower(name)
-	switch {
-	case strings.Contains(name, "电信") || strings.Contains(name, "telecom"):
-		return 0
-	case strings.Contains(name, "联通") || strings.Contains(name, "unicom"):
-		return 1
-	case strings.Contains(name, "移动") || strings.Contains(name, "mobile"):
-		return 2
-	default:
-		return -1
-	}
-}
-
-// Require a result for every configured carrier target in this report. Missing
+// Require a result for every configured target in this report. Missing
 // results are unknown, never a timeout or a recovery. Match hosts as well as
 // names so results from a previous configuration cannot affect this alert.
-func threeNetworkPing(node *store.Node, cfg store.Config) (key string, complete, allTimeout bool) {
+func allTargetsPing(node *store.Node, cfg store.Config) (key string, complete, allTimeout bool) {
 	targets := cfg.PingTargets
 	if node.Profile != nil {
 		targets = node.Profile.Targets
 	}
-	var carriers [3]bool
-	var selected []protocol.PingTarget
 	var identities []string
 	for _, target := range targets {
-		carrier := pingCarrier(target.Name)
-		if carrier < 0 {
-			continue
-		}
-		carriers[carrier] = true
-		selected = append(selected, target)
 		identities = append(identities, fmt.Sprintf("%q:%q", target.Name, target.Host))
 	}
 	sort.Strings(identities)
 	key = fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(identities, "\n"))))
-	if !carriers[0] || !carriers[1] || !carriers[2] || node.LastReport == nil {
+	if len(targets) == 0 || node.LastReport == nil {
 		return key, false, false
 	}
 	allTimeout = true
-	for _, target := range selected {
+	for _, target := range targets {
 		found := false
 		for _, result := range node.LastReport.PingResults {
 			if result.Name != target.Name || result.Host != target.Host {
@@ -76,8 +51,8 @@ func threeNetworkPing(node *store.Node, cfg store.Config) (key string, complete,
 	return key, true, allTimeout
 }
 
-func (a *telegramAlerts) checkThreeNetworkPing(ctx context.Context, cfg store.Config, node *store.Node, state *store.TelegramAlertState, location *time.Location) {
-	key, complete, allTimeout := threeNetworkPing(node, cfg)
+func (a *telegramAlerts) checkAllTargetsPing(ctx context.Context, cfg store.Config, node *store.Node, state *store.TelegramAlertState, location *time.Location) {
+	key, complete, allTimeout := allTargetsPing(node, cfg)
 	if state.PingTargetsKey != key {
 		state.PingTargetsKey = key
 		state.PingTimeoutSince = 0
@@ -95,7 +70,7 @@ func (a *telegramAlerts) checkThreeNetworkPing(ctx context.Context, cfg store.Co
 		delete(a.retry, node.UUID+":ping-timeout")
 		if state.PingTimeoutAlerted {
 			a.kind = node.UUID + ":ping-recovery"
-			message := fmt.Sprintf("🟢 VibeMonitor 三网探测恢复：%s（至少一网已恢复，最后上报：%s）", alertNodeLabel(node), node.LastSeen.In(location).Format("2006-01-02 15:04:05"))
+			message := fmt.Sprintf("🟢 VibeMonitor Ping 探测恢复：%s（至少一个测试目标已恢复，最后上报：%s）", alertNodeLabel(node), node.LastSeen.In(location).Format("2006-01-02 15:04:05"))
 			if a.deliver(ctx, cfg, message) {
 				state.PingTimeoutAlerted = false
 			}
@@ -111,7 +86,7 @@ func (a *telegramAlerts) checkThreeNetworkPing(ctx context.Context, cfg store.Co
 		return
 	}
 	a.kind = node.UUID + ":ping-timeout"
-	message := fmt.Sprintf("🔴 VibeMonitor 三网 Ping 掉线：%s（电信、联通、移动同时超时，最后上报：%s）", alertNodeLabel(node), node.LastSeen.In(location).Format("2006-01-02 15:04:05"))
+	message := fmt.Sprintf("🔴 VibeMonitor Ping 探测离线：%s（全部测试目标无回应，最后上报：%s）", alertNodeLabel(node), node.LastSeen.In(location).Format("2006-01-02 15:04:05"))
 	if a.deliver(ctx, cfg, message) {
 		state.PingTimeoutAlerted = true
 	}
