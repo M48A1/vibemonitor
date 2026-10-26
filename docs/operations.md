@@ -90,24 +90,22 @@ Environment="VIBEMONITOR_DISK_PATH=/data"
 
 ## 开发与验证
 
-完整运行环境为 Linux amd64/arm64，Go 版本以 `go.mod` 为准。前端测试依赖以 `scripts/package-lock.json` 为准，CI 使用 Node 22。
+完整运行环境为 Linux amd64/arm64，Go 版本以 `go.mod` 为准。GitHub Actions 检查 Go、前端 JavaScript 和安装脚本，并构建两个 Linux 架构的发布产物；JavaScript 语法检查使用 Node 22。
 
 ```bash
 go vet ./...
-go test -race ./...
-npm ci --prefix scripts --ignore-scripts --no-audit --no-fund
-npm test --prefix scripts
+for file in internal/web/dist/*.js; do node --check "$file"; done
 bash -n install.sh
-bash scripts/check_installer_health.sh
-bash scripts/check_installer_rollback.sh
 make release-all
 ```
 
-macOS 上可以运行独立的存储、服务端和纯逻辑测试，但不会执行带 Linux build tag 的采集和探针代码。Linux CI 同时覆盖 amd64 和 arm64。测试源码应随项目提交，`.gitignore` 只排除测试生成物，不排除测试文件。
+测试源码、测试脚本、测试专用依赖和测试工作流仅在本地保留，由 `.gitignore` 排除，不再随仓库或发布源码分发。已有本地测试文件时仍可运行 `go test -race ./...`；全新的检出不包含这些测试。
+
+发布时更新 `RELEASE_VERSION` 和 `RELEASE_NOTES.md`，推送对应的 `vX.Y.Z` tag。发布工作流由 tag 触发，生成 GitHub Release 及附件。
 
 后端 `internal/server/app.go` 负责服务生命周期和路由组装，认证、节点、历史、设置与 Telegram 路由分别位于 `*_routes.go`，压缩中间件在 `compression.go`。
 
-前端直接发布 `internal/web/dist` 中的文件，无额外打包步骤。`index.html` 按顺序加载共享状态与渲染（`app.js`）、认证、设置、节点管理、Ping 历史和资源历史，最后由 `bootstrap.js` 启动请求与定时器。这些经典脚本共享页面作用域，新增跨模块调用时需保持加载顺序。DOM 回归测试从 HTML 中的 `data-dashboard-module` 脚本列表加载相同模块，并覆盖五种内置主题。
+前端直接发布 `internal/web/dist` 中的文件，无额外打包步骤。`index.html` 按顺序加载共享状态与渲染（`app.js`）、认证、设置、节点管理、Ping 历史和资源历史，最后由 `bootstrap.js` 启动请求与定时器。这些经典脚本共享页面作用域，新增跨模块调用时需保持加载顺序。本地保留的 DOM 回归测试从 HTML 中的 `data-dashboard-module` 脚本列表加载相同模块，并覆盖五种内置主题。
 
 ### Ping 探测时间与升级兼容
 

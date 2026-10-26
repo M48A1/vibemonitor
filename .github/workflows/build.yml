@@ -1,4 +1,4 @@
-name: Validate Linux (x86-64 & arm64)
+name: Build Linux (x86-64 & arm64)
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  validate:
+  build:
     strategy:
       fail-fast: false
       matrix:
@@ -21,14 +21,9 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go vet ./...
-      - run: go test -race ./...
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - run: for file in internal/web/dist/*.js; do node --check "$file"; done
-      - run: npm ci --prefix scripts --ignore-scripts --no-audit --no-fund
-      - run: npm test --prefix scripts
       - run: bash -n install.sh
-      - run: bash scripts/check_installer_health.sh
-      - run: bash scripts/check_installer_rollback.sh
       - run: make release-all

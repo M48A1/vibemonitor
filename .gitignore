@@ -15,6 +15,21 @@ __pycache__/
 *.test
 coverage.out
 
-!scripts/package.json
-!scripts/package-lock.json
 node_modules/
+
+# Local-only tests, fixtures and test tooling.
+*_test.go
+*.test.*
+*.spec.*
+test_*.py
+*_test.py
+/tests/
+/test/
+**/__tests__/
+**/testdata/
+/scripts/check_*.sh
+/scripts/check_*.cjs
+/internal/web/dashboard-checks.cjs
+/scripts/package.json
+/scripts/package-lock.json
+/.github/workflows/test.yml

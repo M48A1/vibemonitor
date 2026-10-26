@@ -36,13 +36,19 @@ func HandleInstallScript(s *store.Store, trustedProxies ...netip.Prefix) http.Ha
 set -e
 SERVER_URL="@SERVER@"
 TOKEN="@TOKEN@"
+if [ "$#" -gt 1 ]; then echo "Usage: bash -s -- [agent|agent-uninstall]" >&2; exit 1; fi
+case "${1-agent}" in
+    agent) ACTION=agent ;;
+    agent-uninstall|uninstall-agent) ACTION=agent-uninstall ;;
+    *) echo "Unknown action: $1" >&2; exit 1 ;;
+esac
 if [ "$(id -u)" != 0 ]; then echo "Run as root."; exit 1; fi
 if [ "$(uname -s)" != Linux ]; then echo "Only Linux (x86-64 / arm64) is supported."; exit 1; fi
 case "$(uname -m)" in
     x86_64|amd64|aarch64|arm64) ;;
     *) echo "Only Linux (x86-64 / arm64) is supported."; exit 1 ;;
 esac
-# Installation begins here
+# Download and verify the installer before either operation.
 for cmd in curl sha256sum awk; do command -v "$cmd" >/dev/null || { echo "Missing $cmd"; exit 1; }; done
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
@@ -55,8 +61,12 @@ curl -4 -fsSL --connect-timeout 10 --max-time 60 -o "$TMP_DIR/sha256sums.txt" "$
 EXPECTED=$(awk '$2 == "install.sh" {print $1}' "$TMP_DIR/sha256sums.txt")
 [[ "$EXPECTED" =~ ^[[:xdigit:]]{64}$ ]] || { echo "Missing installer checksum."; exit 1; }
 printf '%s  %s\n' "$EXPECTED" "$TMP_DIR/install.sh" | sha256sum -c - >/dev/null
-# Reuse the same verified installer, atomic update, and rollback for both entry points.
-bash "$TMP_DIR/install.sh" agent -s "$SERVER_URL" -t "$TOKEN"
+# Use the verified installer's own installation and uninstall confirmation flows.
+if [ "$ACTION" = agent-uninstall ]; then
+    bash "$TMP_DIR/install.sh" agent-uninstall
+else
+    bash "$TMP_DIR/install.sh" agent -s "$SERVER_URL" -t "$TOKEN"
+fi
 `)
 
 		w.Header().Set("Cache-Control", "no-store")
