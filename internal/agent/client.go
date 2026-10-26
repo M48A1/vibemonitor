@@ -315,10 +315,11 @@ func (c *Client) measurePings(ctx context.Context) {
 			defer func() { <-sem }()
 			latency, method := pingHost(ctx, target.Host, 2*time.Second)
 			results[idx] = protocol.PingResult{
-				Name:    target.Name,
-				Host:    target.Host,
-				Latency: latency,
-				Method:  method,
+				MeasuredAt: time.Now().Unix(),
+				Name:       target.Name,
+				Host:       target.Host,
+				Latency:    latency,
+				Method:     method,
 			}
 		}(i, t)
 	}

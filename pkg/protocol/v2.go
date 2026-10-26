@@ -72,10 +72,20 @@ type PingTarget struct {
 
 // PingResult records latency measurement for a target
 type PingResult struct {
-	Method  string `json:"method,omitempty"`
-	Name    string `json:"name"`
-	Host    string `json:"host"`
-	Latency int    `json:"latency"` // ms, -1 if unreachable/timed out
+	MeasuredAt int64  `json:"measured_at,omitempty"` // Unix seconds at probe completion; zero for legacy agents.
+	Method     string `json:"method,omitempty"`
+	Name       string `json:"name"`
+	Host       string `json:"host"`
+	Latency    int    `json:"latency"` // ms, -1 if unreachable/timed out
+}
+
+// PingResultMaxAge allows a full 64-target probe cycle plus scheduling jitter.
+const PingResultMaxAge = 120 * time.Second
+
+// FreshAt rejects absent, expired, and implausibly future-dated measurements.
+func (p PingResult) FreshAt(now time.Time) bool {
+	age := now.Sub(time.Unix(p.MeasuredAt, 0))
+	return p.MeasuredAt > 0 && age >= -5*time.Second && age <= PingResultMaxAge
 }
 
 // Report contains dynamic, real-time performance metrics

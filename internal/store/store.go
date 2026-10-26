@@ -1256,8 +1256,19 @@ func (s *Store) ingestReportAt(token string, report protocol.Report, now time.Ti
 		if node.PingHistory == nil {
 			node.PingHistory = make(map[string][]PingSample)
 		}
-		nowUnix := receivedAt.Unix()
 		for _, p := range report.PingResults {
+			nowUnix := receivedAt.Unix()
+			if p.MeasuredAt != 0 {
+				if !p.FreshAt(receivedAt) {
+					continue
+				}
+				nowUnix = p.MeasuredAt
+			}
+			// Legacy agents retain receipt-time history. Timestamped cached
+			// results cannot advance the sample clock on repeated reports.
+			if observation := node.PingObserved[p.Name]; nowUnix < observation.LastSampleAt {
+				continue
+			}
 			s.recordPingObservationLocked(node, p.Name, p.Host, p.Method, nowUnix)
 			samples := node.PingHistory[p.Name]
 			if len(samples) == 0 || (nowUnix-samples[len(samples)-1].Timestamp) >= PingSampleIntervalSec {

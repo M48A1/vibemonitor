@@ -20,7 +20,7 @@ func pingAlertNode(now time.Time) *store.Node {
 	}
 	results := make([]protocol.PingResult, len(targets))
 	for i, target := range targets {
-		results[i] = protocol.PingResult{Name: target.Name, Host: target.Host, Method: "tcp", Latency: -1}
+		results[i] = protocol.PingResult{MeasuredAt: now.Unix(), Name: target.Name, Host: target.Host, Method: "tcp", Latency: -1}
 	}
 	return &store.Node{
 		UUID: "sgp", Name: "SGP", Online: true, LastSeen: now,
@@ -43,7 +43,7 @@ func TestAllTargetsPingRequiresCompleteResults(t *testing.T) {
 		{"two configured targets", func(n *store.Node) { n.Profile.Targets = n.Profile.Targets[:2] }, true, true},
 		{"unrelated target", func(n *store.Node) {
 			n.Profile.Targets = append(n.Profile.Targets, protocol.PingTarget{Name: "Google", Host: "google:80"})
-			n.LastReport.PingResults = append(n.LastReport.PingResults, protocol.PingResult{Name: "Google", Host: "google:80", Latency: 10})
+			n.LastReport.PingResults = append(n.LastReport.PingResults, protocol.PingResult{MeasuredAt: time.Now().Unix(), Name: "Google", Host: "google:80", Latency: 10})
 		}, true, false},
 		{"invalid negative latency", func(n *store.Node) { n.LastReport.PingResults[0].Latency = -2 }, false, false},
 		{"no configured targets", func(n *store.Node) { n.Profile.Targets = nil }, false, false},
@@ -51,7 +51,7 @@ func TestAllTargetsPingRequiresCompleteResults(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			node := pingAlertNode(time.Now())
 			tc.change(node)
-			_, complete, timeout := allTargetsPing(node, store.Config{})
+			_, complete, timeout, _ := allTargetsPing(node, store.Config{}, time.Now())
 			if complete != tc.complete || timeout != tc.timeout {
 				t.Fatalf("got complete=%v timeout=%v", complete, timeout)
 			}
@@ -60,7 +60,7 @@ func TestAllTargetsPingRequiresCompleteResults(t *testing.T) {
 	node := pingAlertNode(time.Now())
 	cfg := store.Config{PingTargets: node.Profile.Targets}
 	node.Profile = nil
-	if _, complete, timeout := allTargetsPing(node, cfg); !complete || !timeout {
+	if _, complete, timeout, _ := allTargetsPing(node, cfg, time.Now()); !complete || !timeout {
 		t.Fatal("legacy global targets not recognized")
 	}
 }
@@ -78,6 +78,7 @@ func TestAllTargetsPingDelayRecoveryAndPersistence(t *testing.T) {
 	a.now = func() time.Time { return now }
 	check := func() {
 		node.LastSeen = now
+		for i := range node.LastReport.PingResults { node.LastReport.PingResults[i].MeasuredAt = now.Unix() }
 		a.check(context.Background(), cfg, []*store.Node{node})
 	}
 	check()
@@ -196,5 +197,43 @@ func TestAllTargetsPingNotificationForOneTwoAndThreeTargets(t *testing.T) {
 				t.Fatalf("expected one recovery for %d targets, got %v", count, messages)
 			}
 		})
+	}
+}
+
+func TestPingCachedResultsDoNotAdvanceAlertDelay(t *testing.T) {
+	now := time.Unix(1000, 0)
+	node := pingAlertNode(now)
+	calls := 0
+	a := newTelegramAlerts(func(context.Context, store.Config, string) error { calls++; return nil })
+	a.now = func() time.Time { return now }
+	cfg := store.Config{TelegramEnabled: true, TelegramOfflineDelaySeconds: 60}
+	check := func() {
+		node.LastSeen = now // New heartbeat, same cached probe results.
+		a.check(context.Background(), cfg, []*store.Node{node})
+	}
+	check()
+	now = now.Add(60 * time.Second)
+	check()
+	if calls != 0 { t.Fatal("cached failure advanced the outage clock") }
+	for i := range node.LastReport.PingResults { node.LastReport.PingResults[i].MeasuredAt = now.Unix() }
+	check()
+	if calls != 1 { t.Fatal("new failed measurements did not confirm outage") }
+	now = now.Add(121 * time.Second)
+	node.LastReport.PingResults[0].Latency = 10
+	check()
+	if calls != 1 { t.Fatal("expired success announced recovery") }
+	for i := range node.LastReport.PingResults { node.LastReport.PingResults[i].MeasuredAt = now.Unix() }
+	check()
+	if calls != 2 { t.Fatal("fresh success did not recover") }
+}
+
+func TestPingUnknownMeasurementTimes(t *testing.T) {
+	now := time.Unix(1000, 0)
+	for _, at := range []int64{0, -1, now.Add(-121*time.Second).Unix(), now.Add(6*time.Second).Unix()} {
+		node := pingAlertNode(now)
+		node.LastReport.PingResults[0].MeasuredAt = at
+		if _, complete, _, _ := allTargetsPing(node, store.Config{}, now); complete {
+			t.Fatalf("measurement %d should be unknown", at)
+		}
 	}
 }

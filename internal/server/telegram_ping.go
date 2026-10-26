@@ -14,7 +14,7 @@ import (
 // Require a result for every configured target in this report. Missing
 // results are unknown, never a timeout or a recovery. Match hosts as well as
 // names so results from a previous configuration cannot affect this alert.
-func allTargetsPing(node *store.Node, cfg store.Config) (key string, complete, allTimeout bool) {
+func allTargetsPing(node *store.Node, cfg store.Config, now time.Time) (key string, complete, allTimeout bool, measuredAt int64) {
 	targets := cfg.PingTargets
 	if node.Profile != nil {
 		targets = node.Profile.Targets
@@ -26,7 +26,7 @@ func allTargetsPing(node *store.Node, cfg store.Config) (key string, complete, a
 	sort.Strings(identities)
 	key = fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(identities, "\n"))))
 	if len(targets) == 0 || node.LastReport == nil {
-		return key, false, false
+		return key, false, false, 0
 	}
 	allTimeout = true
 	for _, target := range targets {
@@ -35,8 +35,11 @@ func allTargetsPing(node *store.Node, cfg store.Config) (key string, complete, a
 			if result.Name != target.Name || result.Host != target.Host {
 				continue
 			}
-			if result.Latency < -1 {
-				return key, false, false
+			if result.Latency < -1 || !result.FreshAt(now) {
+				return key, false, false, 0
+			}
+			if measuredAt == 0 || result.MeasuredAt < measuredAt {
+				measuredAt = result.MeasuredAt
 			}
 			found = true
 			if result.Latency >= 0 {
@@ -45,14 +48,14 @@ func allTargetsPing(node *store.Node, cfg store.Config) (key string, complete, a
 			break
 		}
 		if !found {
-			return key, false, false
+			return key, false, false, 0
 		}
 	}
-	return key, true, allTimeout
+	return key, true, allTimeout, measuredAt
 }
 
 func (a *telegramAlerts) checkAllTargetsPing(ctx context.Context, cfg store.Config, node *store.Node, state *store.TelegramAlertState, location *time.Location) {
-	key, complete, allTimeout := allTargetsPing(node, cfg)
+	key, complete, allTimeout, measuredAt := allTargetsPing(node, cfg, a.now())
 	if state.PingTargetsKey != key {
 		state.PingTargetsKey = key
 		state.PingTimeoutSince = 0
@@ -70,7 +73,7 @@ func (a *telegramAlerts) checkAllTargetsPing(ctx context.Context, cfg store.Conf
 		delete(a.retry, node.UUID+":ping-timeout")
 		if state.PingTimeoutAlerted {
 			a.kind = node.UUID + ":ping-recovery"
-			message := fmt.Sprintf("🟢 VibeMonitor Ping 探测恢复：%s（至少一个测试目标已恢复，最后上报：%s）", alertNodeLabel(node), node.LastSeen.In(location).Format("2006-01-02 15:04:05"))
+			message := fmt.Sprintf("🟢 VibeMonitor Ping 探测恢复：%s（至少一个测试目标已恢复，探测时间：%s）", alertNodeLabel(node), time.Unix(measuredAt, 0).In(location).Format("2006-01-02 15:04:05"))
 			if a.deliver(ctx, cfg, message) {
 				state.PingTimeoutAlerted = false
 			}
@@ -78,15 +81,14 @@ func (a *telegramAlerts) checkAllTargetsPing(ctx context.Context, cfg store.Conf
 		return
 	}
 	delete(a.retry, node.UUID+":ping-recovery")
-	now := a.now()
 	if state.PingTimeoutSince == 0 {
-		state.PingTimeoutSince = now.Unix()
+		state.PingTimeoutSince = measuredAt
 	}
-	if state.PingTimeoutAlerted || now.Sub(time.Unix(state.PingTimeoutSince, 0)) < time.Duration(cfg.TelegramOfflineDelaySeconds)*time.Second {
+	if state.PingTimeoutAlerted || time.Duration(measuredAt-state.PingTimeoutSince)*time.Second < time.Duration(cfg.TelegramOfflineDelaySeconds)*time.Second {
 		return
 	}
 	a.kind = node.UUID + ":ping-timeout"
-	message := fmt.Sprintf("🔴 VibeMonitor Ping 探测离线：%s（全部测试目标无回应，最后上报：%s）", alertNodeLabel(node), node.LastSeen.In(location).Format("2006-01-02 15:04:05"))
+	message := fmt.Sprintf("🔴 VibeMonitor Ping 探测离线：%s（全部测试目标无回应，探测时间：%s）", alertNodeLabel(node), time.Unix(measuredAt, 0).In(location).Format("2006-01-02 15:04:05"))
 	if a.deliver(ctx, cfg, message) {
 		state.PingTimeoutAlerted = true
 	}
