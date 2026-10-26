@@ -11,7 +11,7 @@ const trafficDailyRetentionDays = 180
 var trafficLocation = time.FixedZone("UTC+8", 8*3600)
 
 // Daily totals travel with the node snapshot and counter baseline, so a retry,
-// restart, backup or restore cannot apply a delta twice.
+// restart cannot apply a delta twice.
 func (n *Node) recordDailyTraffic(delta int64, previous, current time.Time) {
 	location := trafficLocation
 	if delta < 0 || previous.IsZero() || !current.After(previous) {

@@ -122,7 +122,7 @@ type Config struct {
 	SiteTitle                   string                `json:"site_title"`
 	SiteIcon                    string                `json:"site_icon,omitempty"`
 	SiteTheme                   string                `json:"site_theme"` // Active built-in or imported theme.
-	ColorMode                   string                `json:"color_mode"` // Legacy backup field; fixed to light.
+	ColorMode                   string                `json:"color_mode"` // Legacy configuration field; fixed to light.
 	AutoDiscoveryKey            string                `json:"auto_discovery_key"`
 	PingTargets                 []protocol.PingTarget `json:"ping_targets"`
 	TelegramBotToken            string                `json:"telegram_bot_token,omitempty"`

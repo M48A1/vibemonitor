@@ -8,12 +8,11 @@
 | --- | --- |
 | 可执行文件 | `/usr/local/bin/vibemonitor` |
 | 主控数据库 | `/etc/vibemonitor/vibemonitor-data.db` |
-| 安装脚本生成的备份 | `/etc/vibemonitor/backups/` |
 | 主控服务 | `vibemonitor-server.service` |
 | 探针服务 | `vibemonitor-agent.service` |
 | Nginx 配置 | `/etc/nginx/conf.d/vibemonitor.conf` |
 
-数据库保存账号密码哈希、节点 Token、Telegram 配置、主题、图标和历史数据。备份也包含这些信息，应限制访问权限。SQLite 工作时可能生成同名的 `-wal`、`-shm` 文件；使用程序提供的导出功能生成完整备份。
+数据库保存账号密码哈希、节点 Token、Telegram 配置、主题、图标和历史数据。应限制数据库文件的访问权限。SQLite 工作时可能生成同名的 `-wal`、`-shm` 文件。
 
 ```bash
 sudo systemctl status vibemonitor-server
@@ -22,39 +21,6 @@ sudo journalctl -u vibemonitor-agent -n 100 --no-pager
 ```
 
 手动启动主控时，未指定 `--data` 的默认路径是当前工作目录下的 `vibemonitor-data.db`。数据文件必须以 `.db`、`.sqlite` 或 `.sqlite3` 结尾。首次启动设置的管理员账号密码才会生效，已有数据库不会因重新传入启动参数而重置密码。
-
-## 备份与恢复
-
-在保存了安装脚本的目录执行：
-
-```bash
-sudo bash install.sh backup
-```
-
-脚本会暂停正在运行的主控、导出带时间标识的备份，并恢复原来的运行状态。成功后会打印备份路径。将备份复制到其他机器前，可以单独检查：
-
-```bash
-sudo /usr/local/bin/vibemonitor validate-data /path/to/backup.db
-```
-
-恢复命令：
-
-```bash
-sudo bash install.sh restore /path/to/backup.db
-```
-
-恢复会替换当前账号、Token 和监控数据。脚本先验证备份，再停服并备份当前数据库；若恢复后原本运行的服务无法启动，会尝试恢复之前的数据库。请保留输出中的恢复前备份路径，并检查服务日志和页面是否正常。
-
-手动部署也可直接使用 CLI：
-
-```text
-vibemonitor export-data DATA_PATH OUTPUT
-vibemonitor restore-data BACKUP DATA_PATH
-```
-
-这两个操作前都应停止主控。导出目标必须不存在或为空文件，且父目录已存在。恢复前先导出当前数据库；确认命令成功后再启动服务，失败时检查日志并保留备份。
-
-建议在升级、恢复和批量修改节点前做备份，并定期在独立目录验证恢复流程。数据库快照通常每 15 秒保存，正常退出会保存剩余状态；异常终止可能丢失尚未保存的状态。节点和历史恢复后，检查探针是否重新上线。
 
 ## 探针参数
 

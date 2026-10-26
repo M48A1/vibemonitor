@@ -15,7 +15,6 @@ import (
 
 	"vibemonitor/internal/agent"
 	"vibemonitor/internal/server"
-	"vibemonitor/internal/store"
 	"vibemonitor/internal/version"
 )
 
@@ -36,9 +35,6 @@ Commands:
   server    Start the monitoring master server (default)
   agent     Start the lightweight probe agent
   version   Show version information
-  validate-data FILE  Validate a backup before restoring
-  export-data DATA_PATH OUTPUT  Export complete backup (stop server first)
-  restore-data BACKUP DATA_PATH  Restore complete backup (stop server first)
   help      Show this help message
 
 Server Options:
@@ -151,27 +147,6 @@ func main() {
 		runAgent(args[1:])
 	case "version", "-v", "--version":
 		fmt.Printf("VibeMonitor version %s (%s)\n", version.Version, version.Commit)
-	case "validate-data":
-		if len(args) != 2 {
-			log.Fatal("usage: vibemonitor validate-data FILE")
-		}
-		if err := store.ValidateBackup(args[1]); err != nil {
-			log.Fatal(err)
-		}
-		fmt.Println("Backup is valid")
-	case "export-data", "restore-data":
-		if len(args) != 3 {
-			log.Fatal("usage: export-data DATA_PATH OUTPUT | restore-data BACKUP DATA_PATH (stop server first)")
-		}
-		var err error
-		if cmd == "export-data" {
-			err = store.ExportData(args[1], args[2])
-		} else {
-			err = store.RestoreData(args[1], args[2])
-		}
-		if err != nil {
-			log.Fatal(err)
-		}
 	case "help", "-h", "--help":
 		printHelp()
 	default:

@@ -59,7 +59,7 @@ func TestThemePackageValidation(t *testing.T) {
 		t.Fatal("accepted duplicate")
 	}
 }
-func TestThemePersistenceBackupAndDeletion(t *testing.T) {
+func TestThemePersistenceAndDeletion(t *testing.T) {
 	dir := t.TempDir()
 	db := filepath.Join(dir, "data.db")
 	s, err := New(db, "test-password")
@@ -87,26 +87,7 @@ func TestThemePersistenceBackupAndDeletion(t *testing.T) {
 	if s.GetConfig().SiteTheme != theme.ID {
 		t.Fatal("selection lost at restart")
 	}
-	s.Close()
-	backup := filepath.Join(dir, "backup.db")
-	dest := filepath.Join(dir, "restored.db")
-	if err = ExportData(db, backup); err != nil {
-		t.Fatal(err)
-	}
-	if err = ValidateBackup(backup); err != nil {
-		t.Fatal(err)
-	}
-	if err = RestoreData(backup, dest); err != nil {
-		t.Fatal(err)
-	}
-	s, err = New(dest, "")
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer s.Close()
-	if s.GetConfig().SiteTheme != theme.ID {
-		t.Fatal("selection lost in restore")
-	}
 	css, err := s.ThemeCSS(theme.ID)
 	if err != nil || css != theme.CSS {
 		t.Fatalf("css lost: %v", err)
@@ -122,7 +103,7 @@ func TestThemePersistenceBackupAndDeletion(t *testing.T) {
 		t.Fatal("active deletion did not restore default")
 	}
 }
-func TestLegacyThemeBackup(t *testing.T) {
+func TestLegacyThemeMigration(t *testing.T) {
 	dir := t.TempDir()
 	db := filepath.Join(dir, "old.db")
 	s, err := New(db, "test-password")
@@ -137,17 +118,13 @@ func TestLegacyThemeBackup(t *testing.T) {
 	raw.db.Exec("DROP TABLE site_themes")
 	raw.db.Exec("ALTER TABLE config DROP COLUMN site_theme")
 	raw.Close()
-	dest := filepath.Join(dir, "restored.db")
-	if err = RestoreData(db, dest); err != nil {
-		t.Fatal(err)
-	}
-	s, err = New(dest, "")
+	s, err = New(db, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
 	if s.GetConfig().SiteTheme != DefaultTheme {
-		t.Fatal("old backup did not restore default")
+		t.Fatal("legacy migration did not select default")
 	}
 }
 
@@ -184,23 +161,7 @@ func TestBuiltinThemeLifecycle(t *testing.T) {
 			if s.GetConfig().SiteTheme != themeID {
 				t.Fatal("builtin selection lost on restart")
 			}
-			s.Close()
-			backup := filepath.Join(dir, "backup.db")
-			dest := filepath.Join(dir, "restored.db")
-			if err = ExportData(db, backup); err != nil {
-				t.Fatal(err)
-			}
-			if err = RestoreData(backup, dest); err != nil {
-				t.Fatal(err)
-			}
-			s, err = New(dest, "")
-			if err != nil {
-				t.Fatal(err)
-			}
 			defer s.Close()
-			if s.GetConfig().SiteTheme != themeID {
-				t.Fatal("builtin selection lost on restore")
-			}
 			if err = s.SelectTheme(DefaultTheme); err != nil {
 				t.Fatal(err)
 			}

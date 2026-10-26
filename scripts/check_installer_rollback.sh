@@ -12,8 +12,6 @@ if [ "${1:-}" = --attempt ] || [ "${1:-}" = --invalid-args ]; then
     check_root() { :; }
     detect_arch() { SYSTEM_ARCH=amd64; }
     check_dependencies() { :; }
-    confirm_backup_cleanup() { return 0; }
-    clear_backups() { :; }
     sleep() { :; }
     curl() { return 22; }
     systemctl() {
@@ -43,13 +41,11 @@ if [ "${1:-}" = --attempt ] || [ "${1:-}" = --invalid-args ]; then
     }
     if [ "$1" = --invalid-args ]; then
         # Any call beyond input validation would be too late: reinstalling a
-        # server can erase its database, and agent installs clear old backups.
+        # server can erase its database.
         check_root() { touch "$fixture/side-effect"; }
         confirm_full_cleanup() { touch "$fixture/side-effect"; return 0; }
-        confirm_backup_cleanup() { touch "$fixture/side-effect"; return 0; }
         begin_update() { touch "$fixture/side-effect"; exit 90; }
         clear_server_data() { touch "$fixture/side-effect"; exit 90; }
-        clear_backups() { touch "$fixture/side-effect"; exit 90; }
         separator=$'\n'
         if [ "$4" = CR ]; then separator=$'\r'; fi
         bad_value="good${separator}bad"

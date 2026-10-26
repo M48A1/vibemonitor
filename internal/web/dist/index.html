@@ -77,7 +77,7 @@
       <p class="logo-upload-hint">选择主题后点击启用，对所有访客生效。默认主题保留当前外观。</p>
       <div id="themeList" class="theme-list"></div>
       <div class="theme-actions"><label class="btn" id="themeUploadLabel">上传主题包<input type="file" id="themePackageFile" accept=".zip,application/zip" hidden></label><a class="btn" href="/api/admin/themes/example" download>下载示例包</a><button type="button" class="btn btn-primary" id="activateThemeBtn">启用所选主题</button></div>
-      <p class="logo-upload-hint">ZIP 最大 2MB，包含 theme.json 和一个 UTF-8 CSS 文件。主题包与启用状态随数据库备份。</p>
+      <p class="logo-upload-hint">ZIP 最大 2MB，包含 theme.json 和一个 UTF-8 CSS 文件。主题包与启用状态保存在数据库中。</p>
       <p id="themeStatus" role="status" aria-live="polite"></p>
     </div>
   </div>

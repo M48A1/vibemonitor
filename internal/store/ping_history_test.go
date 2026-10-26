@@ -302,15 +302,6 @@ func TestPingSeriesEpochPersistsWithSamplesBeforeSnapshot(t *testing.T) {
 		}
 	}
 	check(path)
-	backup := filepath.Join(t.TempDir(), "backup.db")
-	if err = ExportData(path, backup); err != nil {
-		t.Fatal(err)
-	}
-	restored := filepath.Join(t.TempDir(), "restored.db")
-	if err = RestoreData(backup, restored); err != nil {
-		t.Fatal(err)
-	}
-	check(restored)
 }
 
 func TestPingHistoryCacheOwnsResultsAndInvalidatesNewSamples(t *testing.T) {

@@ -55,7 +55,7 @@ func TestDailyTrafficSplitsAndRetention(t *testing.T) {
 
 }
 
-func TestDailyTrafficIngestionPersistenceAndRestore(t *testing.T) {
+func TestDailyTrafficIngestionPersistenceAndRestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "source.db")
 	s, err := New(path, "test-password")
 	if err != nil {
@@ -113,23 +113,19 @@ func TestDailyTrafficIngestionPersistenceAndRestore(t *testing.T) {
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
-	destination := filepath.Join(t.TempDir(), "restored.db")
-	if err := RestoreData(path, destination); err != nil {
-		t.Fatal(err)
-	}
-	restored, err := New(destination, "")
+	reopened, err := New(path, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer restored.Close()
-	got, err := restored.trafficHistoryAt(n.UUID, "three", at.Add(3*time.Second))
+	defer reopened.Close()
+	got, err := reopened.trafficHistoryAt(n.UUID, "three", at.Add(3*time.Second))
 	if err != nil || got.Total != 100 {
-		t.Fatalf("restored=%+v err=%v", got, err)
+		t.Fatalf("reopened=%+v err=%v", got, err)
 	}
-	if err := restored.DeleteNode(n.UUID); err != nil {
+	if err := reopened.DeleteNode(n.UUID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := restored.GetTrafficHistory(n.UUID, "current"); err != ErrNodeNotFound {
+	if _, err := reopened.GetTrafficHistory(n.UUID, "current"); err != ErrNodeNotFound {
 		t.Fatalf("deleted history: %v", err)
 	}
 }

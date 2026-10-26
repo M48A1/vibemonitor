@@ -42,6 +42,6 @@ curl -4 -fsSL -o install.sh https://raw.githubusercontent.com/M48A1/vibemonitor/
 
 ## 运维与开发
 
-数据库位置、备份恢复、探针参数、流量账期规则、反向代理和测试命令见 [运维与开发指南](docs/operations.md)。
+数据库位置、探针参数、流量账期规则、反向代理和测试命令见 [运维与开发指南](docs/operations.md)。
 
 修改节点重置日导致当前账期起点变化时，会按新账期已采集日流量重算，并清除旧账期的手动补录；需要时可同时校正“当前周期已用流量”。只编辑名称等信息不会改变原配额。

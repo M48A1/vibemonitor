@@ -10,7 +10,7 @@ import (
 	"vibemonitor/pkg/protocol"
 )
 
-func TestDiskHistoryIngestionAndRestore(t *testing.T) {
+func TestDiskHistoryIngestionAndRestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "source.db")
 	s, err := New(path, "test-password")
 	if err != nil {
@@ -47,16 +47,12 @@ func TestDiskHistoryIngestionAndRestore(t *testing.T) {
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
-	destination := filepath.Join(t.TempDir(), "restored.db")
-	if err := RestoreData(path, destination); err != nil {
-		t.Fatal(err)
-	}
-	restored, err := New(destination, "")
+	reopened, err := New(path, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer restored.Close()
-	assertDisk(restored)
+	defer reopened.Close()
+	assertDisk(reopened)
 }
 
 func TestDiskHistoryMigration(t *testing.T) {

@@ -251,23 +251,6 @@ finish_update() {
     success "$UPDATE_SERVICE is running. Agent connectivity can be checked in the dashboard and journal."
 }
 
-confirm_backup_cleanup() {
-    local confirmation
-    warn "此操作将删除 $CONFIG_DIR/backups 内的全部备份，无法恢复。当前配置和监控数据保留。"
-    read_input "确认继续安装/更新或卸载？输入 yes 继续，其他输入取消: " confirmation
-    [ "$confirmation" = yes ]
-}
-
-clear_backups() {
-    # Only remove this application's dedicated backup directory.
-    [ -n "$CONFIG_DIR" ] && [ "$CONFIG_DIR" != / ] || error "Invalid configuration directory."
-    [ ! -L "$CONFIG_DIR/backups" ] || error "Backup directory must not be a symbolic link."
-    if [ -e "$CONFIG_DIR/backups" ]; then
-        rm -rf -- "$CONFIG_DIR/backups"
-        success "旧备份已全部删除。"
-    fi
-}
-
 confirm_full_cleanup() {
     local confirmation
     warn "将永久删除全部配置、管理员账号密码、节点、监控历史和备份，无法恢复。"
@@ -298,7 +281,7 @@ switch_server_to_sqlite() {
     done
     if ! awk -v pattern="$legacy_arg_pattern" '/^ExecStart=/ && $0 ~ pattern {found=1} END {exit !found}' "$unit"; then return 0; fi
     [ -f "$CONFIG_DIR/vibemonitor-data.db" ] || error "Existing SQLite database missing; complete migration with v1.0.40 before upgrading."
-    "$INSTALL_BIN" validate-data "$CONFIG_DIR/vibemonitor-data.db" || error "Existing SQLite database is invalid."
+    [ "$(LC_ALL=C head -c 15 "$CONFIG_DIR/vibemonitor-data.db")" = "SQLite format 3" ] || error "Existing SQLite database has an invalid header."
     if ! VIBEMONITOR_OLD_DATA_ARG="--data $(unit_arg "$CONFIG_DIR/vibemonitor-data.json")" \
          VIBEMONITOR_NEW_DATA_ARG="--data $(unit_arg "$CONFIG_DIR/vibemonitor-data.db")" \
          awk '
@@ -326,7 +309,7 @@ update_server() {
     (( 10#$port >= 1 && 10#$port <= 65535 )) || error "Port must be 1-65535."
     check_root; detect_arch; check_dependencies
     [ -f "$INSTALL_BIN" ] && [ -f "$UNIT_DIR/$SERVER_SERVICE.service" ] || error "尚未安装主控，请先安装。"
-    info "更新主控程序，保留现有账号、节点、配置、历史、备份及服务设置。"
+    info "更新主控程序，保留现有账号、节点、配置、历史及服务设置。"
     begin_update "$SERVER_SERVICE"
     download_binary
     switch_server_to_sqlite
@@ -735,7 +718,7 @@ configure_existing_server_domain() {
     success "访问地址：https://$domain"
     if [ -n "$old_domain" ] && [ "$old_domain" != "$domain" ]; then
         info "旧域名 $old_domain 已从反代配置移除。请将各探针的主控地址改为 https://$domain。"
-        info "旧证书仍由 Certbot 保留；确认不再使用后，可在管理菜单选择 12 清理。"
+        info "旧证书仍由 Certbot 保留；确认不再使用后，可在管理菜单选择 10 清理。"
     fi
 }
 
@@ -747,8 +730,6 @@ install_agent() {
     local args
     args="$(unit_arg "$INSTALL_BIN") agent --server $(unit_arg "$server") --token $(unit_arg "$token") --interval $(unit_arg "$interval")"
     check_root; detect_arch; check_dependencies
-    confirm_backup_cleanup || return 0
-    clear_backups
     begin_update "$AGENT_SERVICE"
     download_binary
     UNIT_TOUCHED=1
@@ -768,69 +749,12 @@ EOF
     finish_update
 }
 
-backup_data() {
-    check_root; detect_arch
-    local was_active=0 result=0 destination
-    mkdir -p "$CONFIG_DIR/backups"
-    chmod 700 "$CONFIG_DIR/backups"
-    systemctl is-active --quiet "$SERVER_SERVICE" && was_active=1
-    if [ "$was_active" = 1 ]; then systemctl stop "$SERVER_SERVICE" || error "Could not stop server."; fi
-    destination=$(mktemp "$CONFIG_DIR/backups/data-$(date +%Y%m%d-%H%M%S).XXXXXX") || result=1
-    if [ "$result" = 0 ]; then
-        mv "$destination" "$destination.db" || result=1
-        destination="$destination.db"
-    fi
-    if [ "$result" = 0 ]; then
-        "$INSTALL_BIN" export-data "$CONFIG_DIR/vibemonitor-data.db" "$destination" || result=1
-    fi
-    if [ "$was_active" = 1 ]; then systemctl start "$SERVER_SERVICE" || result=1; fi
-    [ "$result" = 0 ] || error "Backup failed; check service status. Any partial output is at $destination."
-    success "Backup saved: $destination"
-}
-
-restore_data() {
-    check_root; detect_arch
-    local source="$1" was_active=0 previous result=0
-    "$INSTALL_BIN" validate-data "$source" || error "Invalid backup."
-    mkdir -p "$CONFIG_DIR/backups"
-    chmod 700 "$CONFIG_DIR/backups"
-    systemctl is-active --quiet "$SERVER_SERVICE" && was_active=1
-    if [ "$was_active" = 1 ]; then systemctl stop "$SERVER_SERVICE" || error "Could not stop server."; fi
-    previous=$(mktemp "$CONFIG_DIR/backups/before-restore-XXXXXX") || result=1
-    if [ "$result" = 0 ]; then
-        mv "$previous" "$previous.db" || result=1
-        previous="$previous.db"
-    fi
-    if [ "$result" = 0 ]; then
-        "$INSTALL_BIN" export-data "$CONFIG_DIR/vibemonitor-data.db" "$previous" || result=1
-    fi
-    if [ "$result" != 0 ]; then
-        if [ "$was_active" = 1 ]; then systemctl start "$SERVER_SERVICE" || true; fi
-        error "Could not back up current database; restore cancelled."
-    fi
-    if ! "$INSTALL_BIN" restore-data "$source" "$CONFIG_DIR/vibemonitor-data.db"; then
-        if [ "$was_active" = 1 ]; then systemctl start "$SERVER_SERVICE" || true; fi
-        error "Restore transaction failed; previous database retained. Backup: $previous"
-    fi
-    if [ "$was_active" = 1 ]; then
-        if ! systemctl start "$SERVER_SERVICE" || ! sleep 3 || ! systemctl is-active --quiet "$SERVER_SERVICE"; then
-            systemctl stop "$SERVER_SERVICE" || error "Cannot stop failed service; recovery backup: $previous"
-            if ! "$INSTALL_BIN" restore-data "$previous" "$CONFIG_DIR/vibemonitor-data.db"; then
-                error "Rollback failed; recovery backup retained: $previous"
-            fi
-            systemctl start "$SERVER_SERVICE" || error "Previous database restored but service failed; backup: $previous"
-            error "Restored database could not start; previous database restored. Backup: $previous"
-        fi
-    fi
-    success "Data restored, including passwords, tokens and history. Previous backup: $previous"
-}
-
 read_input() {
     local prompt="$1" variable="$2"
     # Read the controlling terminal, never the piped script source.
     printf '%s' "$prompt"
     if ! { read -r "$variable" </dev/tty; } 2>/dev/null; then
-        error "No interactive terminal. Use: bash install.sh server, agent, backup, or restore FILE."
+        error "No interactive terminal. Use: bash install.sh server, agent, or update."
     fi
 }
 
@@ -917,7 +841,7 @@ menu_header() {
     printf '  主控管理\n    1. 安装 / 清空重装主控（删除全部数据）\n    2. 更新主控（保留数据）\n    3. 设置 / 更换访问域名与 HTTPS\n\n'
     printf '  探针管理\n    4. 安装 / 更新探针\n    5. 卸载本机探针\n\n'
     printf '  运行状态\n    6. 查看状态\n    7. 重启服务\n    8. 停止服务\n    9. 查看最近日志\n\n'
-    printf '  数据与维护\n   10. 备份数据\n   11. 恢复备份\n   12. 删除旧域名证书\n   13. 彻底卸载（删除全部配置和数据）\n\n'
+    printf '  数据与维护\n   10. 删除旧域名证书\n   11. 彻底卸载（删除全部配置和数据）\n\n'
     printf '    0. 退出\n'
     printf '%s================================================%s\n' "$C_BLUE" "$C_RESET"
 }
@@ -935,10 +859,10 @@ manage_services() {
 }
 
 menu() {
-    local choice port port_default password username domain current_domain email server token interval source confirm pause
+    local choice port port_default password username domain current_domain email server token interval pause
     while true; do
         menu_header
-        read_input "请选择 [0-13]: " choice
+        read_input "请选择 [0-11]: " choice
         case "$choice" in
             # Run installations in a subshell so their EXIT rollback always runs,
             # even when the interactive menu is kept open afterwards.
@@ -979,14 +903,10 @@ menu() {
             7) manage_services restart ;;
             8) manage_services stop ;;
             9) journalctl --no-pager -u "$SERVER_SERVICE" -u "$AGENT_SERVICE" -n 50 ;;
-            10) backup_data ;;
-            11) read_input "备份主文件路径: " source
-               read_input "将覆盖当前配置、密码和数据。输入 yes 继续: " confirm
-               if [ "$confirm" = yes ]; then restore_data "$source"; fi ;;
-            12) delete_old_domain_certificate ;;
-            13) uninstall_all ;;
+            10) delete_old_domain_certificate ;;
+            11) uninstall_all ;;
             0) return ;;
-            *) warn "请输入 0 到 13 之间的菜单编号。" ;;
+            *) warn "请输入 0 到 11 之间的菜单编号。" ;;
         esac
         read_input "按回车返回管理菜单…" pause
     done
@@ -1043,12 +963,10 @@ case "$CMD" in
         done
         install_agent "$server" "$token" "$interval" ;;
     menu) menu ;;
-    backup) backup_data ;;
-    restore) restore_data "${1:?backup file required}" ;;
     status) show_status ;;
     restart) systemctl restart "$SERVER_SERVICE" "$AGENT_SERVICE" ;;
     uninstall) uninstall_all ;;
     agent-uninstall|uninstall-agent) uninstall_agent ;;
-    help|--help|-h) echo "Usage: $0 [update [-p PORT] | server [-p PORT] -u USER -w PASSWORD [-d DOMAIN] [-e EMAIL] | domain -d DOMAIN [-p PORT] [-e EMAIL] | agent -s URL -t TOKEN [-i INTERVAL] | agent-uninstall | backup | restore FILE | status | restart | uninstall]" ;;
+    help|--help|-h) echo "Usage: $0 [update [-p PORT] | server [-p PORT] -u USER -w PASSWORD [-d DOMAIN] [-e EMAIL] | domain -d DOMAIN [-p PORT] [-e EMAIL] | agent -s URL -t TOKEN [-i INTERVAL] | agent-uninstall | status | restart | uninstall]" ;;
     *) error "Unknown command: $CMD" ;;
 esac
