@@ -111,6 +111,7 @@ func (a *telegramAlerts) check(ctx context.Context, cfg store.Config, nodes []*s
 				state.OfflineAlerted = false
 			}
 		}
+		a.checkThreeNetworkPing(ctx, cfg, node, &state, location)
 		if node.Online && node.LastReport != nil {
 			if node.Profile != nil && node.Profile.CPUThreshold != nil {
 				a.kind = node.UUID + ":cpu"

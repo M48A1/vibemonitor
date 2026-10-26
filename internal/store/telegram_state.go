@@ -8,6 +8,9 @@ import (
 
 // TelegramAlertState records transitions that have already been observed or delivered.
 type TelegramAlertState struct {
+	PingTimeoutSince int64 `json:"ping_timeout_since,omitempty"`
+	PingTimeoutAlerted bool `json:"ping_timeout_alerted,omitempty"`
+	PingTargetsKey string `json:"ping_targets_key,omitempty"`
 	CPUHighSince        int64   `json:"cpu_high_since,omitempty"`
 	MemoryHighSince     int64   `json:"memory_high_since,omitempty"`
 	CPULastAlert        int64   `json:"cpu_last_alert,omitempty"`
