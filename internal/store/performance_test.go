@@ -100,7 +100,7 @@ func TestSlowSnapshotDoesNotBlockIngestAndKeepsNewReport(t *testing.T) {
 		t.Fatal("save did not reach disk wait")
 	}
 	ingested := make(chan error, 1)
-	next := now.Add(time.Second)
+	next := now.Add(61 * time.Second)
 	go func() { _, e := s.ingestReportAt(n.Token, perfReport(next), next); ingested <- e }()
 	select {
 	case err = <-ingested:
@@ -139,6 +139,9 @@ func TestHistoryBatchRetryAndDeletedNode(t *testing.T) {
 	}
 	if _, err = s.ingestReportAt(n.Token, perfReport(now), now); err != nil {
 		t.Fatal(err)
+	}
+	if err = s.flushHistory(); err == nil {
+		t.Fatal("expected injected resource write failure")
 	}
 	s.mu.RLock()
 	pending := len(s.pendingSamples)
@@ -223,6 +226,9 @@ func TestHistoryTransactionRollbackAndTargetChange(t *testing.T) {
 	}
 	if _, err = s.ingestReportAt(n.Token, r, now); err != nil {
 		t.Fatal(err)
+	}
+	if err = s.flushHistory(); err == nil {
+		t.Fatal("expected injected ping write failure")
 	}
 	var count int
 	if err = s.sdb.db.QueryRow("SELECT count(*) FROM resource_history").Scan(&count); err != nil || count != 0 {

@@ -42,6 +42,7 @@ func TestPingPreviewUsesRollingDayAndSurvivesRestart(t *testing.T) {
 		if _, err = s.ingestReportAt(n.Token, r, at); err != nil {
 			t.Fatal(err)
 		}
+		flushTestHistory(t, s)
 	}
 	check := func() {
 		t.Helper()
@@ -103,6 +104,7 @@ func TestPingObservationStartsAtNewHostAndMethod(t *testing.T) {
 	if _, err := s.ingestReportAt(n.Token, r, now); err != nil {
 		t.Fatal(err)
 	}
+	flushTestHistory(t, s)
 	response, err := s.GetPingHistory(n.UUID, "route", "all")
 	if err != nil {
 		t.Fatal(err)
@@ -117,6 +119,7 @@ func TestPingObservationStartsAtNewHostAndMethod(t *testing.T) {
 	if _, err = s.ingestReportAt(n.Token, r, at); err != nil {
 		t.Fatal(err)
 	}
+	flushTestHistory(t, s)
 	response, err = s.GetPingHistory(n.UUID, "route", "24h")
 	if err != nil {
 		t.Fatal(err)
@@ -278,6 +281,7 @@ func TestPingSeriesEpochPersistsWithSamplesBeforeSnapshot(t *testing.T) {
 		if _, err = s.ingestReportAt(n.Token, r, entry.at); err != nil {
 			t.Fatal(err)
 		}
+		flushTestHistory(t, s)
 		if i == 0 {
 			if err = s.Save(); err != nil {
 				t.Fatal(err)
@@ -313,6 +317,7 @@ func TestPingHistoryCacheOwnsResultsAndInvalidatesNewSamples(t *testing.T) {
 	if _, err := s.ingestReportAt(n.Token, r, r.UpdatedAt); err != nil {
 		t.Fatal(err)
 	}
+	flushTestHistory(t, s)
 	first, err := s.GetPingHistory(n.UUID, "route", "1h")
 	if err != nil {
 		t.Fatal(err)
@@ -332,6 +337,7 @@ func TestPingHistoryCacheOwnsResultsAndInvalidatesNewSamples(t *testing.T) {
 	if _, err = s.ingestReportAt(n.Token, r, now); err != nil {
 		t.Fatal(err)
 	}
+	flushTestHistory(t, s)
 	fresh, err := s.GetPingHistory(n.UUID, "route", "1h")
 	if err != nil {
 		t.Fatal(err)
@@ -396,6 +402,7 @@ func TestRetainedObservationSurvivesPruningAllRawHistory(t *testing.T) {
 	if _, err = s.ingestReportAt(n.Token, r, old); err != nil {
 		t.Fatal(err)
 	}
+	flushTestHistory(t, s)
 	s.mu.Lock()
 	s.pruneExpiredPingPreviewsLocked(now.Unix() - 86400)
 	s.mu.Unlock()

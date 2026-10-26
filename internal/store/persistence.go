@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 )
@@ -29,35 +30,39 @@ func (s *Store) enqueueHistoryLocked(sample historySample) bool {
 }
 
 func writeHistorySamples(tx *sql.Tx, samples []historySample) error {
+	return writeHistorySamplesContext(context.Background(), tx, samples)
+}
+
+func writeHistorySamplesContext(ctx context.Context, tx *sql.Tx, samples []historySample) error {
 	if len(samples) == 0 {
 		return nil
 	}
-	resource, err := tx.Prepare(`INSERT INTO resource_history(node_uuid,timestamp,cpu_usage,ram_usage,network_rate,disk_usage,connections,load1,connection_rate) VALUES(?,?,?,?,?,?,?,?,?)
+	resource, err := tx.PrepareContext(ctx, `INSERT INTO resource_history(node_uuid,timestamp,cpu_usage,ram_usage,network_rate,disk_usage,connections,load1,connection_rate) VALUES(?,?,?,?,?,?,?,?,?)
  ON CONFLICT(node_uuid,timestamp) DO UPDATE SET cpu_usage=excluded.cpu_usage,ram_usage=excluded.ram_usage,network_rate=excluded.network_rate,disk_usage=excluded.disk_usage,
  connections=excluded.connections,load1=excluded.load1,connection_rate=excluded.connection_rate`)
 	if err != nil {
 		return err
 	}
 	defer resource.Close()
-	ping, err := tx.Prepare(`INSERT INTO ping_history(node_uuid,target_name,host,method,timestamp,latency) VALUES(?,?,?,?,?,?)
+	ping, err := tx.PrepareContext(ctx, `INSERT INTO ping_history(node_uuid,target_name,host,method,timestamp,latency) VALUES(?,?,?,?,?,?)
  ON CONFLICT(node_uuid,target_name,timestamp) DO UPDATE SET host=excluded.host,method=excluded.method,latency=excluded.latency`)
 	if err != nil {
 		return err
 	}
 	defer ping.Close()
-	observation, err := tx.Prepare(pingObservationUpsert)
+	observation, err := tx.PrepareContext(ctx, pingObservationUpsert)
 	if err != nil {
 		return err
 	}
 	defer observation.Close()
 	for _, v := range samples {
 		if v.Ping {
-			_, err = ping.Exec(v.UUID, v.Target, v.Host, v.Method, v.Timestamp, v.Latency)
+			_, err = ping.ExecContext(ctx, v.UUID, v.Target, v.Host, v.Method, v.Timestamp, v.Latency)
 			if err == nil && v.ObservationStart > 0 {
-				_, err = observation.Exec(v.UUID, v.Target, v.Host, v.Method, v.ObservationStart, v.Timestamp)
+				_, err = observation.ExecContext(ctx, v.UUID, v.Target, v.Host, v.Method, v.ObservationStart, v.Timestamp)
 			}
 		} else {
-			_, err = resource.Exec(v.UUID, v.Timestamp, v.CPU, v.RAM, v.Network, v.Disk, v.Connections, v.Load, v.ConnectionRate)
+			_, err = resource.ExecContext(ctx, v.UUID, v.Timestamp, v.CPU, v.RAM, v.Network, v.Disk, v.Connections, v.Load, v.ConnectionRate)
 		}
 		if err != nil {
 			return err
@@ -67,6 +72,10 @@ func writeHistorySamples(tx *sql.Tx, samples []historySample) error {
 }
 
 func (s *Store) flushHistory() error {
+	return s.flushHistoryContext(context.Background())
+}
+
+func (s *Store) flushHistoryContext(ctx context.Context) error {
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
 	s.mu.RLock()
@@ -76,12 +85,12 @@ func (s *Store) flushHistory() error {
 	if count == 0 {
 		return nil
 	}
-	tx, err := s.sdb.db.Begin()
+	tx, err := s.sdb.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	if err = writeHistorySamples(tx, batch); err != nil {
+	if err = writeHistorySamplesContext(ctx, tx, batch); err != nil {
 		return err
 	}
 	if err = tx.Commit(); err != nil {

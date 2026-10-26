@@ -215,6 +215,7 @@ func (s *Store) DataDir() string {
 
 func (s *Store) periodicFlusher() {
 	ticker := time.NewTicker(15 * time.Second)
+	historyTicker := time.NewTicker(time.Second)
 	pruneTicker := time.NewTicker(1 * time.Hour)
 	rollupTimer := time.NewTimer(0) // Startup backfill before waiting for midnight.
 	ctx, cancel := context.WithCancel(context.Background())
@@ -228,6 +229,7 @@ func (s *Store) periodicFlusher() {
 	defer cancel()
 	defer rollupTimer.Stop()
 	defer ticker.Stop()
+	defer historyTicker.Stop()
 	defer pruneTicker.Stop()
 	defer close(s.flushDone)
 
@@ -235,6 +237,10 @@ func (s *Store) periodicFlusher() {
 		select {
 		case <-s.stopFlush:
 			return
+		case <-historyTicker.C:
+			if err := s.flushHistoryContext(ctx); err != nil && ctx.Err() == nil {
+				log.Printf("[Store] History batch failed (will retry): %v", err)
+			}
 		case <-ticker.C:
 			if err := s.Save(); err != nil {
 				log.Printf("[Store] Save failed (will retry): %v", err)
@@ -1111,15 +1117,9 @@ func (s *Store) IngestReport(token string, report protocol.Report) (*Node, error
 
 func (s *Store) ingestReportAt(token string, report protocol.Report, now time.Time) (*Node, error) {
 	s.mu.Lock()
-	sampled := false
-	defer func() {
-		s.mu.Unlock()
-		if sampled {
-			if err := s.flushHistory(); err != nil {
-				log.Printf("[Store] History batch failed (will retry): %v", err)
-			}
-		}
-	}()
+	// History is queued under the state lock and committed by the background
+	// flusher. A report must never wait for persistMu or a SQLite transaction.
+	defer s.mu.Unlock()
 
 	uuid, ok := s.tokenIndex[token]
 	if !ok {
@@ -1247,7 +1247,6 @@ func (s *Store) ingestReportAt(token string, report protocol.Report, now time.Ti
 		if cpu.Valid || ram.Valid || disk.Valid || network.Valid || connections.Valid || load.Valid || connectionRate.Valid {
 			if s.enqueueHistoryLocked(historySample{UUID: node.UUID, Timestamp: receivedAt.Unix(), CPU: cpu, RAM: ram, Disk: disk, Network: network, Connections: connections, Load: load, ConnectionRate: connectionRate}) {
 				node.lastResourceSampleAt = receivedAt.Unix()
-				sampled = true
 			}
 		}
 	}
@@ -1271,7 +1270,6 @@ func (s *Store) ingestReportAt(token string, report protocol.Report, now time.Ti
 				if !s.enqueueHistoryLocked(historySample{UUID: node.UUID, Timestamp: nowUnix, Target: p.Name, Host: p.Host, Method: p.Method, Latency: p.Latency, Ping: true, ObservationStart: node.PingObserved[p.Name].StartedAt}) {
 					continue
 				}
-				sampled = true
 				samples = append(samples, smp)
 				if len(samples) > 24 {
 					samples = samples[len(samples)-24:]

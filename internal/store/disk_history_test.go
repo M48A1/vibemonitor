@@ -29,6 +29,7 @@ func TestDiskHistoryIngestionAndRestart(t *testing.T) {
 		if _, err := s.ingestReportAt(n.Token, r, at); err != nil {
 			t.Fatal(err)
 		}
+		flushTestHistory(t, s)
 	}
 	assertDisk := func(st *Store) {
 		t.Helper()
