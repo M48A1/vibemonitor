@@ -82,26 +82,63 @@ window.copyGuideCommand = async function(id) {
   }
 };
 
-async function deleteNodeAndRefresh(uuid) {
-  if (deletingNodeIDs.has(uuid)) return;
-  deletingNodeIDs.add(uuid);
+// A failed response does not prove the transaction failed (e.g. proxy timeout).
+async function requestNodeDeletion(uuid) {
+  let failure;
   try {
     const res = await fetch(`/api/admin/nodes/${encodeURIComponent(uuid)}`, {
       method: 'DELETE', credentials: 'same-origin'
     });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || '删除失败');
+    if (res.ok) return;
+    const data = await res.json().catch(() => ({}));
+    failure = new Error(data.error || `HTTP ${res.status}`);
+  } catch (error) {
+    failure = error;
+  }
+  try {
+    const check = await fetch(`/api/admin/nodes/${encodeURIComponent(uuid)}/profile`, {
+      credentials: 'same-origin', cache: 'no-store'
+    });
+    const data = await check.json();
+    // Only the authenticated API's explicit not-found response confirms deletion.
+    if (check.status === 404 && data?.error === 'node not found') return;
+  } catch (error) {
+    console.warn('Unable to verify node deletion:', error);
+  }
+  console.warn('Node deletion was not confirmed:', failure);
+  throw new Error(`删除结果尚未确认（${failure.message}），请刷新页面核实后再操作`);
+}
+
+function applyNodeDeletion(uuid) {
+  deletedNodeIDs.add(uuid);
+  dashboardRevision++;
+  nodes = nodes.filter(node => node.uuid !== uuid);
+  const editUUID = document.getElementById('editNodeUUID');
+  if (editUUID?.value === uuid) closeModal('editNodeModal');
+  if (typeof currentPingNodeUUID !== 'undefined' && currentPingNodeUUID === uuid) closeModal('pingChartModal');
+  if (typeof currentResourceNodeUUID !== 'undefined' && currentResourceNodeUUID === uuid) closeModal('resourceChartModal');
+}
+
+async function deleteNodeAndRefresh(uuid) {
+  if (deletingNodeIDs.has(uuid)) return;
+  deletingNodeIDs.add(uuid);
+  try {
+    await requestNodeDeletion(uuid);
+    // Once confirmed, UI errors must never be reported as a deletion failure.
+    try {
+      applyNodeDeletion(uuid);
+      scheduleDashboard();
+    } catch (error) {
+      console.error('Node deleted, but UI update failed:', error);
+      alert('节点已删除，但页面更新失败，请刷新页面');
+    } finally {
+      // Reconcile even when closing a modal or scheduling the render throws.
+      try {
+        await fetchNodes(true);
+      } catch (error) {
+        console.error('Node deleted, but dashboard refresh failed:', error);
+      }
     }
-    deletedNodeIDs.add(uuid);
-    dashboardRevision++;
-    nodes = nodes.filter(node => node.uuid !== uuid);
-    if (document.getElementById('editNodeUUID').value === uuid) closeModal('editNodeModal');
-    if (currentPingNodeUUID === uuid) closeModal('pingChartModal');
-    if (currentResourceNodeUUID === uuid) closeModal('resourceChartModal');
-    scheduleDashboard();
-    // Update immediately, then reconcile even if the last WS report is fresh.
-    void fetchNodes(true);
   } finally {
     deletingNodeIDs.delete(uuid);
   }
@@ -112,7 +149,7 @@ window.deleteNode = async function(uuid) {
   try {
     await deleteNodeAndRefresh(uuid);
   } catch (e) {
-    alert('删除失败: ' + e.message);
+    alert(e.message);
   }
 };
 
@@ -510,7 +547,7 @@ document.getElementById('deleteNodeBtn').addEventListener('click', async () => {
   try {
     await deleteNodeAndRefresh(uuid);
   } catch (e) {
-    alert('删除失败: ' + e.message);
+    alert(e.message);
   } finally {
     setEditNodeBusy('');
     button.textContent = '删除节点';
