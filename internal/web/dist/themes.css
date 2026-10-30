@@ -215,6 +215,7 @@ body .hex-card-footer::before { color: var(--label-orange); }
 
 /* Weekly direct-egress identity, immediately below the operating system. */
 .node-network-identity { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 7px; color: var(--muted-foreground); font-size: 11px; line-height: 1.5; min-width: 0; overflow-wrap: anywhere; }
+.node-network-identity > .node-asn { flex-basis: 100%; }
 .node-google-region { display: inline-flex; align-items: center; gap: 5px; }
 .node-google-region img { flex: 0 0 14px; width: 14px; height: 14px; }
 .ss-detail-value > .node-network-identity { margin-top: 4px; }
