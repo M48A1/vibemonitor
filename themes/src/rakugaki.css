@@ -37,6 +37,7 @@
   --rak-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Microsoft YaHei UI", monospace;
   --rak-display: "Songti SC", "Noto Serif SC", SimSun, Georgia, serif;
   --squiggle: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='10' viewBox='0 0 240 10'%3E%3Cpath d='M0 5 C 40 1, 80 9, 120 5 S 200 9, 240 5' fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+  --overlay-bg: rgba(20, 20, 19, .4);
 }
 body {
   background: var(--paper);
@@ -118,7 +119,6 @@ body::before { display: none; }
 .site-menu-panel, .modal { background: #fff; border: 2px solid var(--ink); border-radius: var(--r-card); box-shadow: var(--shadow-lg); backdrop-filter: none; -webkit-backdrop-filter: none; }
 .site-menu-item:hover { background: var(--paper-warm); }
 .modal-title { font-family: var(--rak-display); }
-.modal-overlay { background: rgba(20, 20, 19, .4); }
 .theme-row { border: 1px dashed var(--border); border-radius: var(--r-chip); background: var(--paper); }
 .powered-by-pill { background: var(--paper); border: 1.5px solid var(--ink); border-radius: var(--r-chip); box-shadow: 3px 3px 0 var(--fill-oat); backdrop-filter: none; -webkit-backdrop-filter: none; }
 @media (max-width: 1120px) {

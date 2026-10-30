@@ -67,6 +67,13 @@ window.VibeHex = (() => {
     const capacity = data => number(data.total) > 0 ? `${formatBytes(data.used || 0)} / ${formatBytes(data.total)}` : '等待上报';
     const detail = (label, value) => `<div class="ss-detail"><span class="ss-detail-label">${label}</span><span class="ss-detail-value">${value}</span></div>`;
     const rate = number(connections.tcp_new_per_sec);
+    // The theme styles urgency on the expiry cell; wire it to the due date.
+    const expiryState = bill.days == null ? '' : bill.days <= 0 ? ' is-critical' : bill.days <= 7 ? ' is-warning' : '';
+    // Load only means something per core: 1.0x is saturated, 0.7x is busy.
+    const cores = number(info.cpu_cores) || number(cpu.cores);
+    const load1 = live ? number(load.load1) : null;
+    const loadRatio = load1 != null && cores > 0 ? load1 / cores : null;
+    const loadState = loadRatio == null ? '' : loadRatio >= 1 ? ' is-critical' : loadRatio >= 0.7 ? ' is-warning' : '';
     return `<article class="node-card ss-node ${node.online ? '' : 'offline'}" data-node-id="${escapeHtml(node.uuid)}">
       <details class="ss-details">
         <summary class="ss-row">
@@ -75,8 +82,8 @@ window.VibeHex = (() => {
           <span class="ss-cell ss-region">${getRegionBadge(node.region)}</span>
           <span class="ss-cell ss-system" title="${escapeHtml(info.os || '等待上报')}">${escapeHtml(info.os || '等待上报')}</span>
           <span class="ss-cell ss-uptime">${live ? formatUptime(r.uptime) : '—'}</span>
-          <span class="ss-cell ss-expiry">${bill.remaining}</span>
-          <span class="ss-cell ss-load">${live && number(load.load1) != null ? number(load.load1).toFixed(2) : '—'}</span>
+          <span class="ss-cell ss-expiry${expiryState}">${bill.remaining}</span>
+          <span class="ss-cell ss-load${loadState}">${load1 != null ? load1.toFixed(2) : '—'}</span>
           <span class="ss-cell ss-network"><span>↓ ${speed(net.down)}</span><span>↑ ${speed(net.up)}</span></span>
           <span class="ss-cell ss-traffic">${serverStatusBar(trafficUsage)}</span>
           <span class="ss-cell ss-cpu">${serverStatusBar(cpuUsage)}</span>

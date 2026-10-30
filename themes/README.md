@@ -21,3 +21,5 @@ python3 scripts/package_themes.py
 ```
 
 Custom styles replace the Design overlay and load on top of the shared base styles. A table theme can select the existing ServerStatus renderer with `:root { --vibemonitor-layout: serverstatus; }`. Omit this property for the standard cards. No JavaScript is allowed in theme packages.
+
+Two shared behaviours matter when a theme restyles dialogs. `.modal-overlay` paints `--overlay-bg` behind the dialog, and `.modal-header` sticks to the top of a scrolling dialog while painting its own background (the base rule composites `--card-bg` over `--background`, which keeps glass themes opaque). Override `--overlay-bg` for the scrim; if you restyle `.modal-header` margins, keep its `top` offset in sync so the header still pins flush to the dialog edge.

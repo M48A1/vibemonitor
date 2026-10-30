@@ -341,13 +341,14 @@ function billingDisplay(profile) {
   const cycle = {month:'月',quarter:'季',year:'年'}[p.payment_cycle];
   const price = cycle ? `${escapeHtml(p.currency || 'CNY')} ${Number(p.price || 0).toFixed(2)} / ${cycle}` : '账单未设置';
   let remaining = '未设置到期日';
+  let days = null;
   if (/^\d{4}-\d{2}-\d{2}$/.test(p.due_date || '')) {
     const now = new Date();
     const today = Date.UTC(now.getFullYear(),now.getMonth(),now.getDate());
-    const days = Math.round((Date.parse(p.due_date+'T00:00:00Z')-today)/86400000);
+    days = Math.round((Date.parse(p.due_date+'T00:00:00Z')-today)/86400000);
     remaining = days < 0 ? `已到期 ${-days} 天` : days === 0 ? '今天到期' : `剩余 ${days} 天`;
   }
-  return {price, remaining, date:escapeHtml(p.due_date || '—')};
+  return {price, remaining, date:escapeHtml(p.due_date || '—'), days};
 }
 function renderPingPanels(node) {
   const reports = (node.last_report || {}).ping_results || [];
@@ -535,6 +536,8 @@ function applyPublicSettings(data) {
 }
 
 async function fetchPublicSettings() {
+  // WebSocket pushes the same fields, so only poll while it is silent.
+  if (document.hidden || hasFreshWSData()) return;
   try {
     const res = await fetch('/api/public');
     if (!res.ok) throw new Error('无法读取网站设置');

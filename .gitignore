@@ -19,6 +19,9 @@ node_modules/
 
 # Local-only tests, fixtures and test tooling.
 *_test.go
+# Except the regression suites that ship with the static handler and the gzip layer.
+!internal/web/embed_test.go
+!internal/server/compression_test.go
 *.test.*
 *.spec.*
 test_*.py

@@ -13,9 +13,23 @@ function setAdminState(admin) {
   const changed = isAdmin !== admin;
   isAdmin = admin;
   const quickActions = document.getElementById('adminQuickActions');
-  quickActions.style.display = admin ? 'block' : 'none';
+  if (quickActions) quickActions.hidden = !admin;
   if (!admin) closeSiteMenu();
   if (changed && nodes.length) renderNodes();
+}
+
+// Login errors live in a role="alert" node toggled through the hidden attribute,
+// so no inline style is needed and screen readers announce the text.
+function showLoginError(message) {
+  const error = document.getElementById('loginError');
+  if (!error) return;
+  if (typeof message === 'string') error.textContent = message;
+  error.hidden = false;
+}
+
+function hideLoginError() {
+  const error = document.getElementById('loginError');
+  if (error) error.hidden = true;
 }
 
 // Event Listeners
@@ -25,9 +39,7 @@ function requireAdmin(action) {
     return;
   }
   pendingAdminAction = action;
-  const error = document.getElementById('loginError');
-  error.style.display = 'none';
-  error.textContent = '账号或密码错误';
+  hideLoginError();
   const pwInput = document.getElementById('loginPassword');
   pwInput.value = '';
   pwInput.type = 'password';
@@ -55,11 +67,10 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
       closeModal('loginModal');
       if (action) action();
     } else {
-      document.getElementById('loginError').style.display = 'block';
+      showLoginError('账号或密码错误');
     }
   } catch (e) {
-    document.getElementById('loginError').textContent = '连接失败: ' + e.message;
-    document.getElementById('loginError').style.display = 'block';
+    showLoginError('连接失败: ' + e.message);
   }
 });
 

@@ -33,7 +33,7 @@
               </div>
             </details>
             <button type="button" class="site-menu-item site-menu-level-1" id="externalSettingsBtn">外部通信设置</button>
-            <div id="adminQuickActions" style="display: none;">
+            <div id="adminQuickActions" hidden>
               <button type="button" class="site-menu-item site-menu-logout" id="logoutBtn">退出登录</button>
             </div>
           </div>
@@ -122,7 +122,7 @@
               <div id="logoPreviewContent" class="brand-icon"></div>
             </div>
             <div class="logo-upload-actions">
-              <input type="file" id="settingSiteIconFile" accept="image/png,image/jpeg,image/svg+xml,image/webp,image/x-icon,image/gif" style="display: none;">
+              <input type="file" id="settingSiteIconFile" accept="image/png,image/jpeg,image/svg+xml,image/webp,image/x-icon,image/gif" hidden>
               <button type="button" class="btn btn-primary" id="btnSelectLogo">上传图标</button>
               <button type="button" class="btn" id="btnResetLogo">恢复默认</button>
               <span id="logoUploadStatus" class="logo-status-text"></span>
@@ -131,7 +131,7 @@
           <div class="logo-upload-hint">用于浏览器标签页和地址栏。支持 PNG、JPG、SVG、WebP、ICO 格式（最大 2MB），保存于服务器本地。</div>
         </div>
         <div class="form-group"><label class="form-label" for="settingNewPassword">新管理员密码（留空则不修改）</label><div class="password-input-wrap"><input type="password" class="form-input" id="settingNewPassword" minlength="8" autocomplete="new-password"><button type="button" class="btn-toggle-pwd" data-target="settingNewPassword" title="显示密码" aria-label="显示密码" aria-pressed="false">👁️</button></div></div>
-        <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:14px;"><button type="button" class="btn" id="cancelSettingsModalBtn" data-close-modal="settingsModal">取消</button><button type="submit" class="btn btn-primary">保存</button></div>
+        <div class="modal-actions"><button type="button" class="btn" id="cancelSettingsModalBtn" data-close-modal="settingsModal">取消</button><button type="submit" class="btn btn-primary">保存</button></div>
       </form>
     </div>
   </div>
@@ -159,13 +159,13 @@
           <summary>报警消息模板</summary>
           <p>可编辑每类告警正文。变量会在发送时替换；清空单项并保存会使用默认文案。每项最多 2048 字节。</p>
           <div class="telegram-template-fields">
-            <div class="form-group"><label class="form-label" for="telegramTemplateOffline">节点离线</label><textarea class="form-input" id="telegramTemplateOffline" rows="2"></textarea><small>变量：<code>{node}</code> 节点名、<code>{last_seen}</code> 最后上报时间</small></div>
-            <div class="form-group"><label class="form-label" for="telegramTemplateRecovery">节点恢复</label><textarea class="form-input" id="telegramTemplateRecovery" rows="2"></textarea><small>变量：<code>{node}</code> 节点名、<code>{last_seen}</code> 最后上报时间</small></div>
-            <div class="form-group"><label class="form-label" for="telegramTemplateCPU">CPU 告警</label><textarea class="form-input" id="telegramTemplateCPU" rows="2"></textarea><small>变量：<code>{node}</code>、<code>{cpu}</code> 当前使用率、<code>{cpu_threshold}</code> 阈值</small></div>
-            <div class="form-group"><label class="form-label" for="telegramTemplateMemory">内存告警</label><textarea class="form-input" id="telegramTemplateMemory" rows="2"></textarea><small>变量：<code>{node}</code>、<code>{memory}</code> 当前使用率、<code>{memory_threshold}</code> 阈值</small></div>
-            <div class="form-group"><label class="form-label" for="telegramTemplateTraffic">流量告警</label><textarea class="form-input" id="telegramTemplateTraffic" rows="2"></textarea><small>变量：<code>{node}</code>、<code>{used_gib}</code> 本周期已用 GiB、<code>{limit_gib}</code> 额度 GiB</small></div>
-            <div class="form-group"><label class="form-label" for="telegramTemplateTrafficWarning">流量提前预警</label><textarea class="form-input" id="telegramTemplateTrafficWarning" rows="2"></textarea><small>变量：<code>{node}</code>、<code>{used_gib}</code> 已用 GiB、<code>{limit_gib}</code> 额度 GiB、<code>{percent}</code> 已用比例、<code>{warning_percent}</code> 预警基准</small></div>
-            <div class="form-group"><label class="form-label" for="telegramTemplateDue">到期提醒</label><textarea class="form-input" id="telegramTemplateDue" rows="2"></textarea><small>变量：<code>{node}</code>、<code>{due_date}</code> 到期日期、<code>{days}</code> 剩余天数</small></div>
+            <div class="form-group"><label class="form-label" for="telegramTemplateOffline">节点离线</label><textarea class="form-input form-textarea" id="telegramTemplateOffline" rows="2"></textarea><small>变量：<code>{node}</code> 节点名、<code>{last_seen}</code> 最后上报时间</small></div>
+            <div class="form-group"><label class="form-label" for="telegramTemplateRecovery">节点恢复</label><textarea class="form-input form-textarea" id="telegramTemplateRecovery" rows="2"></textarea><small>变量：<code>{node}</code> 节点名、<code>{last_seen}</code> 最后上报时间</small></div>
+            <div class="form-group"><label class="form-label" for="telegramTemplateCPU">CPU 告警</label><textarea class="form-input form-textarea" id="telegramTemplateCPU" rows="2"></textarea><small>变量：<code>{node}</code>、<code>{cpu}</code> 当前使用率、<code>{cpu_threshold}</code> 阈值</small></div>
+            <div class="form-group"><label class="form-label" for="telegramTemplateMemory">内存告警</label><textarea class="form-input form-textarea" id="telegramTemplateMemory" rows="2"></textarea><small>变量：<code>{node}</code>、<code>{memory}</code> 当前使用率、<code>{memory_threshold}</code> 阈值</small></div>
+            <div class="form-group"><label class="form-label" for="telegramTemplateTraffic">流量告警</label><textarea class="form-input form-textarea" id="telegramTemplateTraffic" rows="2"></textarea><small>变量：<code>{node}</code>、<code>{used_gib}</code> 本周期已用 GiB、<code>{limit_gib}</code> 额度 GiB</small></div>
+            <div class="form-group"><label class="form-label" for="telegramTemplateTrafficWarning">流量提前预警</label><textarea class="form-input form-textarea" id="telegramTemplateTrafficWarning" rows="2"></textarea><small>变量：<code>{node}</code>、<code>{used_gib}</code> 已用 GiB、<code>{limit_gib}</code> 额度 GiB、<code>{percent}</code> 已用比例、<code>{warning_percent}</code> 预警基准</small></div>
+            <div class="form-group"><label class="form-label" for="telegramTemplateDue">到期提醒</label><textarea class="form-input form-textarea" id="telegramTemplateDue" rows="2"></textarea><small>变量：<code>{node}</code>、<code>{due_date}</code> 到期日期、<code>{days}</code> 剩余天数</small></div>
           </div>
           <button type="button" class="btn" id="resetTelegramTemplatesBtn">填入全部默认文案</button>
         </details>
@@ -197,8 +197,8 @@
             <button type="button" class="btn-toggle-pwd" data-target="loginPassword" title="显示密码" aria-label="显示密码" aria-pressed="false">👁️</button>
           </div>
         </div>
-        <div id="loginError" role="alert" style="color: var(--destructive); font-size: 13px; display: none;">账号或密码错误</div>
-        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px;">
+        <div id="loginError" class="form-error" role="alert" hidden>账号或密码错误</div>
+        <div class="modal-actions">
           <button type="button" class="btn" id="cancelLoginModalBtn" data-close-modal="loginModal">取消</button>
           <button type="submit" class="btn btn-primary">登录</button>
         </div>
@@ -213,7 +213,7 @@
         <button type="button" class="modal-close" id="closeSelectNodeModalBtn" data-close-modal="selectNodeModal" aria-label="关闭">&times;</button>
       </div>
       <div class="node-selection-list" id="nodeSelectionList"></div>
-      <div style="display: flex; justify-content: flex-end; margin-top: 14px;">
+      <div class="modal-actions">
         <button type="button" class="btn" id="closeSelectNodeBottomBtn" data-close-modal="selectNodeModal">关闭</button>
       </div>
     </div>
@@ -228,11 +228,11 @@
       </div>
       <p class="logo-upload-hint">拖动节点调整显示顺序，或使用上下按钮微调。保存后按当前列表顺序显示节点。</p>
       <div class="sort-nodes-list" id="sortNodesList"></div>
-      <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px;">
+      <div class="modal-actions">
         <button type="button" class="btn" id="cancelSortNodesBtn" data-close-modal="sortNodesModal">取消</button>
         <button type="button" class="btn btn-primary" id="saveSortNodesBtn">保存排序</button>
       </div>
-      <p id="sortNodesStatus" role="status" aria-live="polite" style="margin-top: 8px; font-size: 13px;"></p>
+      <p id="sortNodesStatus" class="form-note" role="status" aria-live="polite"></p>
     </div>
   </div>
 
@@ -252,7 +252,7 @@
           <label class="form-label" for="newNodeRegion">地区代码 / 国旗代码</label>
           <input type="text" class="form-input" id="newNodeRegion" placeholder="例如: JP, US, CN, HK, SG" value="JP">
         </div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+        <div class="form-grid-2">
           <div class="form-group">
             <label class="form-label" for="newNodeTrafficLimit">月流量配额 (GB, 选填)</label>
             <input type="number" class="form-input" id="newNodeTrafficLimit" placeholder="如 1000" min="0" step="any">
@@ -273,7 +273,7 @@
         </div>
         <div class="form-group">
           <label class="form-label" for="newNodeTargets">此节点的 TCP 测试目标</label>
-          <textarea class="form-input" id="newNodeTargets" rows="3" placeholder="电信,example.com:443&#10;移动,1.1.1.1:443"></textarea>
+          <textarea class="form-input form-textarea" id="newNodeTargets" rows="3" placeholder="电信,example.com:443&#10;移动,1.1.1.1:443"></textarea>
           <small>每行一个“名称,地址:端口”，支持 tcp://、http://、https:// 链接（仅测 TCP 连接，不检查网页）。留空不测试。</small>
         </div>
         <div class="form-group">
@@ -284,11 +284,11 @@
         <div class="form-group"><label><input type="checkbox" id="newNodeAlertsDisabled"> 关闭此节点的 Telegram 告警</label></div>
         <div class="billing-form">
           <label>到期日<input class="form-input" type="date" id="newNodeDue"></label>
-          <label>付款周期<select class="form-input" id="newNodeCycle"><option value="">未设置</option><option value="month">月付</option><option value="quarter">季付</option><option value="year">年付</option></select></label>
+          <label>付款周期<select class="form-input form-select" id="newNodeCycle"><option value="">未设置</option><option value="month">月付</option><option value="quarter">季付</option><option value="year">年付</option></select></label>
           <label>每期金额<input class="form-input" type="number" min="0" max="1000000000" step="0.01" id="newNodePrice" placeholder="0.00"></label>
-          <label>币种<select class="form-input" id="newNodeCurrency"><option>CNY</option><option>USD</option><option>EUR</option><option>HKD</option><option>JPY</option><option>GBP</option></select></label>
+          <label>币种<select class="form-input form-select" id="newNodeCurrency"><option>CNY</option><option>USD</option><option>EUR</option><option>HKD</option><option>JPY</option><option>GBP</option></select></label>
         </div>
-        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px;">
+        <div class="modal-actions">
           <button type="button" class="btn" id="cancelAddNodeModalBtn" data-close-modal="addNodeModal">取消</button>
           <button type="submit" class="btn btn-primary">创建节点</button>
         </div>
@@ -315,7 +315,7 @@
           <label class="form-label" for="editNodeRegion">地区代码</label>
           <input type="text" class="form-input" id="editNodeRegion">
         </div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+        <div class="form-grid-2">
           <div class="form-group">
             <label class="form-label" for="editNodeTrafficLimit">月流量配额 (GB)</label>
             <input type="number" class="form-input" id="editNodeTrafficLimit" min="0" step="any">
@@ -338,7 +338,7 @@
         </div>
         <div class="form-group">
           <label class="form-label" for="editNodeTargets">此节点的 TCP 测试目标</label>
-          <textarea class="form-input" id="editNodeTargets" rows="3" placeholder="电信,example.com:443&#10;移动,1.1.1.1:443"></textarea>
+          <textarea class="form-input form-textarea" id="editNodeTargets" rows="3" placeholder="电信,example.com:443&#10;移动,1.1.1.1:443"></textarea>
           <small>每行一个“名称,地址:端口”，支持 tcp://、http://、https:// 链接（仅测 TCP 连接，不检查网页）。留空不测试。</small>
         </div>
         <div class="form-group">
@@ -349,16 +349,16 @@
         <div class="form-group"><label><input type="checkbox" id="editNodeAlertsDisabled"> 关闭此节点的 Telegram 告警</label></div>
         <div class="billing-form">
           <label>到期日<input class="form-input" type="date" id="editNodeDue"></label>
-          <label>付款周期<select class="form-input" id="editNodeCycle"><option value="">未设置</option><option value="month">月付</option><option value="quarter">季付</option><option value="year">年付</option></select></label>
+          <label>付款周期<select class="form-input form-select" id="editNodeCycle"><option value="">未设置</option><option value="month">月付</option><option value="quarter">季付</option><option value="year">年付</option></select></label>
           <label>每期金额<input class="form-input" type="number" min="0" max="1000000000" step="0.01" id="editNodePrice" placeholder="0.00"></label>
-          <label>币种<select class="form-input" id="editNodeCurrency"><option>CNY</option><option>USD</option><option>EUR</option><option>HKD</option><option>JPY</option><option>GBP</option></select></label>
+          <label>币种<select class="form-input form-select" id="editNodeCurrency"><option>CNY</option><option>USD</option><option>EUR</option><option>HKD</option><option>JPY</option><option>GBP</option></select></label>
         </div>
-        <div style="display: flex; justify-content: space-between; gap: 10px; margin-top: 14px;">
-          <div style="display: flex; gap: 10px;">
+        <div class="modal-actions is-split">
+          <div class="modal-actions-group">
             <button type="button" class="btn btn-danger" id="deleteNodeBtn">删除节点</button>
             <button type="button" class="btn" id="editNodeGuideBtn">显示节点接入命令</button>
           </div>
-          <div style="display: flex; gap: 10px;">
+          <div class="modal-actions-group">
             <button type="button" class="btn" id="cancelEditNodeModalBtn" data-close-modal="editNodeModal">取消</button>
             <button type="submit" class="btn btn-primary">保存修改</button>
           </div>
@@ -374,7 +374,7 @@
         <h3 class="modal-title" id="nodeGuideTitle">节点接入命令</h3>
         <button type="button" class="modal-close" id="closeNodeGuideModalBtn" data-close-modal="nodeGuideModal" aria-label="关闭">&times;</button>
       </div>
-      <div style="display: flex; flex-direction: column; gap: 16px;">
+      <div class="modal-stack">
         <div>
           <span class="form-label">Linux 一键安装命令 (推荐，自动配置 Systemd)</span>
           <div class="code-box" id="guideInstallCmd">curl -fsSL ... | bash</div>
@@ -394,7 +394,7 @@
           <span class="form-label">通信 Token</span>
           <div class="code-box" id="guideToken">...</div>
         </div>
-        <div style="display: flex; justify-content: flex-end;">
+        <div class="modal-actions">
           <button type="button" class="btn btn-primary" id="closeNodeGuideBottomBtn" data-close-modal="nodeGuideModal">完成</button>
         </div>
       </div>
@@ -411,10 +411,10 @@
         </div>
         <button type="button" class="modal-close" id="closePingChartModalBtn" data-close-modal="pingChartModal" aria-label="关闭">&times;</button>
       </div>
-      <div style="padding: 10px 0 0 0;">
+      <div class="modal-body">
         <!-- Range Tabs & Target Switcher -->
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px;">
-          <div style="display: flex; gap: 6px; flex-wrap: wrap;" id="pingTargetSelector">
+        <div class="ping-toolbar">
+          <div class="ping-targets" id="pingTargetSelector">
             <!-- Dynamic target selector buttons -->
           </div>
           <div class="time-range-group">
@@ -454,15 +454,15 @@
           <svg id="pingChartSvg" viewBox="0 0 700 240" preserveAspectRatio="none" role="img" aria-label="延迟历史曲线"></svg>
           <div class="chart-tooltip" id="chartTooltip" style="display: none;"></div>
         </div>
-        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--muted-foreground); margin-top: 8px;">
+        <div class="chart-caption">
           <span id="chartTimeStart">--</span>
-          <span style="display: flex; align-items: center; gap: 8px;">
+          <span class="chart-caption-meta">
             <span>每 60 秒记录 · 持久化存储</span>
-            <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="display: inline-block; width: 10px; height: 10px; background: rgba(239, 68, 68, 0.35); border: 1px solid #ef4444; border-radius: 2px;"></span><span style="color: var(--destructive); font-weight: 500;">掉线时段</span></span>
+            <span class="legend-item"><span class="legend-swatch legend-swatch-offline"></span><span class="legend-label-offline">掉线时段</span></span>
           </span>
           <span id="chartTimeEnd">现在</span>
         </div>
-        <div style="display: flex; justify-content: flex-end; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border);">
+        <div class="modal-actions is-divided">
           <button type="button" class="btn" id="closePingChartBottomBtn" data-close-modal="pingChartModal">关闭</button>
         </div>
       </div>
@@ -479,7 +479,7 @@
         </div>
         <button type="button" class="modal-close" id="closeResourceChartModalBtn" data-close-modal="resourceChartModal" aria-label="关闭">&times;</button>
       </div>
-      <div class="resource-modal-body">
+      <div class="modal-body">
         <div class="resource-range-row">
           <div class="time-range-group" id="resourceTimeRanges">
             <button type="button" class="range-btn active" id="resourceRange1h">最近一小时</button>
@@ -494,11 +494,11 @@
           <button type="button" class="range-btn" id="trafficRangethree">三个周期内</button>
         </div>
         <div id="trafficLegend" style="display:none; flex-wrap:wrap; gap:12px; margin-bottom:12px; font-size:12px">
-          <span><span style="color:#238364">■</span> 全天在线</span>
-          <span><span style="color:#dc4444">■</span> 全天离线</span>
-          <span><span style="color:#d49120">■</span> 部分时段离线</span>
-          <span><span style="color:#8792a2">■</span> 状态记录不完整</span>
-          <span><span style="color:#b7bec8">■</span> 尚未到达</span>
+          <span><span class="legend-online">■</span> 全天在线</span>
+          <span><span class="legend-offline">■</span> 全天离线</span>
+          <span><span class="legend-partial">■</span> 部分时段离线</span>
+          <span><span class="legend-incomplete">■</span> 状态记录不完整</span>
+          <span><span class="legend-pending">■</span> 尚未到达</span>
         </div>
         <div class="ping-stats-grid resource-stats-grid">
           <div class="ping-stat-card"><div class="ping-stat-label" id="resourceLabelCurrent">最新记录</div><div class="ping-stat-value" id="resourceStatCurrent">--</div></div>
@@ -510,8 +510,8 @@
           <svg id="resourceChartSvg" viewBox="0 0 700 240" preserveAspectRatio="none" role="img" aria-label="资源占用历史曲线"></svg>
           <div class="chart-tooltip" id="resourceChartTooltip" style="display: none;"></div>
         </div>
-        <div class="resource-chart-footer"><span id="resourceChartTimeStart">--</span><span id="resourceChartHint">空白处表示未收到采样</span><span id="resourceChartTimeEnd">现在</span></div>
-        <div class="resource-modal-actions"><button type="button" class="btn" id="closeResourceChartBottomBtn" data-close-modal="resourceChartModal">关闭</button></div>
+        <div class="chart-caption"><span id="resourceChartTimeStart">--</span><span id="resourceChartHint">空白处表示未收到采样</span><span id="resourceChartTimeEnd">现在</span></div>
+        <div class="modal-actions is-divided"><button type="button" class="btn" id="closeResourceChartBottomBtn" data-close-modal="resourceChartModal">关闭</button></div>
       </div>
     </div>
   </div>

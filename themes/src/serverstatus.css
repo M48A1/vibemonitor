@@ -35,6 +35,7 @@
   --ss-bar-warn: linear-gradient(#f0ad4e, #ec971f);
   --ss-bar-critical: linear-gradient(#d9534f, #c9302c);
   --ss-cols: 42px minmax(122px, 1.35fr) 66px minmax(94px, .95fr) 70px 70px 62px minmax(118px, 1.1fr) minmax(116px, 1.05fr) 82px 82px 82px;
+  --overlay-bg: rgba(0, 0, 0, .55);
 }
 
 body { background: var(--background); }
@@ -58,7 +59,6 @@ body::before { display: none; }
   -webkit-backdrop-filter: none;
 }
 .modal { border-radius: 5px; }
-.modal-overlay { background: rgba(0, 0, 0, .55); }
 .site-menu-item:hover { background: var(--card-hover); }
 .form-input, .form-select, .form-textarea { background: var(--control-bg); border-radius: 4px; }
 .btn { border-radius: 4px; font-weight: 500; }

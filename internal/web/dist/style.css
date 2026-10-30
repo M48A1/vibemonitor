@@ -146,6 +146,9 @@
 :root {
   --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.08);
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --overlay-bg: rgba(0, 0, 0, 0.7);
+  /* Mirrors the offline band drawn by ping-history.js. */
+  --chart-offline: #ef4444;
 }
 
 * {
@@ -170,6 +173,9 @@ body {
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
 }
+
+/* Form controls keep the UA's sizes but should still use the page typeface. */
+button, input, select, textarea { font-family: inherit; }
 
 .container {
   max-width: 1440px;
@@ -411,7 +417,7 @@ body {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--overlay-bg);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
   display: none;
@@ -427,7 +433,35 @@ body {
   display: flex;
   opacity: 1;
   pointer-events: auto;
+  overscroll-behavior: contain;
 }
+
+/* Keep the page behind a dialog from scrolling on touch devices. */
+body:has(.modal-overlay.active) { overflow: hidden; }
+
+/* Shared footer row for dialog forms. */
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 14px;
+}
+.modal-actions.is-split { justify-content: space-between; }
+.modal-actions-group { display: flex; gap: 10px; }
+.modal-actions.is-divided {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+/* A dialog body that just stacks its sections. */
+.modal-stack { display: flex; flex-direction: column; gap: 16px; }
+.modal-body { padding-top: 10px; }
+/* Two-up field rows collapse to one column on narrow screens. */
+.form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-note { margin-top: 8px; font-size: 13px; }
+.form-error { color: var(--destructive); font-size: 13px; }
+/* The hidden attribute must win over any theme rule that sets a display value. */
+[hidden] { display: none !important; }
 
 .modal {
   background: var(--card-bg);
@@ -444,6 +478,7 @@ body {
   transition: transform 0.2s ease;
   max-height: 90vh;
   overflow-y: auto;
+  overscroll-behavior: contain;
   backdrop-filter: blur(22px) saturate(140%);
   -webkit-backdrop-filter: blur(22px) saturate(140%);
 }
@@ -456,6 +491,15 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  /* Keep the title and the close button reachable while a tall dialog scrolls. */
+  position: sticky;
+  top: 0;
+  /* Above scrolling dialog content (chart tooltips sit at 10), below the overlay. */
+  z-index: 20;
+  /* Glass themes keep the card translucent, so frost what scrolls underneath. */
+  background: var(--card-bg);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
 }
 
 .modal-title {
@@ -512,6 +556,7 @@ body {
   font-size: 14px;
   outline: none;
   transition: border-color 0.15s ease;
+  resize: vertical;
 }
 
 .form-input:focus {
@@ -664,11 +709,27 @@ body {
 }
 
 .resource-modal-subtitle { font-size: 12px; color: var(--muted-foreground); margin-top: 2px; }
-.resource-modal-body { padding-top: 10px; }
+/* Ping history dialog: toolbar, targets, chart caption and legend. */
+.ping-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px; }
+.ping-targets { display: flex; gap: 6px; flex-wrap: wrap; }
+.chart-caption {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  font-size: 11px; color: var(--muted-foreground); margin-top: 8px;
+}
+.chart-caption-meta { display: flex; align-items: center; gap: 8px; }
+.legend-item { display: inline-flex; align-items: center; gap: 4px; }
+.legend-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+/* Colours mirror the palettes drawn by ping-history.js / resource-history.js. */
+.legend-swatch-offline { background: color-mix(in srgb, var(--chart-offline) 35%, transparent); border: 1px solid var(--chart-offline); }
+.legend-label-offline { color: var(--destructive); font-weight: 500; }
+.legend-online { color: #238364; }
+.legend-offline { color: #dc4444; }
+.legend-partial { color: #d49120; }
+.legend-incomplete { color: #8792a2; }
+.legend-pending { color: #b7bec8; }
+
 .resource-range-row { display: flex; justify-content: flex-end; margin-bottom: 14px; }
 .resource-stats-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.resource-chart-footer { display: flex; justify-content: space-between; gap: 10px; font-size: 11px; color: var(--muted-foreground); margin-top: 8px; }
-.resource-modal-actions { display: flex; justify-content: flex-end; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
 @media (max-width: 600px) { .resource-stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 .chart-tooltip {
@@ -706,8 +767,6 @@ body {
 .node-card { gap: 12px; padding: 16px; }
 .billing-form { margin: 16px 0; }
 .billing-form label { display: grid; gap: 6px; font-size: 13px; }
-.billing-summary { display:flex; flex-wrap:wrap; gap:8px 16px; background:var(--card-data-bg); border-radius:12px; padding:10px 12px; font-size:12px; }
-.summary-value.up { color:var(--success); } .summary-value.down { color:#2563eb; }
 .ping-panels { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
 .ping-panel { min-width:0; padding:12px; background:var(--card-data-bg); border-radius:14px; }
 .panel-label, .ping-empty { color:var(--muted-foreground); font-size:13px; }
@@ -716,7 +775,6 @@ body {
 .ping-row-heading > span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .ping-row-heading strong { white-space:nowrap; }
 .target-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; }
-.target-0 { background:#fb7185; } .target-1 { background:#34d399; } .target-2 { background:#60a5fa; }
 .sample-bars { display:flex; gap:2px; }
 .sample-bar { flex:1; height:13px; border-radius:2px; background:var(--border); }
 .sample-bar.fast { background:#a3e635; } .sample-bar.received { background:#35a680; }
@@ -823,12 +881,19 @@ body {
   }
   .modal-title { font-size: 16px; }
   .form-group { gap: 5px; }
+  /* 16px keeps iOS Safari from zooming the page when a field gains focus. */
+  .form-input { font-size: 16px; }
+  /* Two-up field rows get too narrow for phone keyboards. */
+  .form-grid-2 { grid-template-columns: 1fr; }
 }
 
 /* Shared by every theme: distinguish an old snapshot from current status. */
 .connection-status { margin: 8px auto; padding: 8px 14px; max-width: 1440px; font-size: 12px; color: var(--muted-foreground); }
-.connection-status[data-state="stale"] { color: #92400e; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 6px; }
-#nodeGrid[data-stale="true"] .node-card { opacity: .65; }
+.connection-status[data-state="stale"] {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 14%, var(--card-bg));
+  border: 1px solid color-mix(in srgb, var(--warning) 50%, var(--card-bg));
+  border-radius: 6px;
+}
+#nodeGrid[data-stale="true"] .node-card { opacity: .8; }
 
-/* Keep loading/retry controls hidden across button display styles and themes. */
-#editNodeModal [hidden] { display: none !important; }
