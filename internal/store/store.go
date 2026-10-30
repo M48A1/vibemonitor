@@ -444,7 +444,7 @@ func (s *Store) load(defaultPassword, username string) error {
 
 	if !isBuiltinTheme(s.config.SiteTheme) {
 		var count int
-		if err := s.sdb.db.QueryRow("SELECT count(*) FROM site_themes WHERE id=?", s.config.SiteTheme).Scan(&count); err != nil {
+		if err := s.sdb.reader().QueryRow("SELECT count(*) FROM site_themes WHERE id=?", s.config.SiteTheme).Scan(&count); err != nil {
 			return err
 		}
 		if count == 0 {

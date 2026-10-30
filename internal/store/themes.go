@@ -114,7 +114,7 @@ func (s *Store) Themes() ([]Theme, error) {
 	list := []Theme{
 		{ID: DefaultTheme, Name: "Design · 默认主题", Version: "1.0.0", Description: "暖白窗口、细线列表、柔和圆角与噪点磨砂", Builtin: true},
 	}
-	rows, err := s.sdb.db.Query("SELECT id,name,version,description FROM site_themes ORDER BY name,id")
+	rows, err := s.sdb.reader().Query("SELECT id,name,version,description FROM site_themes ORDER BY name,id")
 	if err != nil {
 		return nil, err
 	}
@@ -128,9 +128,12 @@ func (s *Store) Themes() ([]Theme, error) {
 	}
 	return list, rows.Err()
 }
+
+// ThemeCSS is served on every theme switch and page load, so it must not wait
+// behind a writer transaction.
 func (s *Store) ThemeCSS(id string) (string, error) {
 	var css string
-	err := s.sdb.db.QueryRow("SELECT css FROM site_themes WHERE id=?", id).Scan(&css)
+	err := s.sdb.reader().QueryRow("SELECT css FROM site_themes WHERE id=?", id).Scan(&css)
 	return css, err
 }
 func (s *Store) ImportTheme(data []byte) (Theme, error) {

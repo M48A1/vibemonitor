@@ -28,7 +28,7 @@ type TelegramAlertState struct {
 }
 
 func (s *Store) LoadTelegramAlertStates(epoch string) (map[string]TelegramAlertState, error) {
-	rows, err := s.sdb.db.Query("SELECT node_uuid, state_json FROM telegram_alert_state WHERE config_epoch = ?", epoch)
+	rows, err := s.sdb.reader().Query("SELECT node_uuid, state_json FROM telegram_alert_state WHERE config_epoch = ?", epoch)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +78,7 @@ func (s *Store) DeleteTelegramAlertState(id string) error {
 func (s *Store) LoadTelegramAlertState(epoch, id string) (map[string]TelegramAlertState, error) {
 	states := make(map[string]TelegramAlertState)
 	var raw string
-	err := s.sdb.db.QueryRow("SELECT state_json FROM telegram_alert_state WHERE node_uuid=? AND config_epoch=?", id, epoch).Scan(&raw)
+	err := s.sdb.reader().QueryRow("SELECT state_json FROM telegram_alert_state WHERE node_uuid=? AND config_epoch=?", id, epoch).Scan(&raw)
 	if err == sql.ErrNoRows {
 		return states, nil
 	}

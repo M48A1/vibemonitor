@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	_ "modernc.org/sqlite"
 
@@ -187,8 +189,9 @@ func (s *sqliteDB) initSchema() error {
 	);
 	CREATE INDEX IF NOT EXISTS idx_resource_history_time ON resource_history(timestamp);
 
-	CREATE INDEX IF NOT EXISTS idx_ping_lookup ON ping_history(node_uuid, target_name, timestamp);
-	CREATE INDEX IF NOT EXISTS idx_ping_series ON ping_history(node_uuid, target_name, host, method, timestamp, latency);
+	-- Series reads are ordered by (node_uuid, target_name, timestamp) and filter
+	-- host/method afterwards, so the unique index alone keeps them sorted and
+	-- bounded. Wider duplicates only slow down every sample insert.
 	CREATE INDEX IF NOT EXISTS idx_ping_cleanup ON ping_history(timestamp);
 	CREATE UNIQUE INDEX IF NOT EXISTS idx_ping_unique ON ping_history(node_uuid, target_name, timestamp);
 	`
@@ -196,6 +199,7 @@ func (s *sqliteDB) initSchema() error {
 	if err != nil {
 		return err
 	}
+	s.dropRedundantPingIndexes()
 	hasNetworkRate, err := s.hasResourceColumn("network_rate")
 	if err != nil {
 		return err
@@ -264,6 +268,62 @@ func (s *sqliteDB) initSchema() error {
 		}
 	}
 	return s.initHistoryRollupSchema()
+}
+
+// Older schemas created two more indexes on ping_history. idx_ping_lookup
+// duplicated the UNIQUE (node_uuid,target_name,timestamp) index verbatim, and
+// idx_ping_series appended host/method/latency to that same key so series reads
+// could avoid a row lookup. Measured on a 90-day, 5.2M-sample database they were
+// 280MB of 739MB and 39% of the ping insert path, while every query stayed
+// index-ordered without them. Drop them once; new databases never create them.
+// Reclaiming space is an optimisation, so a refusal (read-only volume, no free
+// space) must never keep the server from starting.
+func (s *sqliteDB) dropRedundantPingIndexes() {
+	var dropped []string
+	for _, name := range []string{"idx_ping_lookup", "idx_ping_series"} {
+		var exists int
+		if err := s.db.QueryRow("SELECT count(*) FROM sqlite_master WHERE type='index' AND name=?", name).Scan(&exists); err != nil {
+			log.Printf("[Store] Could not inspect index %s: %v", name, err)
+			return
+		}
+		if exists == 0 {
+			continue
+		}
+		if _, err := s.db.Exec("DROP INDEX " + name); err != nil {
+			log.Printf("[Store] Could not drop redundant index %s: %v", name, err)
+			continue
+		}
+		dropped = append(dropped, name)
+	}
+	if len(dropped) == 0 {
+		return
+	}
+	log.Printf("[Store] Dropped redundant ping_history indexes: %s", strings.Join(dropped, ", "))
+	// DROP INDEX only frees pages inside the file. Reclaiming them runs before
+	// the read pool exists, so no reader can hold it up.
+	if err := s.reclaimFreePages(); err != nil {
+		log.Printf("[Store] Index space reclaim skipped: %v", err)
+	}
+}
+
+// reclaimFreePages hands a migrated freelist back to the file system. Small
+// freelists are left alone: VACUUM rewrites the whole database once.
+func (s *sqliteDB) reclaimFreePages() error {
+	var free, pageSize int64
+	if err := s.db.QueryRow("PRAGMA freelist_count").Scan(&free); err != nil {
+		return err
+	}
+	if err := s.db.QueryRow("PRAGMA page_size").Scan(&pageSize); err != nil {
+		return err
+	}
+	if bytes := free * pageSize; bytes >= 8<<20 {
+		start := time.Now()
+		if _, err := s.db.Exec("VACUUM"); err != nil {
+			return err
+		}
+		log.Printf("[Store] Reclaimed %d MB in %s", bytes>>20, time.Since(start).Round(time.Millisecond))
+	}
+	return nil
 }
 
 func (s *sqliteDB) hasConfigColumn(name string) (bool, error) {
@@ -397,7 +457,7 @@ func (s *sqliteDB) saveConfig(c *Config) error {
 }
 
 func (s *sqliteDB) loadNodes() (map[string]*Node, error) {
-	rows, err := s.db.Query("SELECT data_json FROM nodes")
+	rows, err := s.reader().Query("SELECT data_json FROM nodes")
 	if err != nil {
 		return nil, err
 	}
