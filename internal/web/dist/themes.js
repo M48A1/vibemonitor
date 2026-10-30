@@ -22,6 +22,17 @@ window.VibeHex = (() => {
     }
   }
 
+  function systemIcon(os) {
+    if (/\bdebian\b/i.test(os || '')) {
+      return '<img class="node-info-icon" src="/debian-mark.svg" alt="" aria-hidden="true" width="12" height="12">';
+    }
+    return '<svg class="node-info-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>';
+  }
+
+  function asnIcon() {
+    return '<svg class="node-info-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/></svg>';
+  }
+
   function networkIdentityLine(info) {
     const identity = info.network_identity || {};
     const asn = identity.asn ? `${identity.asn} ${identity.as_name || ''}`.trim() : 'Unknown';
@@ -37,7 +48,7 @@ window.VibeHex = (() => {
       parts.push(`<span class="node-google-region" title="Region detected by YouTube Premium · Direct ${family}">${icon}${family} ${escapeHtml(englishRegionName(code))}</span>`);
       showGoogle = false;
     }
-    return `<span class="node-network-identity"><span class="node-asn" title="ASN · Direct IPv4">ASN：${escapeHtml(asn)}</span>${parts.join('')}</span>`;
+    return `<span class="node-network-identity"><span class="node-asn" title="ASN · Direct IPv4">${asnIcon()}<span>ASN：${escapeHtml(asn)}</span></span>${parts.join('')}</span>`;
   }
 
   function serverStatusBar(value) {
@@ -141,7 +152,7 @@ window.VibeHex = (() => {
     const limit = number(node.traffic_limit);
     const traffic = limit > 0 ? percent(used, limit) : null;
     return `<article class="node-card hex-card ${node.online ? '' : 'offline'}" data-node-id="${escapeHtml(node.uuid)}">
-      <div class="hex-node-header"><div class="hex-node-identity"><span class="hex-region">${getRegionBadge(node.region)}</span><h2>${escapeHtml(node.name)}</h2><span class="hex-system">${escapeHtml(info.os || '等待上报')} ${info.arch ? '· ' + escapeHtml(info.arch) : ''}</span>${networkIdentityLine(info)}</div><span class="hex-status ${node.online ? 'is-online' : ''}"><i></i>${node.online ? '在线' : '离线'}</span></div>
+      <div class="hex-node-header"><div class="hex-node-identity"><span class="hex-region">${getRegionBadge(node.region)}</span><h2>${escapeHtml(node.name)}</h2><span class="hex-system">${systemIcon(info.os)}<span>${escapeHtml(info.os || '等待上报')} ${info.arch ? '· ' + escapeHtml(info.arch) : ''}</span></span>${networkIdentityLine(info)}</div><span class="hex-status ${node.online ? 'is-online' : ''}"><i></i>${node.online ? '在线' : '离线'}</span></div>
       <div class="hex-resources">
         ${metric('CPU', live ? number(cpu.usage) : null, `${info.cpu_cores || cpu.cores || '—'} 核`, node.uuid, 'cpu')}
         ${metric('内存', live ? percent(ram.used, ram.total) : null, capacity(ram), node.uuid, 'memory')}

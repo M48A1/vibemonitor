@@ -219,3 +219,9 @@ body .hex-card-footer::before { color: var(--label-orange); }
 .node-google-region { display: inline-flex; align-items: center; gap: 5px; }
 .node-google-region img { flex: 0 0 14px; width: 14px; height: 14px; }
 .ss-detail-value > .node-network-identity { margin-top: 4px; }
+
+/* Equal icon columns keep system, ASN and service-region rows aligned. */
+.hex-system, .node-network-identity > .node-asn { display: flex; align-items: flex-start; gap: 5px; }
+.hex-system > span, .node-asn > span { min-width: 0; }
+.node-info-icon { display: block; flex: 0 0 1em; width: 1em; height: 1em; margin-top: .25em; }
+.node-google-region img { flex-basis: 1em; width: 1em; height: 1em; }
