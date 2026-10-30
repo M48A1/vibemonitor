@@ -18,6 +18,13 @@ func (s *sqliteDB) saveNodeSnapshot(config Config, node *Node) error {
 	return s.saveSnapshotRows(config, map[string]*Node{node.UUID: node}, false)
 }
 
+// saveDirtyNodes persists only the supplied nodes plus any pending history
+// samples in one transaction. Config is intentionally not written here: every
+// config mutation is already committed immediately by its own path.
+func (s *sqliteDB) saveDirtyNodes(config Config, nodes map[string]*Node, samples ...historySample) error {
+	return s.saveSnapshotRows(config, nodes, false, samples...)
+}
+
 func (s *sqliteDB) saveSnapshotRows(config Config, nodes map[string]*Node, replaceAll bool, samples ...historySample) error {
 	tx, err := s.db.Begin()
 	if err != nil {

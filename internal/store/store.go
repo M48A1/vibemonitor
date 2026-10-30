@@ -114,6 +114,11 @@ type Node struct {
 	DaysUntilReset int     `json:"days_until_reset"` // Days remaining until reset day
 
 	lastResourceSampleAt int64
+
+	// dirty marks the node for the next incremental persistence flush. It is
+	// cleared once the node's latest JSON has been written to SQLite. Not
+	// serialized; internal bookkeeping only.
+	dirty bool
 }
 
 type Config struct {
@@ -292,15 +297,61 @@ func (s *Store) Save() error {
 		return nil
 	}
 	config := s.config
-	nodes := cloneNodesForSave(s.nodes)
 	samples := append([]historySample(nil), s.pendingSamples...)
 	s.dirty = false
+
+	// The first flush after startup uses a full snapshot so the one-time orphan
+	// cleanup and the node cache are (re)established. Every later flush persists
+	// only the nodes that actually changed instead of re-marshaling the fleet.
+	if s.sdb != nil && s.sdb.nodeCache == nil {
+		nodes := cloneNodesForSave(s.nodes)
+		for _, n := range s.nodes {
+			n.dirty = false
+		}
+		s.mu.Unlock()
+		err := s.sdb.saveSnapshot(config, nodes, samples...)
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if err != nil {
+			s.dirty = true
+			return err
+		}
+		s.ackHistoryLocked(len(samples))
+		return nil
+	}
+
+	dirty := make(map[string]*Node, len(s.nodes))
+	for uuid, n := range s.nodes {
+		if n.dirty {
+			dirty[uuid] = cloneNodeForSave(n)
+		}
+	}
+	// A pending sample always belongs to a node that must be in this flush.
+	for _, sample := range samples {
+		if _, ok := dirty[sample.UUID]; !ok {
+			if n := s.nodes[sample.UUID]; n != nil {
+				dirty[sample.UUID] = cloneNodeForSave(n)
+			}
+		}
+	}
+	for _, n := range s.nodes {
+		n.dirty = false
+	}
 	s.mu.Unlock()
-	err := s.sdb.saveSnapshot(config, nodes, samples...)
+
+	if len(dirty) == 0 && len(samples) == 0 {
+		return nil
+	}
+	err := s.sdb.saveDirtyNodes(config, dirty, samples...)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err != nil {
 		s.dirty = true
+		for uuid := range dirty {
+			if n := s.nodes[uuid]; n != nil {
+				n.dirty = true
+			}
+		}
 		return err
 	}
 	s.ackHistoryLocked(len(samples))
@@ -338,9 +389,14 @@ func (s *Store) SetOnUpdate(fn func()) {
 	s.mu.Unlock()
 }
 
+// notifyUpdate runs the state-change callback inline. Every caller already
+// holds s.mu, so spawning a goroutine per report is pure overhead: the only
+// registered callback (the WebSocket hub wake-up) is non-blocking. The contract
+// is that the callback must not re-enter the store or block, or it would run
+// while the store lock is held.
 func (s *Store) notifyUpdate() {
 	if s.onUpdate != nil {
-		go s.onUpdate()
+		s.onUpdate()
 	}
 }
 
@@ -523,6 +579,9 @@ func (s *Store) load(defaultPassword, username string) error {
 	}
 
 	s.prunePingDataLocked()
+	for _, n := range s.nodes {
+		n.dirty = true
+	}
 	s.dirty = true
 
 	return nil
@@ -966,6 +1025,7 @@ func (s *Store) UpdateNodeWithOptions(uuid string, opts NodeOptions) error {
 	if opts.CycleUsedGB != nil {
 		n.CurrentCycleUsed = delta
 	}
+	n.dirty = true
 	s.dirty = true
 	s.notifyUpdate()
 	return nil
@@ -1107,6 +1167,7 @@ func (s *Store) IngestBasicInfo(token string, info protocol.BasicInfo) (*Node, e
 	}
 	node.BasicInfo = &info
 	s.dirty = true
+	node.dirty = true
 	node.LastSeen = time.Now().UTC()
 	node.recordDailyOnline(node.LastSeen)
 	node.Online = true
@@ -1172,6 +1233,7 @@ func (s *Store) ingestReportAt(token string, report protocol.Report, now time.Ti
 	}
 	node.LastReport = &report
 	s.dirty = true
+	node.dirty = true
 	node.LastSeen = receivedAt
 	node.recordDailyOnline(receivedAt)
 	node.Online = true
