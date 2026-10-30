@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -68,26 +69,72 @@ func identityGET(ctx context.Context, client *http.Client, url string, limit int
 	return body, nil
 }
 
+// Follow xykt/IPQuality's basic-information sources: MaxMind via
+// ipinfo.check.place, with IPinfo as the fallback. Resolve our own direct
+// IPv4 first so both providers describe the same address.
 func lookupASN(ctx context.Context, client *http.Client) (string, string, error) {
-	body, err := identityGET(ctx, client, "https://ipwho.is/?lang=en&fields=success,connection.asn,connection.org", 64<<10)
+	var ip net.IP
+	for _, endpoint := range []string{"https://ipinfo.io/ip", "https://api64.ipify.org"} {
+		body, err := identityGET(ctx, client, endpoint, 256)
+		if err == nil {
+			parsed := net.ParseIP(strings.TrimSpace(string(body)))
+			if parsed != nil && parsed.To4() != nil && parsed.IsGlobalUnicast() && !parsed.IsPrivate() {
+				ip = parsed
+				break
+			}
+		}
+		if ctx.Err() != nil {
+			return "", "", ctx.Err()
+		}
+	}
+	if ip == nil {
+		return "", "", fmt.Errorf("direct IPv4 discovery unavailable")
+	}
+	body, err := identityGET(ctx, client, "https://ipinfo.check.place/"+ip.String()+"?lang=en", 64<<10)
+	if err == nil {
+		var result struct {
+			ASN struct {
+				Number uint32 `json:"AutonomousSystemNumber"`
+				Name   string `json:"AutonomousSystemOrganization"`
+			} `json:"ASN"`
+		}
+		if json.Unmarshal(body, &result) == nil {
+			if asn, name, err := validASN(result.ASN.Number, result.ASN.Name); err == nil {
+				return asn, name, nil
+			}
+		}
+	}
+	if ctx.Err() != nil {
+		return "", "", ctx.Err()
+	}
+	body, err = identityGET(ctx, client, "https://ipinfo.io/widget/demo/"+ip.String(), 64<<10)
 	if err != nil {
 		return "", "", err
 	}
 	var result struct {
-		Success    bool `json:"success"`
-		Connection struct {
-			ASN uint32 `json:"asn"`
-			Org string `json:"org"`
-		} `json:"connection"`
+		Data struct {
+			ASN struct {
+				Number string `json:"asn"`
+				Name   string `json:"name"`
+			} `json:"asn"`
+		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
 		return "", "", err
 	}
-	name := strings.Join(strings.Fields(result.Connection.Org), " ")
-	if !result.Success || result.Connection.ASN == 0 || name == "" || len(name) > 256 {
+	number, err := strconv.ParseUint(strings.TrimPrefix(result.Data.ASN.Number, "AS"), 10, 32)
+	if err != nil {
+		return "", "", fmt.Errorf("invalid IPinfo ASN: %w", err)
+	}
+	return validASN(uint32(number), result.Data.ASN.Name)
+}
+
+func validASN(number uint32, organization string) (string, string, error) {
+	name := strings.Join(strings.Fields(organization), " ")
+	if number == 0 || name == "" || name == "null" || len(name) > 256 {
 		return "", "", fmt.Errorf("ASN response missing valid network details")
 	}
-	return fmt.Sprintf("AS%d", result.Connection.ASN), name, nil
+	return fmt.Sprintf("AS%d", number), name, nil
 }
 
 func lookupYouTubeRegion(ctx context.Context, client *http.Client) (string, error) {

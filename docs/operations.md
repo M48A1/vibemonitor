@@ -125,3 +125,5 @@ make release-all
 是否可用（不发送探测数据包）。确认没有对应出口地址时隐藏该地区项；
 有出口地址但服务地区查询失败时显示 `Unknown`。旧 Agent 未上报可用性时
 保留 `Unknown`，升级 Agent 后生效。
+
+ASN 查询参考 [xykt/IPQuality](https://github.com/xykt/IPQuality/blob/main/ip.sh)：先获取节点直连 IPv4，再请求 `ipinfo.check.place/{IP}?lang=en` 的 MaxMind ASN 编号及机构名；失败时使用 `ipinfo.io/widget/demo/{IP}` 的 IPinfo 数据。两个源都失败时显示 `Unknown`，保持每周及启动/更新后的刷新机制。
