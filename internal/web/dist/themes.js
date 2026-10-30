@@ -13,19 +13,21 @@ window.VibeHex = (() => {
     return `<${tag} class="hex-metric${interactive ? ' metric-button' : ''}"${attributes}><div class="metric-meta"><span class="metric-name">${label}</span><strong>${pct == null ? '—' : pct.toFixed(1) + '%'}</strong></div><div class="progress-track"><div class="progress-bar ${level}" style="width:${pct || 0}%"></div></div><small>${detail}</small></${tag}>`;
   }
 
+  function englishRegionName(code) {
+    if (!/^[A-Z]{2}$/.test(code || '')) return 'Unknown';
+    try {
+      return new Intl.DisplayNames(['en'], { type: 'region', fallback: 'none' }).of(code) || 'Unknown';
+    } catch (_) {
+      return code;
+    }
+  }
+
   function networkIdentityLine(info) {
     const identity = info.network_identity || {};
     const asn = identity.asn ? `${identity.asn} ${identity.as_name || ''}`.trim() : 'Unknown';
-    let region = 'Unknown';
-    const code = identity.youtube_region || '';
-    if (/^[A-Z]{2}$/.test(code)) {
-      try {
-        region = new Intl.DisplayNames(['en'], { type: 'region', fallback: 'none' }).of(code) || 'Unknown';
-      } catch (_) {
-        region = code;
-      }
-    }
-    return `<span class="node-network-identity"><span title="ASN · Direct IPv4">${escapeHtml(asn)}</span><span aria-hidden="true">·</span><span class="node-google-region" title="Region detected by YouTube Premium · Direct IPv4"><img src="/google-mark.svg" alt="Google" width="14" height="14">${escapeHtml(region)}</span></span>`;
+    const ipv4 = englishRegionName(identity.youtube_region);
+    const ipv6 = englishRegionName(identity.youtube_region_ipv6);
+    return `<span class="node-network-identity"><span title="ASN · Direct IPv4">${escapeHtml(asn)}</span><span aria-hidden="true">·</span><span class="node-google-region" title="Region detected by YouTube Premium · Direct IPv4"><img src="/google-mark.svg" alt="Google" width="14" height="14">IPv4 ${escapeHtml(ipv4)}</span><span aria-hidden="true">·</span><span title="Region detected by YouTube Premium · Direct IPv6">IPv6 ${escapeHtml(ipv6)}</span></span>`;
   }
 
   function serverStatusBar(value) {

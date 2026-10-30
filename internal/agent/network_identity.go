@@ -100,39 +100,55 @@ func lookupYouTubeRegion(ctx context.Context, client *http.Client) (string, erro
 	return region, nil
 }
 
-func (c *Client) runNetworkIdentityWorker(ctx context.Context, refreshed chan<- struct{}) {
-	// Use the node's direct IPv4 egress, matching the project's IPv4 probes.
-	// No account cookies, proxy environment, or forced country parameter.
+// Each client forces one address family, including redirects; IPv6 must never
+// silently fall back to IPv4 and report the IPv4 region as an IPv6 result.
+func newIdentityHTTPClient(network string) *http.Client {
 	dialer := &net.Dialer{Timeout: 5 * time.Second}
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, _, address string) (net.Conn, error) {
-			return dialer.DialContext(ctx, "tcp4", address)
+			return dialer.DialContext(ctx, network, address)
 		},
 		TLSHandshakeTimeout: 5 * time.Second,
 		IdleConnTimeout:     30 * time.Second,
 	}
-	defer transport.CloseIdleConnections()
-	client := &http.Client{Timeout: 15 * time.Second, Transport: transport}
+	return &http.Client{Timeout: 15 * time.Second, Transport: transport}
+}
+
+func collectNetworkIdentity(ctx context.Context, ipv4, ipv6 *http.Client) protocol.NetworkIdentity {
+	identity := protocol.NetworkIdentity{}
+	var err error
+	identity.ASN, identity.ASName, err = lookupASN(ctx, ipv4)
+	if err != nil && ctx.Err() == nil {
+		log.Printf("[Agent] ASN lookup unavailable: %v", err)
+	}
+	identity.YouTubeRegion, err = lookupYouTubeRegion(ctx, ipv4)
+	if err != nil && ctx.Err() == nil {
+		log.Printf("[Agent] YouTube IPv4 region unavailable: %v", err)
+	}
+	identity.YouTubeRegionIPv6, err = lookupYouTubeRegion(ctx, ipv6)
+	if err != nil && ctx.Err() == nil {
+		log.Printf("[Agent] YouTube IPv6 region unavailable: %v", err)
+	}
+	identity.CheckedAt = time.Now().UTC()
+	return identity
+}
+
+func (c *Client) runNetworkIdentityWorker(ctx context.Context, refreshed chan<- struct{}) {
+	// No account cookies, proxy environment, or forced country parameter.
+	ipv4 := newIdentityHTTPClient("tcp4")
+	ipv6 := newIdentityHTTPClient("tcp6")
+	defer ipv4.CloseIdleConnections()
+	defer ipv6.CloseIdleConnections()
 	ticker := time.NewTicker(networkIdentityInterval)
 	defer ticker.Stop()
 	for {
 		if ctx.Err() != nil {
 			return
 		}
-		identity := protocol.NetworkIdentity{}
-		var err error
-		identity.ASN, identity.ASName, err = lookupASN(ctx, client)
-		if err != nil && ctx.Err() == nil {
-			log.Printf("[Agent] ASN lookup unavailable: %v", err)
-		}
-		identity.YouTubeRegion, err = lookupYouTubeRegion(ctx, client)
-		if err != nil && ctx.Err() == nil {
-			log.Printf("[Agent] YouTube region unavailable: %v", err)
-		}
+		identity := collectNetworkIdentity(ctx, ipv4, ipv6)
 		if ctx.Err() != nil {
 			return
 		}
-		identity.CheckedAt = time.Now().UTC()
 		c.mu.Lock()
 		c.networkIdentity = &identity
 		c.mu.Unlock()

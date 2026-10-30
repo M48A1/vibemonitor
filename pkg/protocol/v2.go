@@ -41,16 +41,18 @@ type BasicInfoParams struct {
 	Info BasicInfo `json:"info"`
 }
 
-// BasicInfo describes static hardware and OS information of a client node
-// NetworkIdentity is a weekly snapshot of the node's direct IPv4 egress.
+// NetworkIdentity is a weekly snapshot of the node's direct egress.
+// ASN and youtube_region describe IPv4; youtube_region_ipv6 is independently probed.
 // Empty fields mean that the corresponding provider could not be queried.
 type NetworkIdentity struct {
-	ASN           string    `json:"asn"`
-	ASName        string    `json:"as_name"`
-	YouTubeRegion string    `json:"youtube_region"`
-	CheckedAt     time.Time `json:"checked_at"`
+	ASN               string    `json:"asn"`
+	ASName            string    `json:"as_name"`
+	YouTubeRegion     string    `json:"youtube_region"`
+	YouTubeRegionIPv6 string    `json:"youtube_region_ipv6"`
+	CheckedAt         time.Time `json:"checked_at"`
 }
 
+// BasicInfo describes static hardware and OS information of a client node.
 type BasicInfo struct {
 	NetworkIdentity       *NetworkIdentity `json:"network_identity,omitempty"`
 	ReportIntervalSeconds float64          `json:"report_interval_seconds,omitempty"`
