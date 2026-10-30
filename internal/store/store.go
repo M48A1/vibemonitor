@@ -356,7 +356,7 @@ func (s *Store) load(defaultPassword, username string) error {
 	if cfg == nil {
 		// 初始配置创建
 		if defaultPassword == "" {
-			defaultPassword = GenerateToken(6) // 12-char random hex password
+			defaultPassword = GenerateToken(16) // 32-hex-char random password (128-bit entropy)
 			log.Printf("=====================================================")
 			log.Printf(" [INITIAL SETUP] Generated Admin Password: %s", defaultPassword)
 			log.Printf(" Please save this password to login to the dashboard!")

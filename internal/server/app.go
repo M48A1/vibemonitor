@@ -70,7 +70,9 @@ func (s *Server) Close() error {
 func writeJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(data)
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		log.Printf("[HTTP] encode JSON response failed: %v", err)
+	}
 }
 
 func (s *Server) Handler() http.Handler {
