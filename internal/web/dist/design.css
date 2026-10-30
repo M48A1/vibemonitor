@@ -90,8 +90,20 @@ body::before {
 .hex-card:hover { transform: none; background: rgba(244, 242, 237, .55); }
 .hex-node-header { grid-area: identity; gap: 10px; }
 .hex-node-identity h2 { font-size: 14px; font-weight: 650; }
-.hex-node-identity { row-gap: 2px; }
-.hex-system { line-height: 1.4; }
+.hex-node-identity { row-gap: 4px; }
+/* Keep system, ASN, service regions and resource captions at one text level. */
+.hex-system,
+.node-network-identity,
+body .hex-card .hex-metric .metric-name {
+  color: var(--muted-foreground);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+.node-network-identity { gap: 4px 12px; }
+.node-google-region { gap: 5px; }
+.node-google-region img { flex-basis: 1em; width: 1em; height: 1em; }
 .hex-status { padding: 3px 6px; border-radius: 5px; background: var(--card-data-bg); }
 .hex-status.is-online { background: #e8f5ef; }
 .hex-resources { grid-area: resources; margin-left: 18px; gap: 6px 16px; }
