@@ -5,6 +5,13 @@
   const activate = document.getElementById('activateThemeBtn');
   const file = document.getElementById('themePackageFile');
   const recovery = new URLSearchParams(location.search).get('theme') === 'default';
+  // Keep the mobile browser chrome in step with the active theme background.
+  function syncThemeColor() {
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (!meta) return;
+    const color = getComputedStyle(document.body).backgroundColor;
+    if (color && color !== 'rgba(0, 0, 0, 0)' && color !== 'transparent') meta.setAttribute('content', color);
+  }
   function setEffectiveTheme(id, layout = 'cards') {
     const root = document.documentElement;
     if (root.dataset.siteTheme === id && root.dataset.siteLayout === layout) return;
@@ -21,6 +28,7 @@
     const activateStyle = () => {
       const layout = custom && getComputedStyle(document.documentElement).getPropertyValue('--vibemonitor-layout').trim() === 'serverstatus' ? 'serverstatus' : 'cards';
       setEffectiveTheme(effective, layout);
+      syncThemeColor();
     };
     if (current && current.getAttribute('href') === href) {
       if (current.sheet) activateStyle();

@@ -33,7 +33,7 @@ function requireAdmin(action) {
   pwInput.type = 'password';
   pwInput.autocomplete = 'current-password';
   const pwToggleBtn = document.querySelector('.btn-toggle-pwd[data-target="loginPassword"]');
-  if (pwToggleBtn) { pwToggleBtn.textContent = '👁️'; pwToggleBtn.title = '显示密码'; }
+  setPasswordVisibility(pwToggleBtn, pwInput, false);
   const unInput = document.getElementById('loginUsername');
   if (unInput) unInput.autocomplete = 'username';
   openModal('loginModal');
@@ -83,6 +83,15 @@ const logoutBtn = document.getElementById('logoutBtn');
 if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
 
 // Password show/hide toggle handling
+function setPasswordVisibility(btn, input, visible) {
+  if (!btn || !input) return;
+  input.type = visible ? 'text' : 'password';
+  btn.textContent = visible ? '🙈' : '👁️';
+  btn.title = visible ? '隐藏密码' : '显示密码';
+  btn.setAttribute('aria-label', btn.title);
+  btn.setAttribute('aria-pressed', visible ? 'true' : 'false');
+}
+
 document.addEventListener('click', (e) => {
   const btn = e.target.closest('.btn-toggle-pwd');
   if (!btn) return;
@@ -90,14 +99,6 @@ document.addEventListener('click', (e) => {
   if (!targetId) return;
   const input = document.getElementById(targetId);
   if (!input) return;
-  if (input.type === 'password') {
-    input.type = 'text';
-    btn.textContent = '🙈';
-    btn.title = '隐藏密码';
-  } else {
-    input.type = 'password';
-    btn.textContent = '👁️';
-    btn.title = '显示密码';
-  }
+  setPasswordVisibility(btn, input, input.type === 'password');
 });
 

@@ -70,9 +70,9 @@ body::before { display: none; }
   box-shadow: var(--shadow-md); gap: 12px;
 }
 .hex-stat:nth-child(even) { border: 2px solid var(--ink); border-radius: var(--r-card-alt); }
-.hex-stat > span { font-family: "Kaiti SC", KaiTi, var(--rak-display); font-size: 16px; color: var(--primary); }
-.hex-stat > strong { font-family: var(--rak-mono); font-size: 25px; letter-spacing: -.5px; }
-.hex-stat em { color: var(--ink); }
+.hex-stat dt { font-family: "Kaiti SC", KaiTi, var(--rak-display); font-size: 16px; color: var(--primary); }
+.hex-stat dd strong { font-family: var(--rak-mono); font-size: 25px; letter-spacing: -.5px; }
+.hex-stat .unit { color: var(--ink); }
 .hex-stat small { font-size: 12px; }
 .node-grid { gap: 24px; }
 .node-card, .node-card:hover {
@@ -130,8 +130,8 @@ body::before { display: none; }
   .brand-title { font-size: 23px; }
   .hex-stats-grid { gap: 14px; }
   .hex-stat { padding: 14px; min-height: 146px; gap: 10px; }
-  .hex-stat > span { font-size: 14px; }
-  .hex-stat > strong { font-size: 21px; }
+  .hex-stat dt { font-size: 14px; }
+  .hex-stat dd strong { font-size: 21px; }
   .hex-stat small { font-size: 10px; }
   .node-grid { gap: 20px; }
   .hex-card { padding: 20px; }

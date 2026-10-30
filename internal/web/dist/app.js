@@ -93,9 +93,15 @@ function generateSparkline(history, field, width = 280, height = 28) {
 }
 
 // Modal handling
+let returnFocusTo = null;
+
 window.openModal = function(id) {
   const m = typeof id === 'string' ? document.getElementById(id) : id;
   if (!m || !m.classList) return;
+  if (!m.classList.contains('active')) {
+    const active = document.activeElement;
+    if (active && active !== document.body && typeof active.focus === 'function') returnFocusTo = active;
+  }
   m.classList.add('active');
   if (typeof setTimeout === 'function') {
     setTimeout(() => {
@@ -107,20 +113,31 @@ window.openModal = function(id) {
   }
 };
 
+// Return keyboard focus to the control that opened the dialog once it closes.
+// Menu entries are hidden after a click, so fall back to the site-menu trigger.
+function restoreDialogFocus() {
+  const target = returnFocusTo;
+  returnFocusTo = null;
+  const fallback = document.getElementById('siteMenuTrigger');
+  const visible = el => el && el.isConnected !== false && el.offsetParent !== null;
+  const pick = visible(target) ? target : fallback;
+  if (visible(pick) && typeof pick.focus === 'function') pick.focus();
+}
+
 function resetLoginPasswordFields() {
   const pwInput = document.getElementById('loginPassword');
-  if (pwInput) { pwInput.type = 'text'; pwInput.value = ''; pwInput.autocomplete = 'off'; }
+  if (pwInput) { pwInput.type = 'password'; pwInput.value = ''; pwInput.autocomplete = 'current-password'; }
   const toggleBtn = document.querySelector('.btn-toggle-pwd[data-target="loginPassword"]');
-  if (toggleBtn) { toggleBtn.textContent = '👁️'; toggleBtn.title = '显示密码'; }
+  if (toggleBtn && typeof setPasswordVisibility === 'function') setPasswordVisibility(toggleBtn, pwInput, false);
   const unInput = document.getElementById('loginUsername');
-  if (unInput) { unInput.autocomplete = 'off'; }
+  if (unInput) { unInput.autocomplete = 'username'; }
 }
 
 function resetSettingsPasswordFields() {
   const spInput = document.getElementById('settingNewPassword');
-  if (spInput) { spInput.type = 'text'; spInput.value = ''; spInput.autocomplete = 'off'; }
+  if (spInput) { spInput.type = 'password'; spInput.value = ''; spInput.autocomplete = 'new-password'; }
   const toggleBtn = document.querySelector('.btn-toggle-pwd[data-target="settingNewPassword"]');
-  if (toggleBtn) { toggleBtn.textContent = '👁️'; toggleBtn.title = '显示密码'; }
+  if (toggleBtn && typeof setPasswordVisibility === 'function') setPasswordVisibility(toggleBtn, spInput, false);
 }
 
 function resetPasswordFields() {
@@ -137,15 +154,19 @@ window.closeModal = function(id) {
     const activeModals = typeof document.querySelectorAll === 'function'
       ? document.querySelectorAll('.modal-overlay.active')
       : [];
+    let closedAny = false;
     for (let i = 0; i < activeModals.length; i++) {
       if (activeModals[i].classList && typeof activeModals[i].classList.remove === 'function') {
         activeModals[i].classList.remove('active');
+        closedAny = true;
       }
     }
+    if (closedAny) restoreDialogFocus();
     resetPasswordFields();
     return;
   }
   const m = typeof id === 'string' ? document.getElementById(id) : id;
+  const wasActive = !!(m && m.classList && typeof m.classList.contains === 'function' && m.classList.contains('active'));
   if (m && m.classList && typeof m.classList.remove === 'function') {
     m.classList.remove('active');
   }
@@ -163,6 +184,9 @@ window.closeModal = function(id) {
   }
   if (modalId === 'externalSettingsModal') {
     document.getElementById('telegramBotToken').value = '';
+  }
+  if (wasActive && (typeof document.querySelector !== 'function' || !document.querySelector('.modal-overlay.active'))) {
+    restoreDialogFocus();
   }
 };
 
@@ -278,7 +302,27 @@ if (typeof document.addEventListener === 'function') {
       for (let i = 0; i < activeModals.length; i++) {
         closeModal(activeModals[i].id);
       }
+      return;
     }
+    // Keep Tab inside the open dialog; rankings.js traps its own panel.
+    if (e.key !== 'Tab') return;
+    const overlay = typeof document.querySelector === 'function'
+      ? document.querySelector('.modal-overlay.active')
+      : null;
+    if (!overlay || overlay.id === 'rankingsModal') return;
+    const candidates = overlay.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])');
+    const focusables = [];
+    for (let i = 0; i < candidates.length; i++) {
+      const el = candidates[i];
+      if (el.offsetParent !== null || el === document.activeElement) focusables.push(el);
+    }
+    if (!focusables.length) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const current = document.activeElement;
+    if (!overlay.contains(current)) { e.preventDefault(); first.focus(); return; }
+    if (e.shiftKey && current === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && current === last) { e.preventDefault(); first.focus(); }
   });
 }
 
@@ -388,7 +432,7 @@ function renderNodes() {
   const grid = document.getElementById('nodeGrid');
   const sorted = [...nodes].sort(compareNodes);
   if (!sorted.length) {
-    const markup = '<div style="grid-column:1 / -1;text-align:center;padding:60px 20px;color:var(--muted-foreground)">暂无监控节点。点击左上角网站标题，登录后通过“节点管理 → 新建节点”开始监控。</div>';
+    const markup = '<div class="empty-state"><strong>暂无监控节点</strong><span>点击左上角网站标题打开菜单，登录后通过「节点管理 → 新建节点」开始监控。</span></div>';
     if (lastNodeMarkup !== markup) { grid.innerHTML = markup; lastNodeMarkup = markup; }
     nodeCardCache.clear();
     return;

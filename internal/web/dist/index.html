@@ -3,6 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="VibeMonitor · 服务器节点实时监控面板">
+  <meta name="theme-color" content="#eeece8">
   <title>VibeMonitor</title>
   <link rel="stylesheet" href="/style.css">
   <link rel="stylesheet" href="/themes.css">
@@ -16,7 +18,7 @@
       <div class="brand">
         <details class="site-menu" id="siteMenu">
           <summary class="site-menu-trigger" id="siteMenuTrigger" title="点击网站标题打开管理菜单">
-            <span class="brand-title" id="siteTitle">VibeMonitor</span>
+            <h1 class="brand-title" id="siteTitle">VibeMonitor</h1>
           </summary>
           <div class="site-menu-panel">
             <button type="button" class="site-menu-item site-menu-level-1" id="rankingsBtn">排行榜</button>
@@ -38,15 +40,16 @@
         </details>
       </div>
     </header>
-    <div id="connectionStatus" class="connection-status" role="status" aria-live="polite" data-state="stale">正在连接并加载数据</div>
-
     <!-- Stats Bar -->
-    <section class="hex-overview" aria-label="实时监控">
-      <div class="hex-section-heading"><span class="hex-section-label">实时监控</span></div>
+    <section class="hex-overview" aria-labelledby="overviewHeading">
+      <div class="hex-section-heading">
+        <h2 class="hex-section-label" id="overviewHeading">实时监控</h2>
+        <div id="connectionStatus" class="connection-status" role="status" aria-live="polite" data-state="stale">正在连接并加载数据</div>
+      </div>
       <div class="hex-stats">
-        <div class="hex-stats-grid" id="statsBanner"></div>
+        <dl class="hex-stats-grid" id="statsBanner"></dl>
         <div class="hex-globe-panel">
-          <canvas id="overviewGlobe" class="hex-globe-canvas" aria-label="上海到各探针配置地区的连线地球，可拖动旋转"></canvas>
+          <canvas id="overviewGlobe" class="hex-globe-canvas" role="img" aria-label="上海到各探针配置地区的连线地球，可拖动旋转"></canvas>
         </div>
       </div>
     </section>
@@ -62,8 +65,9 @@
 
     <!-- Nodes Grid -->
     <main class="node-grid" id="nodeGrid" aria-labelledby="nodeDetailsHeading">
-      <div style="grid-column: 1 / -1; text-align: center; padding: 60px 20px; color: var(--muted-foreground);">
-        正在加载监控节点...
+      <div class="empty-state">
+        <strong>正在加载监控节点</strong>
+        <span>首次连接可能需要几秒钟</span>
       </div>
     </main>
   </div>
@@ -77,7 +81,7 @@
       <div class="modal-header"><h3 class="modal-title" id="themeManagementTitle">主题管理</h3><button type="button" class="modal-close" id="closeThemeManagementBtn" aria-label="关闭">&times;</button></div>
       <p class="logo-upload-hint">选择主题后点击启用，对所有访客生效。默认主题为 Design，其他主题上传 ZIP 包后启用。</p>
       <div id="themeList" class="theme-list"></div>
-      <div class="theme-actions"><label class="btn" id="themeUploadLabel">上传主题包<input type="file" id="themePackageFile" accept=".zip,application/zip" hidden></label><a class="btn" href="https://github.com/M48A1/vibemonitor/tree/main/themes" target="_blank" rel="noopener noreferrer">下载主题包</a><button type="button" class="btn btn-primary" id="activateThemeBtn">启用所选主题</button></div>
+      <div class="theme-actions"><label class="btn" id="themeUploadLabel">上传主题包<input type="file" id="themePackageFile" accept=".zip,application/zip" class="visually-hidden"></label><a class="btn" href="https://github.com/M48A1/vibemonitor/tree/main/themes" target="_blank" rel="noopener noreferrer">下载主题包</a><button type="button" class="btn btn-primary" id="activateThemeBtn">启用所选主题</button></div>
       <p class="logo-upload-hint">ZIP 最大 2MB，包含 theme.json 和一个 UTF-8 CSS 文件。主题包与启用状态保存在数据库中。</p>
       <p id="themeStatus" role="status" aria-live="polite"></p>
     </div>
@@ -104,15 +108,15 @@
 
   <!-- Basic Settings Modal -->
   <div class="modal-overlay" id="settingsModal">
-    <div class="modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle">
       <div class="modal-header">
-        <h3 class="modal-title">基本设置</h3>
+        <h3 class="modal-title" id="settingsModalTitle">基本设置</h3>
         <button type="button" class="modal-close" id="closeSettingsModalBtn" data-close-modal="settingsModal" aria-label="关闭">&times;</button>
       </div>
       <form id="settingsForm" autocomplete="off">
-        <div class="form-group"><label class="form-label">网站名称</label><input class="form-input" id="settingSiteTitle" maxlength="80"></div>
+        <div class="form-group"><label class="form-label" for="settingSiteTitle">网站名称</label><input class="form-input" id="settingSiteTitle" maxlength="80"></div>
         <div class="form-group">
-          <label class="form-label">地址栏网站图标（favicon）</label>
+          <label class="form-label" for="settingSiteIconFile">地址栏网站图标（favicon）</label>
           <div class="logo-upload-row">
             <div class="logo-preview-box" id="logoPreviewBox" title="当前网站图标预览">
               <div id="logoPreviewContent" class="brand-icon"></div>
@@ -126,7 +130,7 @@
           </div>
           <div class="logo-upload-hint">用于浏览器标签页和地址栏。支持 PNG、JPG、SVG、WebP、ICO 格式（最大 2MB），保存于服务器本地。</div>
         </div>
-        <div class="form-group"><label class="form-label">新管理员密码（留空则不修改）</label><div class="password-input-wrap"><input type="text" class="form-input" id="settingNewPassword" minlength="8" autocomplete="off"><button type="button" class="btn-toggle-pwd" data-target="settingNewPassword" title="显示密码">👁️</button></div></div>
+        <div class="form-group"><label class="form-label" for="settingNewPassword">新管理员密码（留空则不修改）</label><div class="password-input-wrap"><input type="password" class="form-input" id="settingNewPassword" minlength="8" autocomplete="new-password"><button type="button" class="btn-toggle-pwd" data-target="settingNewPassword" title="显示密码" aria-label="显示密码" aria-pressed="false">👁️</button></div></div>
         <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:14px;"><button type="button" class="btn" id="cancelSettingsModalBtn" data-close-modal="settingsModal">取消</button><button type="submit" class="btn btn-primary">保存</button></div>
       </form>
     </div>
@@ -134,14 +138,14 @@
 
   <!-- External Communication Settings Modal -->
   <div class="modal-overlay" id="externalSettingsModal">
-    <div class="modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="externalSettingsTitle">
       <div class="modal-header">
-        <h3 class="modal-title">外部通信设置</h3>
+        <h3 class="modal-title" id="externalSettingsTitle">外部通信设置</h3>
         <button type="button" class="modal-close" id="closeExternalSettingsModalBtn" data-close-modal="externalSettingsModal" aria-label="关闭">&times;</button>
       </div>
       <div>
         <div class="form-group">
-          <label class="form-label">Telegram 告警</label>
+          <div class="form-label">Telegram 告警</div>
           <label><input type="checkbox" id="telegramEnabled"> 启用节点、资源、流量和到期提醒</label>
           <div class="logo-upload-hint">CPU 使用节点阈值，内存阈值为 85%，流量达到节点额度时告警。</div>
         </div>
@@ -176,24 +180,24 @@
 
   <!-- Admin Login Modal -->
   <div class="modal-overlay" id="loginModal">
-    <div class="modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="loginModalTitle">
       <div class="modal-header">
-        <h3 class="modal-title">管理员认证</h3>
+        <h3 class="modal-title" id="loginModalTitle">管理员认证</h3>
         <button type="button" class="modal-close" id="closeLoginModalBtn" data-close-modal="loginModal" aria-label="关闭">&times;</button>
       </div>
-      <form id="loginForm" autocomplete="off">
+      <form id="loginForm">
         <div class="form-group">
-          <label class="form-label">管理员账号</label>
-          <input class="form-input" id="loginUsername" placeholder="输入管理员账号" autocomplete="off" required>
+          <label class="form-label" for="loginUsername">管理员账号</label>
+          <input class="form-input" id="loginUsername" placeholder="输入管理员账号" autocomplete="username" required>
         </div>
         <div class="form-group">
-          <label class="form-label">管理员密码</label>
+          <label class="form-label" for="loginPassword">管理员密码</label>
           <div class="password-input-wrap">
-            <input type="text" class="form-input" id="loginPassword" placeholder="输入管理员密码" autocomplete="off" required>
-            <button type="button" class="btn-toggle-pwd" data-target="loginPassword" title="显示密码">👁️</button>
+            <input type="password" class="form-input" id="loginPassword" placeholder="输入管理员密码" autocomplete="current-password" required>
+            <button type="button" class="btn-toggle-pwd" data-target="loginPassword" title="显示密码" aria-label="显示密码" aria-pressed="false">👁️</button>
           </div>
         </div>
-        <div id="loginError" style="color: var(--destructive); font-size: 13px; display: none;">账号或密码错误</div>
+        <div id="loginError" role="alert" style="color: var(--destructive); font-size: 13px; display: none;">账号或密码错误</div>
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px;">
           <button type="button" class="btn" id="cancelLoginModalBtn" data-close-modal="loginModal">取消</button>
           <button type="submit" class="btn btn-primary">登录</button>
@@ -203,9 +207,9 @@
   </div>
 
   <div class="modal-overlay" id="selectNodeModal">
-    <div class="modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="selectNodeTitle">
       <div class="modal-header">
-        <h3 class="modal-title">编辑现有节点</h3>
+        <h3 class="modal-title" id="selectNodeTitle">编辑现有节点</h3>
         <button type="button" class="modal-close" id="closeSelectNodeModalBtn" data-close-modal="selectNodeModal" aria-label="关闭">&times;</button>
       </div>
       <div class="node-selection-list" id="nodeSelectionList"></div>
@@ -217,9 +221,9 @@
 
   <!-- Sort Nodes Modal -->
   <div class="modal-overlay" id="sortNodesModal">
-    <div class="modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="sortNodesTitle">
       <div class="modal-header">
-        <h3 class="modal-title">节点排序</h3>
+        <h3 class="modal-title" id="sortNodesTitle">节点排序</h3>
         <button type="button" class="modal-close" id="closeSortNodesModalBtn" data-close-modal="sortNodesModal" aria-label="关闭">&times;</button>
       </div>
       <p class="logo-upload-hint">拖动节点调整显示顺序，或使用上下按钮微调。保存后按当前列表顺序显示节点。</p>
@@ -234,27 +238,27 @@
 
   <!-- Add Node Modal -->
   <div class="modal-overlay" id="addNodeModal">
-    <div class="modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="addNodeTitle">
       <div class="modal-header">
-        <h3 class="modal-title">添加新监控节点</h3>
+        <h3 class="modal-title" id="addNodeTitle">添加新监控节点</h3>
         <button type="button" class="modal-close" id="closeAddNodeModalBtn" data-close-modal="addNodeModal" aria-label="关闭">&times;</button>
       </div>
       <form id="addNodeForm">
         <div class="form-group">
-          <label class="form-label">节点名称</label>
+          <label class="form-label" for="newNodeName">节点名称</label>
           <input type="text" class="form-input" id="newNodeName" placeholder="例如: Tokyo-VPS-01" required>
         </div>
         <div class="form-group">
-          <label class="form-label">地区代码 / 国旗代码</label>
+          <label class="form-label" for="newNodeRegion">地区代码 / 国旗代码</label>
           <input type="text" class="form-input" id="newNodeRegion" placeholder="例如: JP, US, CN, HK, SG" value="JP">
         </div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
           <div class="form-group">
-            <label class="form-label">月流量配额 (GB, 选填)</label>
+            <label class="form-label" for="newNodeTrafficLimit">月流量配额 (GB, 选填)</label>
             <input type="number" class="form-input" id="newNodeTrafficLimit" placeholder="如 1000" min="0" step="any">
           </div>
           <div class="form-group">
-            <label class="form-label">每月重置日 (1-31，留空为 1 日)</label>
+            <label class="form-label" for="newNodeResetDay">每月重置日 (1-31，留空为 1 日)</label>
             <input type="number" class="form-input" id="newNodeResetDay" placeholder="默认 1 日" min="1" max="31">
           </div>
         </div>
@@ -264,11 +268,11 @@
           <small>达到月流量配额的此比例时，通过 Telegram 提前提醒，每个账期最多一次。0 或留空关闭提前预警；仍保留超额报警，需开启 Telegram 告警。</small>
         </div>
         <div class="form-group">
-          <label class="form-label">当前周期已用流量 (GB, 选填)</label>
+          <label class="form-label" for="newNodeInitialUsed">当前周期已用流量 (GB, 选填)</label>
           <input type="number" class="form-input" id="newNodeInitialUsed" placeholder="如已用 250 (仅本周期叠加，下周期自动清零)" min="0" step="any">
         </div>
         <div class="form-group">
-          <label class="form-label">此节点的 TCP 测试目标</label>
+          <label class="form-label" for="newNodeTargets">此节点的 TCP 测试目标</label>
           <textarea class="form-input" id="newNodeTargets" rows="3" placeholder="电信,example.com:443&#10;移动,1.1.1.1:443"></textarea>
           <small>每行一个“名称,地址:端口”，支持 tcp://、http://、https:// 链接（仅测 TCP 连接，不检查网页）。留空不测试。</small>
         </div>
@@ -294,9 +298,9 @@
 
   <!-- Edit Node Modal -->
   <div class="modal-overlay" id="editNodeModal">
-    <div class="modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="editNodeTitle">
       <div class="modal-header">
-        <h3 class="modal-title">编辑监控节点</h3>
+        <h3 class="modal-title" id="editNodeTitle">编辑监控节点</h3>
         <button type="button" class="modal-close" id="closeEditNodeModalBtn" data-close-modal="editNodeModal" aria-label="关闭">&times;</button>
       </div>
       <p id="editNodeStatus" role="status" aria-live="polite" hidden></p>
@@ -304,20 +308,20 @@
       <form id="editNodeForm">
         <input type="hidden" id="editNodeUUID">
         <div class="form-group">
-          <label class="form-label">节点名称</label>
+          <label class="form-label" for="editNodeName">节点名称</label>
           <input type="text" class="form-input" id="editNodeName" required>
         </div>
         <div class="form-group">
-          <label class="form-label">地区代码</label>
+          <label class="form-label" for="editNodeRegion">地区代码</label>
           <input type="text" class="form-input" id="editNodeRegion">
         </div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
           <div class="form-group">
-            <label class="form-label">月流量配额 (GB)</label>
+            <label class="form-label" for="editNodeTrafficLimit">月流量配额 (GB)</label>
             <input type="number" class="form-input" id="editNodeTrafficLimit" min="0" step="any">
           </div>
           <div class="form-group">
-            <label class="form-label">每月重置日 (1-31，留空为 1 日)</label>
+            <label class="form-label" for="editNodeResetDay">每月重置日 (1-31，留空为 1 日)</label>
             <input type="number" class="form-input" id="editNodeResetDay" min="1" max="31" aria-describedby="editNodeResetDayHint">
             <small id="editNodeResetDayHint">修改后若账期起点变化，将按新账期已采集日流量重算并清除旧补录；未采集部分按 0 计算。可同时填写当前已用流量进行校正。</small>
           </div>
@@ -328,12 +332,12 @@
           <small>达到月流量配额的此比例时，通过 Telegram 提前提醒，每个账期最多一次。0 或留空关闭提前预警；仍保留超额报警，需开启 Telegram 告警。</small>
         </div>
         <div class="form-group">
-          <label class="form-label">手动设置当前周期已用流量 (GB)</label>
+          <label class="form-label" for="editNodeCycleUsed">手动设置当前周期已用流量 (GB)</label>
           <input type="number" class="form-input" id="editNodeCycleUsed" min="0" step="any" placeholder="留空不修改">
           <small id="editNodeCycleUsedHint">留空则继续按探针上报累计。</small>
         </div>
         <div class="form-group">
-          <label class="form-label">此节点的 TCP 测试目标</label>
+          <label class="form-label" for="editNodeTargets">此节点的 TCP 测试目标</label>
           <textarea class="form-input" id="editNodeTargets" rows="3" placeholder="电信,example.com:443&#10;移动,1.1.1.1:443"></textarea>
           <small>每行一个“名称,地址:端口”，支持 tcp://、http://、https:// 链接（仅测 TCP 连接，不检查网页）。留空不测试。</small>
         </div>
@@ -365,9 +369,9 @@
 
   <!-- Node Token & Install Guide Modal -->
   <div class="modal-overlay" id="nodeGuideModal">
-    <div class="modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="nodeGuideTitle">
       <div class="modal-header">
-        <h3 class="modal-title">节点接入命令</h3>
+        <h3 class="modal-title" id="nodeGuideTitle">节点接入命令</h3>
         <button type="button" class="modal-close" id="closeNodeGuideModalBtn" data-close-modal="nodeGuideModal" aria-label="关闭">&times;</button>
       </div>
       <div style="display: flex; flex-direction: column; gap: 16px;">
@@ -399,11 +403,11 @@
 
   <!-- Ping Fluctuation Chart Modal -->
   <div class="modal-overlay" id="pingChartModal">
-    <div class="modal modal-lg">
+    <div class="modal modal-lg" role="dialog" aria-modal="true" aria-labelledby="pingModalTitle">
       <div class="modal-header">
         <div>
           <h3 class="modal-title" id="pingModalTitle">延迟波动曲线</h3>
-          <div style="font-size: 12px; color: var(--muted-foreground); margin-top: 2px;" id="pingModalSubtitle">...</div>
+          <div class="modal-subtitle" id="pingModalSubtitle">...</div>
         </div>
         <button type="button" class="modal-close" id="closePingChartModalBtn" data-close-modal="pingChartModal" aria-label="关闭">&times;</button>
       </div>
@@ -447,7 +451,7 @@
 
         <!-- SVG Chart Container -->
         <div class="ping-chart-container" id="pingChartContainer">
-          <svg id="pingChartSvg" viewBox="0 0 700 240" preserveAspectRatio="none"></svg>
+          <svg id="pingChartSvg" viewBox="0 0 700 240" preserveAspectRatio="none" role="img" aria-label="延迟历史曲线"></svg>
           <div class="chart-tooltip" id="chartTooltip" style="display: none;"></div>
         </div>
         <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--muted-foreground); margin-top: 8px;">
@@ -467,7 +471,7 @@
 
   <!-- Resource history chart modal -->
   <div class="modal-overlay" id="resourceChartModal">
-    <div class="modal modal-lg">
+    <div class="modal modal-lg" role="dialog" aria-modal="true" aria-labelledby="resourceModalTitle">
       <div class="modal-header">
         <div>
           <h3 class="modal-title" id="resourceModalTitle">资源占用曲线</h3>

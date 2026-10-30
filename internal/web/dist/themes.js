@@ -182,30 +182,64 @@ window.VibeHex = (() => {
     const connectionRate = connectionRates.reduce((sum, rate) => sum + rate, 0);
     const up = total('up');
     const down = total('down');
+    // Split a formatted value ("294.9 KB/s") so the unit can be typeset and
+    // updated independently of the number.
+    const splitUnit = text => {
+      const raw = String(text == null ? '—' : text);
+      const match = /^([\d.,]+)\s*(.+)$/.exec(raw);
+      return match ? { value: match[1], unit: match[2] } : { value: raw, unit: '' };
+    };
+    const offline = nodes.length - online;
+    const speed = splitUnit(formatSpeed(up + down));
+    const traffic = cycleUsages.length ? splitUnit(formatBytes(cycleTraffic)) : { value: '—', unit: '' };
+    const rateText = connectionRates.length
+      ? (connectionRate >= 10
+        ? Math.round(connectionRate).toLocaleString('zh-CN')
+        : connectionRate.toLocaleString('zh-CN', { minimumFractionDigits: 1, maximumFractionDigits: 1 }))
+      : '—';
     const values = {
-      online: String(online), count: String(nodes.length),
-      memoryBusy: String(memoryBusy),
-      speed: formatSpeed(up + down),
+      online: String(online),
+      count: `/ ${nodes.length}`,
+      onlineNote: !nodes.length ? '暂无节点' : offline > 0 ? `${offline} 台离线` : '全部在线',
       busy: String(busy),
-      cycleTraffic: cycleUsages.length ? formatBytes(cycleTraffic) : '—',
-      connectionRate: connectionRates.length ? `${connectionRate.toLocaleString('zh-CN', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} 次/s` : '—',
+      memoryBusy: String(memoryBusy),
+      speed: speed.value,
+      speedUnit: speed.unit,
+      speedNote: `↑ ${formatSpeed(up)} · ↓ ${formatSpeed(down)}`,
+      cycleTraffic: traffic.value,
+      cycleTrafficUnit: traffic.unit,
+      connectionRate: rateText,
+      connectionRateUnit: connectionRates.length ? '次/s' : '',
     };
     const banner = document.getElementById('statsBanner');
     if (!overviewFields) {
       banner.innerHTML = `
-        <div class="hex-stat"><span>节点状态</span><strong><span data-stat="online">${values.online}</span><em> / <span data-stat="count">${values.count}</span></em></strong></div>
-        <div class="hex-stat"><span>内存紧张节点</span><strong><span data-stat="memoryBusy">${values.memoryBusy}</span><em> 台</em></strong></div>
-        <div class="hex-stat"><span>实时网速</span><strong data-stat="speed">${values.speed}</strong></div>
-        <div class="hex-stat"><span>高负载节点</span><strong><span data-stat="busy">${values.busy}</span><em> 台</em></strong></div>
-        <div class="hex-stat"><span>周期流量</span><strong data-stat="cycleTraffic">${values.cycleTraffic}</strong></div>
-        <div class="hex-stat"><span>连接速率</span><strong data-stat="connectionRate">${values.connectionRate}</strong></div>`;
+        <div class="hex-stat" title="在线节点数 / 节点总数"><dt>在线节点</dt><dd><strong><span data-stat="online">${values.online}</span><span class="unit" data-stat="count">${values.count}</span></strong><small data-stat="onlineNote">${values.onlineNote}</small></dd></div>
+        <div class="hex-stat" title="CPU 使用率达到各节点设定阈值的在线节点数"><dt>高负载</dt><dd><strong><span data-stat="busy">${values.busy}</span><span class="unit">台</span></strong><small>按各节点 CPU 阈值</small></dd></div>
+        <div class="hex-stat" title="内存使用率达到 85% 的在线节点数"><dt>内存紧张</dt><dd><strong><span data-stat="memoryBusy">${values.memoryBusy}</span><span class="unit">台</span></strong><small>内存使用率 ≥ 85%</small></dd></div>
+        <div class="hex-stat" title="在线节点上传与下载速率之和"><dt>实时网速</dt><dd><strong><span data-stat="speed">${values.speed}</span><span class="unit" data-stat="speedUnit">${values.speedUnit}</span></strong><small data-stat="speedNote">${values.speedNote}</small></dd></div>
+        <div class="hex-stat" title="各节点本计费周期已用流量之和（上传 + 下载）"><dt>周期流量</dt><dd><strong><span data-stat="cycleTraffic">${values.cycleTraffic}</span><span class="unit" data-stat="cycleTrafficUnit">${values.cycleTrafficUnit}</span></strong><small>各节点本周期合计</small></dd></div>
+        <div class="hex-stat" title="在线节点 TCP 新建连接数每秒之和"><dt>连接速率</dt><dd><strong><span data-stat="connectionRate">${values.connectionRate}</span><span class="unit" data-stat="connectionRateUnit">${values.connectionRateUnit}</span></strong><small>TCP 新建连接/秒</small></dd></div>`;
       if (banner.querySelectorAll) {
         overviewFields = Object.fromEntries(Array.from(banner.querySelectorAll('[data-stat]')).map(element => [element.dataset.stat, element]));
       }
     } else {
       for (const [name, value] of Object.entries(values)) {
-        if (overviewFields[name].textContent !== value) overviewFields[name].textContent = value;
+        const field = overviewFields[name];
+        if (field && field.textContent !== value) field.textContent = value;
       }
+    }
+    // overviewFields caches the first render, so severity classes must be
+    // re-applied on every update instead of only while building the markup.
+    const markSeverity = (field, alert) => {
+      const cell = field && field.closest('.hex-stat');
+      if (!cell) return;
+      cell.classList.toggle('is-alert', alert);
+      cell.classList.toggle('is-idle', !alert);
+    };
+    if (overviewFields) {
+      markSeverity(overviewFields.busy, busy > 0);
+      markSeverity(overviewFields.memoryBusy, memoryBusy > 0);
     }
     if (window.VibeGlobe) window.VibeGlobe.setNodes(nodes);
   }

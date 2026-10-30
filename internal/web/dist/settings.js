@@ -127,7 +127,7 @@ function openBasicSettings() {
   spInput.type = 'password';
   spInput.autocomplete = 'new-password';
   const spToggleBtn = document.querySelector('.btn-toggle-pwd[data-target="settingNewPassword"]');
-  if (spToggleBtn) { spToggleBtn.textContent = '👁️'; spToggleBtn.title = '显示密码'; }
+  if (spToggleBtn && typeof setPasswordVisibility === 'function') setPasswordVisibility(spToggleBtn, spInput, false);
   openModal('settingsModal');
   fetchBasicSettingsForAdmin();
 }

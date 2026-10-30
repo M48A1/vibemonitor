@@ -100,8 +100,8 @@ body::before { display: none; }
 .hex-stats-grid .hex-stat:nth-child(3n+2),
 .hex-stats-grid .hex-stat:nth-child(3n+3) { border-left: 1px solid var(--border); }
 .hex-stats-grid .hex-stat:nth-child(n+4) { border-top: 1px solid var(--border); }
-.hex-stat > strong { font-size: 23px; letter-spacing: -.3px; }
-.hex-stat em { font-size: 16px; }
+.hex-stat dd strong { font-size: 23px; letter-spacing: -.3px; }
+.hex-stat .unit { font-size: 16px; }
 .hex-stat small { font-size: 11px; }
 .controls-bar { margin-bottom: 10px; }
 
@@ -243,8 +243,8 @@ body::before { display: none; }
   .container { padding: 12px 10px 84px; }
   .navbar { padding: 8px 10px; margin-bottom: 14px; }
   .hex-stats-grid .hex-stat { min-height: 90px; padding: 10px 12px; }
-  .hex-stat > strong { font-size: 19px; }
-  .hex-stat em { font-size: 14px; }
+  .hex-stat dd strong { font-size: 19px; }
+  .hex-stat .unit { font-size: 14px; }
   .hex-stat small { font-size: 10px; }
   .ss-table-head { display: none; }
   .node-grid { border-radius: 4px; }
