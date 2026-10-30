@@ -22,10 +22,7 @@ window.VibeHex = (() => {
     }
   }
 
-  function systemIcon(os) {
-    if (/\bdebian\b/i.test(os || '')) {
-      return '<img class="node-info-icon" src="/debian-mark.svg" alt="" aria-hidden="true" width="12" height="12">';
-    }
+  function systemIcon() {
     return '<svg class="node-info-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>';
   }
 
@@ -36,19 +33,15 @@ window.VibeHex = (() => {
   function networkIdentityLine(info) {
     const identity = info.network_identity || {};
     const asn = identity.asn ? `${identity.asn} ${identity.as_name || ''}`.trim() : 'Unknown';
-    const parts = [];
-    let showGoogle = true;
-    for (const [family, available, code] of [
-      ['IPv4', identity.ipv4_available, identity.youtube_region],
-      ['IPv6', identity.ipv6_available, identity.youtube_region_ipv6],
-    ]) {
-      // Older agents do not report availability: keep Unknown until upgraded.
-      if (available === false && !code) continue;
-      const icon = showGoogle ? '<img src="/google-mark.svg" alt="Google" width="14" height="14">' : '';
-      parts.push(`<span class="node-google-region" title="Region detected by YouTube Premium · Direct ${family}">${icon}${family} ${escapeHtml(englishRegionName(code))}</span>`);
-      showGoogle = false;
-    }
-    return `<span class="node-network-identity"><span class="node-asn" title="ASN · Direct IPv4">${asnIcon()}<span>ASN：${escapeHtml(asn)}</span></span>${parts.join('')}</span>`;
+    const regions = [
+      ['IPV4', identity.ipv4_available, identity.youtube_region],
+      ['IPV6', identity.ipv6_available, identity.youtube_region_ipv6],
+    ].filter(([, available, code]) => available !== false || !!code);
+    // Missing availability on legacy agents remains Unknown, not absent.
+    const families = regions.map(([family]) => family).join('/');
+    const countries = regions.map(([, , code]) => englishRegionName(code)).join('/');
+    const google = regions.length ? `<span class="node-google-region" title="Region detected by YouTube Premium · Direct ${families}"><img src="/google-mark.svg" alt="Google" width="14" height="14"><span>${families}：${escapeHtml(countries)}</span></span>` : '';
+    return `<span class="node-network-identity"><span class="node-asn" title="ASN · Direct IPv4">${asnIcon()}<span>ASN：${escapeHtml(asn)}</span></span>${google}</span>`;
   }
 
   function serverStatusBar(value) {
