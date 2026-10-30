@@ -50,7 +50,7 @@ func (s *Server) registerTelegramRoutes(mux *http.ServeMux) {
 			writeJSON(w, jsonErrorStatus(err), map[string]any{"error": "invalid or oversized json"})
 			return
 		}
-		if err := s.store.UpdateTelegramOptions(store.TelegramOptions{
+		if err := s.store.UpdateTelegramOptionsContext(r.Context(), store.TelegramOptions{
 			BotToken: req.BotToken, ChatID: req.ChatID, Enabled: req.Enabled, Clear: req.Clear,
 			OfflineDelaySeconds: req.OfflineDelaySeconds, ReminderDays: req.ReminderDays,
 			ReminderHour: req.ReminderHour, ReminderTimezone: req.ReminderTimezone,

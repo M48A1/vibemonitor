@@ -31,9 +31,9 @@ type telegramAlerts struct {
 	saved  map[string]store.TelegramAlertState
 	epoch  string
 	send   telegramSender
-	load   func(string) (map[string]store.TelegramAlertState, error)
-	save   func(string, string, store.TelegramAlertState) error
-	remove func(string) error
+	load   func(context.Context, string) (map[string]store.TelegramAlertState, error)
+	save   func(context.Context, string, string, store.TelegramAlertState) error
+	remove func(context.Context, string) error
 	now    func() time.Time
 }
 
@@ -54,7 +54,7 @@ func (a *telegramAlerts) check(ctx context.Context, cfg store.Config, nodes []*s
 		loaded := make(map[string]store.TelegramAlertState)
 		if a.load != nil {
 			var err error
-			loaded, err = a.load(epoch)
+			loaded, err = a.load(ctx, epoch)
 			if err != nil {
 				log.Printf("[Telegram] Could not load alert state: %v", err)
 				return
@@ -87,7 +87,7 @@ func (a *telegramAlerts) check(ctx context.Context, cfg store.Config, nodes []*s
 		}
 		active[node.UUID] = true
 		if node.Profile != nil && node.Profile.AlertsDisabled {
-			a.deleteState(node.UUID)
+			a.deleteState(ctx, node.UUID)
 			continue
 		}
 		state := a.states[node.UUID]
@@ -163,11 +163,11 @@ func (a *telegramAlerts) check(ctx context.Context, cfg store.Config, nodes []*s
 			}
 		}
 		a.states[node.UUID] = state
-		a.persistState(node.UUID, state)
+		a.persistState(ctx, node.UUID, state)
 	}
 	for id := range a.states {
 		if !active[id] {
-			a.deleteState(id)
+			a.deleteState(ctx, id)
 		}
 	}
 }
@@ -209,23 +209,23 @@ func telegramAlertEpoch(cfg store.Config) string {
 	return hex.EncodeToString(sum[:16])
 }
 
-func (a *telegramAlerts) persistState(id string, state store.TelegramAlertState) {
+func (a *telegramAlerts) persistState(ctx context.Context, id string, state store.TelegramAlertState) {
 	if a.save == nil {
 		return
 	}
 	if previous, ok := a.saved[id]; ok && previous == state {
 		return
 	}
-	if err := a.save(a.epoch, id, state); err != nil {
+	if err := a.save(ctx, a.epoch, id, state); err != nil {
 		log.Printf("[Telegram] Could not save alert state: %v", err)
 		return
 	}
 	a.saved[id] = state
 }
 
-func (a *telegramAlerts) deleteState(id string) {
+func (a *telegramAlerts) deleteState(ctx context.Context, id string) {
 	if a.remove != nil {
-		if err := a.remove(id); err != nil {
+		if err := a.remove(ctx, id); err != nil {
 			log.Printf("[Telegram] Could not remove alert state: %v", err)
 			return
 		}

@@ -305,14 +305,14 @@ func (g *pingHourlyRollup) add(timestamp int64, latency int) {
 	}
 }
 
-func (s *sqliteDB) pruneHistoryRollups(before int64) error {
-	tx, err := s.db.Begin()
+func (s *sqliteDB) pruneHistoryRollupsContext(ctx context.Context, before int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 	for _, table := range []string{"history_rollups", "history_rollup_dirty"} {
-		if _, err = tx.Exec("DELETE FROM "+table+" WHERE hour<=?", before-3600); err != nil {
+		if _, err = tx.ExecContext(ctx, "DELETE FROM "+table+" WHERE hour<=?", before-3600); err != nil {
 			return err
 		}
 	}

@@ -57,7 +57,7 @@ func (s *Server) registerNodeRoutes(mux *http.ServeMux) {
 			return
 		}
 
-		node, err := s.store.CreateNodeWithOptions(store.NodeOptions{
+		node, err := s.store.CreateNodeWithOptionsContext(r.Context(), store.NodeOptions{
 			Profile:        req.Profile,
 			Name:           req.Name,
 			Group:          req.Group,
@@ -114,7 +114,7 @@ func (s *Server) registerNodeRoutes(mux *http.ServeMux) {
 		if req.ResetDay != nil {
 			resetDay = *req.ResetDay
 		}
-		if err := s.store.UpdateNodeWithOptions(uuid, store.NodeOptions{
+		if err := s.store.UpdateNodeWithOptionsContext(r.Context(), uuid, store.NodeOptions{
 			Profile:        req.Profile,
 			Name:           req.Name,
 			Group:          req.Group,
@@ -140,7 +140,7 @@ func (s *Server) registerNodeRoutes(mux *http.ServeMux) {
 			return
 		}
 		uuid := r.PathValue("uuid")
-		if err := s.store.DeleteNode(uuid); err != nil {
+		if err := s.store.DeleteNodeContext(r.Context(), uuid); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 			return
 		}
@@ -166,7 +166,7 @@ func (s *Server) registerNodeRoutes(mux *http.ServeMux) {
 		for _, entry := range req.Order {
 			orderMap[entry.UUID] = entry.Weight
 		}
-		if err := s.store.ReorderNodes(orderMap); err != nil {
+		if err := s.store.ReorderNodesContext(r.Context(), orderMap); err != nil {
 			status := http.StatusInternalServerError
 			if errors.Is(err, store.ErrInvalidNodeOrder) {
 				status = http.StatusBadRequest

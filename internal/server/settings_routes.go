@@ -65,7 +65,7 @@ func (s *Server) registerSettingsRoutes(mux *http.ServeMux) {
 			return
 		}
 
-		iconURL, err := s.store.SaveSiteIcon(data, contentType)
+		iconURL, err := s.store.SaveSiteIconContext(r.Context(), data, contentType)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 			return
@@ -83,7 +83,7 @@ func (s *Server) registerSettingsRoutes(mux *http.ServeMux) {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
 			return
 		}
-		if _, err := s.store.SaveSiteIcon(nil, ""); err != nil {
+		if _, err := s.store.SaveSiteIconContext(r.Context(), nil, ""); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 			return
 		}
@@ -117,7 +117,7 @@ func (s *Server) registerSettingsRoutes(mux *http.ServeMux) {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "session expired"})
 			return
 		}
-		if err := s.store.UpdateSettingsWithIcon(req.SiteTitle, pts, req.NewPassword, req.SiteIcon); err != nil {
+		if err := s.store.UpdateSettingsWithIconContext(r.Context(), req.SiteTitle, pts, req.NewPassword, req.SiteIcon); err != nil {
 			if errors.Is(err, store.ErrInvalidSettings) {
 				writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 				return

@@ -28,7 +28,7 @@ func (s *Server) registerThemeRoutes(mux *http.ServeMux) {
 		if !admin(w, r) {
 			return
 		}
-		themes, err := s.store.Themes()
+		themes, err := s.store.ThemesContext(r.Context())
 		if err != nil {
 			http.Error(w, "could not load themes", 500)
 			return
@@ -55,7 +55,7 @@ func (s *Server) registerThemeRoutes(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		t, err := s.store.ImportTheme(data)
+		t, err := s.store.ImportThemeContext(r.Context(), data)
 		if err != nil {
 			fail(w, err)
 			return
@@ -73,7 +73,7 @@ func (s *Server) registerThemeRoutes(mux *http.ServeMux) {
 			fail(w, errors.New("无效的主题选择"))
 			return
 		}
-		if err := s.store.SelectTheme(req.ID); err != nil {
+		if err := s.store.SelectThemeContext(r.Context(), req.ID); err != nil {
 			fail(w, err)
 			return
 		}
@@ -84,7 +84,7 @@ func (s *Server) registerThemeRoutes(mux *http.ServeMux) {
 		if !admin(w, r) {
 			return
 		}
-		if err := s.store.DeleteTheme(r.PathValue("id")); err != nil {
+		if err := s.store.DeleteThemeContext(r.Context(), r.PathValue("id")); err != nil {
 			fail(w, err)
 			return
 		}
@@ -93,7 +93,7 @@ func (s *Server) registerThemeRoutes(mux *http.ServeMux) {
 	})
 	mux.HandleFunc("GET /api/themes/{id}/style.css", func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
-		css, err := s.store.ThemeCSS(id)
+		css, err := s.store.ThemeCSSContext(r.Context(), id)
 		if errors.Is(err, sql.ErrNoRows) {
 			http.NotFound(w, r)
 			return

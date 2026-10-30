@@ -83,7 +83,7 @@ func (s *Server) runTelegramQueue(ctx context.Context, ticks <-chan time.Time, s
 			for id := range engines {
 				if !active[id] && !pending[id] {
 					delete(engines, id)
-					_ = s.store.DeleteTelegramAlertState(id)
+					_ = s.store.DeleteTelegramAlertStateContext(ctx, id)
 				}
 			}
 			if !cfg.TelegramEnabled || len(nodes) == 0 {
@@ -110,11 +110,11 @@ func (s *Server) runTelegramQueue(ctx context.Context, ticks <-chan time.Time, s
 						}
 						return send(sendCtx, captured, text)
 					})
-					engine.load = func(epoch string) (map[string]store.TelegramAlertState, error) {
-						return s.store.LoadTelegramAlertState(epoch, id)
+					engine.load = func(loadCtx context.Context, epoch string) (map[string]store.TelegramAlertState, error) {
+						return s.store.LoadTelegramAlertStateContext(loadCtx, epoch, id)
 					}
-					engine.save = s.store.SaveTelegramAlertState
-					engine.remove = s.store.DeleteTelegramAlertState
+					engine.save = s.store.SaveTelegramAlertStateContext
+					engine.remove = s.store.DeleteTelegramAlertStateContext
 					engines[id] = engine
 				}
 				select {

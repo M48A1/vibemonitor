@@ -39,7 +39,7 @@ func (s *Server) registerPublicRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/visitor-ip", http.NotFound)
 
 	mux.HandleFunc("GET /api/site-icon", func(w http.ResponseWriter, r *http.Request) {
-		data, contentType, err := s.store.SiteIconData()
+		data, contentType, err := s.store.SiteIconDataContext(r.Context())
 		if errors.Is(err, sql.ErrNoRows) {
 			http.NotFound(w, r)
 			return

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -28,7 +29,11 @@ type TelegramAlertState struct {
 }
 
 func (s *Store) LoadTelegramAlertStates(epoch string) (map[string]TelegramAlertState, error) {
-	rows, err := s.sdb.reader().Query("SELECT node_uuid, state_json FROM telegram_alert_state WHERE config_epoch = ?", epoch)
+	return s.LoadTelegramAlertStatesContext(context.Background(), epoch)
+}
+
+func (s *Store) LoadTelegramAlertStatesContext(ctx context.Context, epoch string) (map[string]TelegramAlertState, error) {
+	rows, err := s.sdb.reader().QueryContext(ctx, "SELECT node_uuid, state_json FROM telegram_alert_state WHERE config_epoch = ?", epoch)
 	if err != nil {
 		return nil, err
 	}
@@ -49,6 +54,10 @@ func (s *Store) LoadTelegramAlertStates(epoch string) (map[string]TelegramAlertS
 }
 
 func (s *Store) SaveTelegramAlertState(epoch, id string, state TelegramAlertState) error {
+	return s.SaveTelegramAlertStateContext(context.Background(), epoch, id, state)
+}
+
+func (s *Store) SaveTelegramAlertStateContext(ctx context.Context, epoch, id string, state TelegramAlertState) error {
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
 	s.mu.RLock()
@@ -62,23 +71,31 @@ func (s *Store) SaveTelegramAlertState(epoch, id string, state TelegramAlertStat
 	if err != nil {
 		return err
 	}
-	_, err = s.sdb.db.Exec(`INSERT INTO telegram_alert_state(node_uuid,config_epoch,state_json) VALUES(?,?,?)
+	_, err = s.sdb.db.ExecContext(ctx, `INSERT INTO telegram_alert_state(node_uuid,config_epoch,state_json) VALUES(?,?,?)
 		ON CONFLICT(node_uuid) DO UPDATE SET config_epoch=excluded.config_epoch,state_json=excluded.state_json`, id, epoch, string(raw))
 	return err
 }
 
 func (s *Store) DeleteTelegramAlertState(id string) error {
+	return s.DeleteTelegramAlertStateContext(context.Background(), id)
+}
+
+func (s *Store) DeleteTelegramAlertStateContext(ctx context.Context, id string) error {
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
-	_, err := s.sdb.db.Exec("DELETE FROM telegram_alert_state WHERE node_uuid = ?", id)
+	_, err := s.sdb.db.ExecContext(ctx, "DELETE FROM telegram_alert_state WHERE node_uuid = ?", id)
 	return err
 }
 
 // A queue worker loads only its node, not every node's alert state.
 func (s *Store) LoadTelegramAlertState(epoch, id string) (map[string]TelegramAlertState, error) {
+	return s.LoadTelegramAlertStateContext(context.Background(), epoch, id)
+}
+
+func (s *Store) LoadTelegramAlertStateContext(ctx context.Context, epoch, id string) (map[string]TelegramAlertState, error) {
 	states := make(map[string]TelegramAlertState)
 	var raw string
-	err := s.sdb.reader().QueryRow("SELECT state_json FROM telegram_alert_state WHERE node_uuid=? AND config_epoch=?", id, epoch).Scan(&raw)
+	err := s.sdb.reader().QueryRowContext(ctx, "SELECT state_json FROM telegram_alert_state WHERE node_uuid=? AND config_epoch=?", id, epoch).Scan(&raw)
 	if err == sql.ErrNoRows {
 		return states, nil
 	}

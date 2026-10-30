@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"regexp"
@@ -125,11 +126,15 @@ type TelegramOptions struct {
 
 // UpdateTelegramConfig retains the original API for callers that do not change alert policy.
 func (s *Store) UpdateTelegramConfig(token, chatID string, enabled, clear bool) error {
-	return s.UpdateTelegramOptions(TelegramOptions{BotToken: token, ChatID: chatID, Enabled: enabled, Clear: clear})
+	return s.UpdateTelegramOptionsContext(context.Background(), TelegramOptions{BotToken: token, ChatID: chatID, Enabled: enabled, Clear: clear})
 }
 
 // UpdateTelegramOptions keeps an omitted bot token and validates all alert settings.
 func (s *Store) UpdateTelegramOptions(opts TelegramOptions) error {
+	return s.UpdateTelegramOptionsContext(context.Background(), opts)
+}
+
+func (s *Store) UpdateTelegramOptionsContext(ctx context.Context, opts TelegramOptions) error {
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
 	s.mu.Lock()
@@ -167,7 +172,7 @@ func (s *Store) UpdateTelegramOptions(opts TelegramOptions) error {
 	if next.TelegramBotToken != s.config.TelegramBotToken || next.TelegramChatID != s.config.TelegramChatID || next.TelegramEnabled != s.config.TelegramEnabled {
 		next.TelegramAlertEpoch = GenerateToken(8)
 	}
-	return s.commitConfigLocked(next)
+	return s.commitConfigLockedContext(ctx, next)
 }
 
 func validateTelegramConfig(c Config) error {

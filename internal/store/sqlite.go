@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -30,11 +31,17 @@ type sqliteDB struct {
 	targetCache map[string]string
 }
 
-func (s *sqliteDB) exec(query string, args ...any) (sql.Result, error) {
+// Context rule for this package: every read or write that a request, an agent
+// report or the flush/prune loops can reach takes the caller's context, so a
+// client that disconnects or a shutting-down server takes its own query with
+// it. Startup-only work (openSQLite, initSchema, migrateSchema, load) stays
+// context-free on purpose: there is no request to cancel and it must either
+// finish or fail the start.
+func (s *sqliteDB) execContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	if s.tx != nil {
-		return s.tx.Exec(query, args...)
+		return s.tx.ExecContext(ctx, query, args...)
 	}
-	return s.db.Exec(query, args...)
+	return s.db.ExecContext(ctx, query, args...)
 }
 
 func openSQLite(dbPath string) (*sqliteDB, error) {
@@ -74,6 +81,8 @@ func openSQLite(dbPath string) (*sqliteDB, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("failed to initialize sqlite schema: %w", err)
 	}
+	// Upgrades run before the read pool exists, so no reader can hold them up.
+	s.migrateSchema()
 	for _, suffix := range []string{"-wal", "-shm"} {
 		if err := os.Chmod(dbPath+suffix, 0600); err != nil && !errors.Is(err, os.ErrNotExist) {
 			_ = db.Close()
@@ -199,7 +208,6 @@ func (s *sqliteDB) initSchema() error {
 	if err != nil {
 		return err
 	}
-	s.dropRedundantPingIndexes()
 	hasNetworkRate, err := s.hasResourceColumn("network_rate")
 	if err != nil {
 		return err
@@ -275,35 +283,27 @@ func (s *sqliteDB) initSchema() error {
 // idx_ping_series appended host/method/latency to that same key so series reads
 // could avoid a row lookup. Measured on a 90-day, 5.2M-sample database they were
 // 280MB of 739MB and 39% of the ping insert path, while every query stayed
-// index-ordered without them. Drop them once; new databases never create them.
-// Reclaiming space is an optimisation, so a refusal (read-only volume, no free
-// space) must never keep the server from starting.
-func (s *sqliteDB) dropRedundantPingIndexes() {
+// index-ordered without them. New databases never create them; see
+// schemaMigrations for the one-time removal.
+func (s *sqliteDB) dropRedundantPingIndexes() (bool, error) {
 	var dropped []string
 	for _, name := range []string{"idx_ping_lookup", "idx_ping_series"} {
 		var exists int
 		if err := s.db.QueryRow("SELECT count(*) FROM sqlite_master WHERE type='index' AND name=?", name).Scan(&exists); err != nil {
-			log.Printf("[Store] Could not inspect index %s: %v", name, err)
-			return
+			return false, fmt.Errorf("inspect index %s: %w", name, err)
 		}
 		if exists == 0 {
 			continue
 		}
 		if _, err := s.db.Exec("DROP INDEX " + name); err != nil {
-			log.Printf("[Store] Could not drop redundant index %s: %v", name, err)
-			continue
+			return false, fmt.Errorf("drop index %s: %w", name, err)
 		}
 		dropped = append(dropped, name)
 	}
-	if len(dropped) == 0 {
-		return
+	if len(dropped) > 0 {
+		log.Printf("[Store] Dropped redundant ping_history indexes: %s", strings.Join(dropped, ", "))
 	}
-	log.Printf("[Store] Dropped redundant ping_history indexes: %s", strings.Join(dropped, ", "))
-	// DROP INDEX only frees pages inside the file. Reclaiming them runs before
-	// the read pool exists, so no reader can hold it up.
-	if err := s.reclaimFreePages(); err != nil {
-		log.Printf("[Store] Index space reclaim skipped: %v", err)
-	}
+	return len(dropped) > 0, nil
 }
 
 // reclaimFreePages hands a migrated freelist back to the file system. Small
@@ -338,12 +338,12 @@ func (s *sqliteDB) hasResourceColumn(name string) (bool, error) {
 	return count > 0, err
 }
 
-func (s *sqliteDB) pruneNodePing(nodeUUID string, allowedTargets []protocol.PingTarget) error {
+func (s *sqliteDB) pruneNodePingContext(ctx context.Context, nodeUUID string, allowedTargets []protocol.PingTarget) error {
 	targets, err := json.Marshal(allowedTargets)
 	if err != nil {
 		return err
 	}
-	tx, err := s.db.Begin()
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -356,12 +356,12 @@ func (s *sqliteDB) pruneNodePing(nodeUUID string, allowedTargets []protocol.Ping
 		query := "DELETE FROM " + table + " WHERE node_uuid=?" + condition + ` AND NOT EXISTS
 			(SELECT 1 FROM json_each(?) WHERE json_extract(value,'$.name')=` + table + `.target_name
 			 AND json_extract(value,'$.host')=` + table + `.host)`
-		if _, err := tx.Exec(query, nodeUUID, string(targets)); err != nil {
+		if _, err := tx.ExecContext(ctx, query, nodeUUID, string(targets)); err != nil {
 			return err
 		}
 	}
 	if len(allowedTargets) == 0 {
-		if _, err := tx.Exec("DELETE FROM history_rollup_dirty WHERE node_uuid=? AND kind='ping'", nodeUUID); err != nil {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM history_rollup_dirty WHERE node_uuid=? AND kind='ping'", nodeUUID); err != nil {
 			return err
 		}
 	}
@@ -419,7 +419,7 @@ func (s *sqliteDB) loadConfig() (*Config, error) {
 	return &c, nil
 }
 
-func (s *sqliteDB) saveConfig(c *Config) error {
+func (s *sqliteDB) saveConfigContext(ctx context.Context, c *Config) error {
 	targetsJSON, err := json.Marshal(c.PingTargets)
 	if err != nil {
 		return err
@@ -450,7 +450,7 @@ func (s *sqliteDB) saveConfig(c *Config) error {
 		telegram_alert_epoch = excluded.telegram_alert_epoch,
 		telegram_templates_json = excluded.telegram_templates_json;
 	`
-	_, err = s.exec(query, c.AdminUsername, c.AdminPassword, c.SiteTitle, c.SiteIcon, c.AutoDiscoveryKey, string(targetsJSON), c.SiteTheme, c.ColorMode,
+	_, err = s.execContext(ctx, query, c.AdminUsername, c.AdminPassword, c.SiteTitle, c.SiteIcon, c.AutoDiscoveryKey, string(targetsJSON), c.SiteTheme, c.ColorMode,
 		c.TelegramBotToken, c.TelegramChatID, c.TelegramEnabled, c.TelegramOfflineDelaySeconds, c.TelegramReminderDays,
 		c.TelegramReminderHour, c.TelegramReminderTimezone, c.TelegramAlertEpoch, string(templatesJSON))
 	return err
@@ -481,40 +481,40 @@ func (s *sqliteDB) loadNodes() (map[string]*Node, error) {
 	return nodes, rows.Err()
 }
 
-func (s *sqliteDB) deleteNode(uuid string) error {
-	tx, err := s.db.Begin()
+func (s *sqliteDB) deleteNodeContext(ctx context.Context, uuid string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
 	// Suppress per-sample summary invalidation only for this atomic deletion.
-	if _, err := tx.Exec("INSERT INTO history_rollup_delete_guard(node_uuid) VALUES(?)", uuid); err != nil {
+	if _, err := tx.ExecContext(ctx, "INSERT INTO history_rollup_delete_guard(node_uuid) VALUES(?)", uuid); err != nil {
 		return err
 	}
-	if _, err := tx.Exec("DELETE FROM nodes WHERE uuid = ?", uuid); err != nil {
+	if _, err := tx.ExecContext(ctx, "DELETE FROM nodes WHERE uuid = ?", uuid); err != nil {
 		return err
 	}
-	if _, err := tx.Exec("DELETE FROM ping_history WHERE node_uuid = ?", uuid); err != nil {
+	if _, err := tx.ExecContext(ctx, "DELETE FROM ping_history WHERE node_uuid = ?", uuid); err != nil {
 		return err
 	}
-	if _, err := tx.Exec("DELETE FROM ping_observations WHERE node_uuid = ?", uuid); err != nil {
+	if _, err := tx.ExecContext(ctx, "DELETE FROM ping_observations WHERE node_uuid = ?", uuid); err != nil {
 		return err
 	}
-	if _, err := tx.Exec("DELETE FROM resource_history WHERE node_uuid = ?", uuid); err != nil {
+	if _, err := tx.ExecContext(ctx, "DELETE FROM resource_history WHERE node_uuid = ?", uuid); err != nil {
 		return err
 	}
-	if _, err := tx.Exec("DELETE FROM history_rollups WHERE node_uuid = ?", uuid); err != nil {
+	if _, err := tx.ExecContext(ctx, "DELETE FROM history_rollups WHERE node_uuid = ?", uuid); err != nil {
 		return err
 	}
 	// The node is gone, so discard any previously queued summary repairs too.
-	if _, err := tx.Exec("DELETE FROM history_rollup_dirty WHERE node_uuid = ?", uuid); err != nil {
+	if _, err := tx.ExecContext(ctx, "DELETE FROM history_rollup_dirty WHERE node_uuid = ?", uuid); err != nil {
 		return err
 	}
-	if _, err := tx.Exec("DELETE FROM telegram_alert_state WHERE node_uuid = ?", uuid); err != nil {
+	if _, err := tx.ExecContext(ctx, "DELETE FROM telegram_alert_state WHERE node_uuid = ?", uuid); err != nil {
 		return err
 	}
-	if _, err := tx.Exec("DELETE FROM history_rollup_delete_guard WHERE node_uuid=?", uuid); err != nil {
+	if _, err := tx.ExecContext(ctx, "DELETE FROM history_rollup_delete_guard WHERE node_uuid=?", uuid); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
@@ -530,7 +530,7 @@ func (s *sqliteDB) deleteNode(uuid string) error {
 	return nil
 }
 
-func (s *sqliteDB) saveAllNodes(nodes map[string]*Node) (map[string]string, error) {
+func (s *sqliteDB) saveAllNodesContext(ctx context.Context, nodes map[string]*Node) (map[string]string, error) {
 	tx := s.tx
 	if tx == nil {
 		return nil, errors.New("node writes require a transaction")
@@ -544,20 +544,20 @@ func (s *sqliteDB) saveAllNodes(nodes map[string]*Node) (map[string]string, erro
 		for id := range nodes {
 			args = append(args, id)
 		}
-		if _, err := tx.Exec("DELETE FROM nodes WHERE uuid NOT IN ("+placeholders+")", args...); err != nil {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM nodes WHERE uuid NOT IN ("+placeholders+")", args...); err != nil {
 			return nil, err
 		}
 	} else {
-		if _, err := tx.Exec("DELETE FROM nodes"); err != nil {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM nodes"); err != nil {
 			return nil, err
 		}
 	}
 
-	return s.saveNodeRows(nodes)
+	return s.saveNodeRowsContext(ctx, nodes)
 }
 
 // Upsert only the supplied nodes; callers decide whether other rows are removed.
-func (s *sqliteDB) saveNodeRows(nodes map[string]*Node) (map[string]string, error) {
+func (s *sqliteDB) saveNodeRowsContext(ctx context.Context, nodes map[string]*Node) (map[string]string, error) {
 	tx := s.tx
 	if tx == nil {
 		return nil, errors.New("node writes require a transaction")
@@ -576,7 +576,7 @@ func (s *sqliteDB) saveNodeRows(nodes map[string]*Node) (map[string]string, erro
 		created_at = excluded.created_at,
 		data_json = excluded.data_json;
 	`
-	stmt, err := tx.Prepare(query)
+	stmt, err := tx.PrepareContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -599,7 +599,7 @@ func (s *sqliteDB) saveNodeRows(nodes map[string]*Node) (map[string]string, erro
 		if n.Online {
 			onlineInt = 1
 		}
-		_, err = stmt.Exec(n.UUID, n.Name, n.Token, n.Group, n.Region, onlineInt, n.LastSeen.Unix(), n.CreatedAt.Unix(), nodeJSON)
+		_, err = stmt.ExecContext(ctx, n.UUID, n.Name, n.Token, n.Group, n.Region, onlineInt, n.LastSeen.Unix(), n.CreatedAt.Unix(), nodeJSON)
 		if err != nil {
 			return nil, err
 		}
@@ -607,13 +607,13 @@ func (s *sqliteDB) saveNodeRows(nodes map[string]*Node) (map[string]string, erro
 	return nextNodes, nil
 }
 
-func (s *sqliteDB) recordPingSample(nodeUUID, targetName, host, method string, timestamp int64, latency int) error {
+func (s *sqliteDB) recordPingSampleContext(ctx context.Context, nodeUUID, targetName, host, method string, timestamp int64, latency int) error {
 	query := `INSERT INTO ping_history (node_uuid, target_name, host, method, timestamp, latency) VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(node_uuid, target_name, timestamp) DO UPDATE SET
 			latency = excluded.latency,
 			host = excluded.host,
 			method = excluded.method`
-	_, err := s.db.Exec(query, nodeUUID, targetName, host, method, timestamp, latency)
+	_, err := s.db.ExecContext(ctx, query, nodeUUID, targetName, host, method, timestamp, latency)
 	return err
 }
 
@@ -661,8 +661,8 @@ func (s *sqliteDB) getLatestPingMethod(nodeUUID, targetName, host string) string
 	return method
 }
 
-func (s *sqliteDB) pruneOldPingHistory(beforeTimestamp int64) (int64, error) {
-	res, err := s.db.Exec("DELETE FROM ping_history WHERE timestamp < ?", beforeTimestamp)
+func (s *sqliteDB) pruneOldPingHistoryContext(ctx context.Context, beforeTimestamp int64) (int64, error) {
+	res, err := s.db.ExecContext(ctx, "DELETE FROM ping_history WHERE timestamp < ?", beforeTimestamp)
 	if err != nil {
 		return 0, err
 	}

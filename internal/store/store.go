@@ -247,7 +247,7 @@ func (s *Store) periodicFlusher() {
 				log.Printf("[Store] History batch failed (will retry): %v", err)
 			}
 		case <-ticker.C:
-			if err := s.Save(); err != nil {
+			if err := s.SaveContext(ctx); err != nil && ctx.Err() == nil {
 				log.Printf("[Store] Save failed (will retry): %v", err)
 			}
 		case <-rollupTimer.C:
@@ -273,13 +273,13 @@ func (s *Store) periodicFlusher() {
 			s.pruneExpiredPingPreviewsLocked(time.Now().Unix() - 86400)
 			s.mu.Unlock()
 			if s.sdb != nil {
-				if _, err := s.sdb.pruneOldPingHistory(time.Now().Unix() - pingHistoryRetentionSec); err != nil {
+				if _, err := s.sdb.pruneOldPingHistoryContext(ctx, time.Now().Unix()-pingHistoryRetentionSec); err != nil {
 					log.Printf("[Store] History cleanup failed: %v", err)
 				}
-				if _, err := s.sdb.pruneOldResourceHistory(time.Now().Unix() - resourceHistoryRetentionSec); err != nil {
+				if _, err := s.sdb.pruneOldResourceHistoryContext(ctx, time.Now().Unix()-resourceHistoryRetentionSec); err != nil {
 					log.Printf("[Store] Resource history cleanup failed: %v", err)
 				}
-				if err := s.sdb.pruneHistoryRollups(time.Now().Unix() - pingHistoryRetentionSec); err != nil {
+				if err := s.sdb.pruneHistoryRollupsContext(ctx, time.Now().Unix()-pingHistoryRetentionSec); err != nil {
 					log.Printf("[Store] History summary cleanup failed: %v", err)
 				}
 			}
@@ -289,6 +289,12 @@ func (s *Store) periodicFlusher() {
 }
 
 func (s *Store) Save() error {
+	return s.SaveContext(context.Background())
+}
+
+// SaveContext flushes pending state. The transaction obeys the context, so a
+// cancelled flush rolls back and keeps its samples pending for the next tick.
+func (s *Store) SaveContext(ctx context.Context) error {
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
 	s.mu.Lock()
@@ -309,7 +315,7 @@ func (s *Store) Save() error {
 			n.dirty = false
 		}
 		s.mu.Unlock()
-		err := s.sdb.saveSnapshot(config, nodes, samples...)
+		err := s.sdb.saveSnapshotContext(ctx, config, nodes, samples...)
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		if err != nil {
@@ -342,7 +348,7 @@ func (s *Store) Save() error {
 	if len(dirty) == 0 && len(samples) == 0 {
 		return nil
 	}
-	err := s.sdb.saveDirtyNodes(config, dirty, samples...)
+	err := s.sdb.saveDirtyNodesContext(ctx, config, dirty, samples...)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err != nil {
@@ -373,7 +379,7 @@ func (s *Store) Close() error {
 	defer s.mu.Unlock()
 	var err error
 	if s.dirty {
-		err = s.saveLocked()
+		err = s.saveLocked(context.Background())
 	}
 	if s.sdb != nil {
 		if dbErr := s.sdb.Close(); dbErr != nil && err == nil {
@@ -435,7 +441,8 @@ func (s *Store) load(defaultPassword, username string) error {
 			TelegramReminderHour:        9,
 			TelegramReminderTimezone:    "Asia/Shanghai",
 		}
-		if err := s.sdb.saveSnapshot(s.config, s.nodes); err != nil {
+		// Startup write: there is no request to cancel.
+		if err := s.sdb.saveSnapshotContext(context.Background(), s.config, s.nodes); err != nil {
 			return err
 		}
 	} else {
@@ -587,11 +594,11 @@ func (s *Store) load(defaultPassword, username string) error {
 	return nil
 }
 
-func (s *Store) saveLocked() error {
+func (s *Store) saveLocked(ctx context.Context) error {
 	if s.sdb == nil {
 		return nil
 	}
-	if err := s.sdb.saveSnapshot(s.config, s.nodes, s.pendingSamples...); err != nil {
+	if err := s.sdb.saveSnapshotContext(ctx, s.config, s.nodes, s.pendingSamples...); err != nil {
 		return err
 	}
 
@@ -878,7 +885,11 @@ var (
 )
 
 func (s *Store) CreateNode(name, group, region string) (*Node, error) {
-	return s.CreateNodeWithOptions(NodeOptions{
+	return s.CreateNodeContext(context.Background(), name, group, region)
+}
+
+func (s *Store) CreateNodeContext(ctx context.Context, name, group, region string) (*Node, error) {
+	return s.CreateNodeWithOptionsContext(ctx, NodeOptions{
 		Name:   name,
 		Group:  group,
 		Region: region,
@@ -886,6 +897,10 @@ func (s *Store) CreateNode(name, group, region string) (*Node, error) {
 }
 
 func (s *Store) CreateNodeWithOptions(opts NodeOptions) (*Node, error) {
+	return s.CreateNodeWithOptionsContext(context.Background(), opts)
+}
+
+func (s *Store) CreateNodeWithOptionsContext(ctx context.Context, opts NodeOptions) (*Node, error) {
 	if err := validateTrafficOptions(opts, false); err != nil {
 		return nil, err
 	}
@@ -951,7 +966,7 @@ func (s *Store) CreateNodeWithOptions(opts NodeOptions) (*Node, error) {
 	s.mu.Unlock()
 	var err error
 	if s.sdb != nil {
-		err = s.sdb.saveSnapshot(config, snapshot)
+		err = s.sdb.saveSnapshotContext(ctx, config, snapshot)
 	}
 	s.mu.Lock()
 	if err != nil {
@@ -966,7 +981,11 @@ func (s *Store) CreateNodeWithOptions(opts NodeOptions) (*Node, error) {
 }
 
 func (s *Store) UpdateNode(uuid, name, group, region string, weight int) error {
-	return s.UpdateNodeWithOptions(uuid, NodeOptions{
+	return s.UpdateNodeContext(context.Background(), uuid, name, group, region, weight)
+}
+
+func (s *Store) UpdateNodeContext(ctx context.Context, uuid, name, group, region string, weight int) error {
+	return s.UpdateNodeWithOptionsContext(ctx, uuid, NodeOptions{
 		Name:           name,
 		Group:          group,
 		Region:         region,
@@ -978,6 +997,10 @@ func (s *Store) UpdateNode(uuid, name, group, region string, weight int) error {
 }
 
 func (s *Store) UpdateNodeWithOptions(uuid string, opts NodeOptions) error {
+	return s.UpdateNodeWithOptionsContext(context.Background(), uuid, opts)
+}
+
+func (s *Store) UpdateNodeWithOptionsContext(ctx context.Context, uuid string, opts NodeOptions) error {
 	if err := validateTrafficOptions(opts, true); err != nil {
 		return err
 	}
@@ -1009,7 +1032,7 @@ func (s *Store) UpdateNodeWithOptions(uuid string, opts NodeOptions) error {
 	s.mu.Unlock()
 	var err error
 	if s.sdb != nil {
-		err = s.sdb.saveNodeSnapshot(config, snapshot)
+		err = s.sdb.saveNodeSnapshotContext(ctx, config, snapshot)
 	}
 	s.mu.Lock()
 	if err != nil {
@@ -1035,6 +1058,10 @@ func (s *Store) UpdateNodeWithOptions(uuid string, opts NodeOptions) error {
 // appears in the order map.  Keys are node UUIDs, values are non-negative
 // weights.  Unknown UUIDs are silently skipped.
 func (s *Store) ReorderNodes(order map[string]int) error {
+	return s.ReorderNodesContext(context.Background(), order)
+}
+
+func (s *Store) ReorderNodesContext(ctx context.Context, order map[string]int) error {
 	for _, w := range order {
 		if w < 0 {
 			return ErrInvalidNodeOrder
@@ -1060,7 +1087,7 @@ func (s *Store) ReorderNodes(order map[string]int) error {
 	s.mu.Unlock()
 	var err error
 	if s.sdb != nil {
-		err = s.sdb.saveSnapshot(config, snapshot)
+		err = s.sdb.saveSnapshotContext(ctx, config, snapshot)
 	}
 	s.mu.Lock()
 	if err != nil {
@@ -1112,6 +1139,10 @@ func (s *Store) applyNodeOptionsLocked(n *Node, opts NodeOptions, cycleUsedBytes
 }
 
 func (s *Store) DeleteNode(uuid string) error {
+	return s.DeleteNodeContext(context.Background(), uuid)
+}
+
+func (s *Store) DeleteNodeContext(ctx context.Context, uuid string) error {
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
 
@@ -1126,7 +1157,7 @@ func (s *Store) DeleteNode(uuid string) error {
 	// while SQLite removes history. Publish the deletion only after commit;
 	// a failed transaction leaves the live node and its token intact.
 	if s.sdb != nil {
-		if err := s.sdb.deleteNode(uuid); err != nil {
+		if err := s.sdb.deleteNodeContext(ctx, uuid); err != nil {
 			return err
 		}
 	}

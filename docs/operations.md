@@ -22,6 +22,16 @@ sudo journalctl -u vibemonitor-agent -n 100 --no-pager
 
 手动启动主控时，未指定 `--data` 的默认路径是当前工作目录下的 `vibemonitor-data.db`。数据文件必须以 `.db`、`.sqlite` 或 `.sqlite3` 结尾。首次启动设置的管理员账号密码才会生效，已有数据库不会因重新传入启动参数而重置密码。
 
+## 数据库结构与版本
+
+数据库结构版本记录在 SQLite 的 `PRAGMA user_version` 中，定义见 `internal/store/migrations.go`。启动时按顺序执行版本号更高的迁移，每步成功后立即写回版本号；迁移只运行一次，之后启动不再重复。
+
+迁移是尽力而为：只读磁盘或空间不足导致失败时只记录日志，不阻止服务启动，也不写入版本号，下次启动自动重试。启动日志出现 `[Store] Schema upgraded to vN` 表示本次执行了迁移。
+
+v1 迁移删除 `ping_history` 上早期版本重复创建的 `idx_ping_lookup` 与 `idx_ping_series`，并在空闲页超过 8MB 时执行一次 `VACUUM` 回收文件空间。删除索引后所有查询仍按 `idx_ping_unique` 有序返回，数据行不变。迁移是一次性的启动开销，体积较大的库会看到磁盘占用明显下降（实测 50 万行样本自 72MB 降至 38MB）。只有确实删除了索引的库才会执行 `VACUUM`，未曾创建过这两个索引的库升级时不会重写文件。
+
+回退到旧版本时，旧代码会重新创建这两个索引，不影响使用；只是再次升级时 v1 已记录为完成，不会重复迁移。如确需再次清理，可手动执行 `DROP INDEX idx_ping_lookup; DROP INDEX idx_ping_series; VACUUM;`。
+
 ## 数据写入
 
 探针上报先更新内存状态并将历史样本加入有界队列，不等待历史数据写盘。后台通常每秒批量提交历史样本，配置及节点快照仍每 15 秒保存；数据库繁忙或执行历史维护时可能延后。历史查询以已提交数据为准，实时状态仍随上报更新。
@@ -104,6 +114,8 @@ make release-all
 发布时更新 `RELEASE_VERSION` 和 `RELEASE_NOTES.md`，推送对应的 `vX.Y.Z` tag。发布工作流由 tag 触发，生成 GitHub Release 及附件。
 
 后端 `internal/server/app.go` 负责服务生命周期和路由组装，认证、节点、历史、设置与 Telegram 路由分别位于 `*_routes.go`，压缩中间件在 `compression.go`。
+
+数据库访问约定：凡是由 HTTP 请求、探针上报或后台循环触发的读写，都接收调用方的 `context.Context`（`store` 包中的 `*Context` 方法），客户端断开或服务关闭会中止对应查询。只有启动阶段的工作（建库、迁移、加载快照）不带 ctx。新增数据库调用时请沿用该约定，不要退回 `context.Background()` 包装。
 
 前端直接发布 `internal/web/dist` 中的文件，无额外打包步骤。`index.html` 按顺序加载共享状态与渲染（`app.js`）、认证、设置、节点管理、Ping 历史和资源历史，最后由 `bootstrap.js` 启动请求与定时器。这些经典脚本共享页面作用域，新增跨模块调用时需保持加载顺序。本地保留的 DOM 回归测试从 HTML 中的 `data-dashboard-module` 脚本列表加载相同模块，并覆盖五种内置主题。
 

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -40,6 +41,10 @@ func validIconContent(data []byte, kind string) bool {
 // SaveSiteIcon stores the bytes and their URL in the same transaction.
 // Empty data deletes the uploaded icon and clears its URL.
 func (s *Store) SaveSiteIcon(data []byte, kind string) (string, error) {
+	return s.SaveSiteIconContext(context.Background(), data, kind)
+}
+
+func (s *Store) SaveSiteIconContext(ctx context.Context, data []byte, kind string) (string, error) {
 	if len(data) > MaxIconBytes || (len(data) > 0 && (!validIconType(kind) || !validIconContent(data, kind))) {
 		return "", errors.New("invalid icon type, size, or content")
 	}
@@ -52,21 +57,21 @@ func (s *Store) SaveSiteIcon(data []byte, kind string) (string, error) {
 		next.SiteIcon = "/api/site-icon?v=" + GenerateToken(8)
 	}
 	s.mu.RUnlock()
-	tx, err := s.sdb.db.Begin()
+	tx, err := s.sdb.db.BeginTx(ctx, nil)
 	if err != nil {
 		return "", err
 	}
 	defer tx.Rollback()
-	if _, err = tx.Exec("DELETE FROM site_assets"); err != nil {
+	if _, err = tx.ExecContext(ctx, "DELETE FROM site_assets"); err != nil {
 		return "", err
 	}
 	if len(data) > 0 {
-		if _, err = tx.Exec("INSERT INTO site_assets(id, content_type, data) VALUES(1, ?, ?)", kind, data); err != nil {
+		if _, err = tx.ExecContext(ctx, "INSERT INTO site_assets(id, content_type, data) VALUES(1, ?, ?)", kind, data); err != nil {
 			return "", err
 		}
 	}
 	writer := &sqliteDB{tx: tx}
-	if err = writer.saveConfig(&next); err != nil {
+	if err = writer.saveConfigContext(ctx, &next); err != nil {
 		return "", err
 	}
 	if err = tx.Commit(); err != nil {
@@ -80,9 +85,13 @@ func (s *Store) SaveSiteIcon(data []byte, kind string) (string, error) {
 }
 
 func (s *Store) SiteIconData() ([]byte, string, error) {
+	return s.SiteIconDataContext(context.Background())
+}
+
+func (s *Store) SiteIconDataContext(ctx context.Context) ([]byte, string, error) {
 	var data []byte
 	var kind string
-	err := s.sdb.reader().QueryRow("SELECT data, content_type FROM site_assets WHERE id=1").Scan(&data, &kind)
+	err := s.sdb.reader().QueryRowContext(ctx, "SELECT data, content_type FROM site_assets WHERE id=1").Scan(&data, &kind)
 	return data, kind, err
 }
 

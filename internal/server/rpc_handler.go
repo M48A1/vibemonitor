@@ -136,7 +136,7 @@ func (h *RPCHandler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 		name = "auto-node"
 	}
 
-	node, err := h.store.CreateNode(name, "Auto", "DEFAULT")
+	node, err := h.store.CreateNodeContext(r.Context(), name, "Auto", "DEFAULT")
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{
 			"status": "error",

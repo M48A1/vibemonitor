@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"time"
 	"vibemonitor/pkg/protocol"
 )
@@ -110,12 +111,16 @@ func (s *Store) pruneNodePingLocked(node *Node) {
 // Caller holds persistMu and mu. Only the private snapshot is changed until
 // commit. Reports arriving during disk I/O remain in the live store.
 func (s *Store) commitConfigLocked(next Config) error {
+	return s.commitConfigLockedContext(context.Background(), next)
+}
+
+func (s *Store) commitConfigLockedContext(ctx context.Context, next Config) error {
 	staged := &Store{config: next, nodes: cloneNodesForSave(s.nodes)}
 	staged.prunePingDataLocked()
 	s.mu.Unlock()
 	var err error
 	if s.sdb != nil {
-		err = s.sdb.saveSnapshot(next, staged.nodes)
+		err = s.sdb.saveSnapshotContext(ctx, next, staged.nodes)
 	}
 	s.mu.Lock()
 	if err != nil {

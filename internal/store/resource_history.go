@@ -60,15 +60,15 @@ func (s *sqliteDB) latestResourceSampleTime(uuid string) (int64, error) {
 	return timestamp.Int64, err
 }
 
-func (s *sqliteDB) recordResourceSample(uuid string, timestamp int64, cpu, ram sql.NullFloat64, network sql.NullInt64) error {
-	_, err := s.db.Exec(`INSERT INTO resource_history(node_uuid,timestamp,cpu_usage,ram_usage,network_rate)
+func (s *sqliteDB) recordResourceSampleContext(ctx context.Context, uuid string, timestamp int64, cpu, ram sql.NullFloat64, network sql.NullInt64) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO resource_history(node_uuid,timestamp,cpu_usage,ram_usage,network_rate)
 		VALUES(?,?,?,?,?) ON CONFLICT(node_uuid,timestamp) DO UPDATE SET
 		cpu_usage=excluded.cpu_usage,ram_usage=excluded.ram_usage,network_rate=excluded.network_rate`, uuid, timestamp, cpu, ram, network)
 	return err
 }
 
-func (s *sqliteDB) pruneOldResourceHistory(before int64) (int64, error) {
-	result, err := s.db.Exec("DELETE FROM resource_history WHERE timestamp < ?", before)
+func (s *sqliteDB) pruneOldResourceHistoryContext(ctx context.Context, before int64) (int64, error) {
+	result, err := s.db.ExecContext(ctx, "DELETE FROM resource_history WHERE timestamp < ?", before)
 	if err != nil {
 		return 0, err
 	}
