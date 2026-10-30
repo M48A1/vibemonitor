@@ -5,6 +5,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -12,6 +13,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	"vibemonitor/pkg/protocol"
@@ -114,8 +116,28 @@ func newIdentityHTTPClient(network string) *http.Client {
 	return &http.Client{Timeout: 15 * time.Second, Transport: transport}
 }
 
+// Check the kernel's source-address selection without sending any packets.
+// A provider timeout does not imply a missing IP. Unexpected local errors leave
+// availability unknown for compatibility, rather than hiding the family.
+func identityFamilyAvailable(ctx context.Context, network, address string) *bool {
+	conn, err := (&net.Dialer{}).DialContext(ctx, network, address)
+	if err != nil {
+		if errors.Is(err, syscall.ENETUNREACH) || errors.Is(err, syscall.EADDRNOTAVAIL) || errors.Is(err, syscall.EAFNOSUPPORT) {
+			available := false
+			return &available
+		}
+		return nil
+	}
+	defer conn.Close()
+	available := conn.LocalAddr().(*net.UDPAddr).IP.IsGlobalUnicast()
+	return &available
+}
+
 func collectNetworkIdentity(ctx context.Context, ipv4, ipv6 *http.Client) protocol.NetworkIdentity {
-	identity := protocol.NetworkIdentity{}
+	identity := protocol.NetworkIdentity{
+		IPv4Available: identityFamilyAvailable(ctx, "udp4", "1.1.1.1:53"),
+		IPv6Available: identityFamilyAvailable(ctx, "udp6", "[2606:4700:4700::1111]:53"),
+	}
 	var err error
 	identity.ASN, identity.ASName, err = lookupASN(ctx, ipv4)
 	if err != nil && ctx.Err() == nil {
@@ -128,6 +150,15 @@ func collectNetworkIdentity(ctx context.Context, ipv4, ipv6 *http.Client) protoc
 	identity.YouTubeRegionIPv6, err = lookupYouTubeRegion(ctx, ipv6)
 	if err != nil && ctx.Err() == nil {
 		log.Printf("[Agent] YouTube IPv6 region unavailable: %v", err)
+	}
+	// A successful provider response is stronger evidence than the route check.
+	if identity.ASN != "" || identity.YouTubeRegion != "" {
+		available := true
+		identity.IPv4Available = &available
+	}
+	if identity.YouTubeRegionIPv6 != "" {
+		available := true
+		identity.IPv6Available = &available
 	}
 	identity.CheckedAt = time.Now().UTC()
 	return identity

@@ -45,6 +45,8 @@ type BasicInfoParams struct {
 // ASN and youtube_region describe IPv4; youtube_region_ipv6 is independently probed.
 // Empty fields mean that the corresponding provider could not be queried.
 type NetworkIdentity struct {
+	IPv4Available     *bool     `json:"ipv4_available,omitempty"`
+	IPv6Available     *bool     `json:"ipv6_available,omitempty"`
 	ASN               string    `json:"asn"`
 	ASName            string    `json:"as_name"`
 	YouTubeRegion     string    `json:"youtube_region"`

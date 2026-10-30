@@ -25,9 +25,19 @@ window.VibeHex = (() => {
   function networkIdentityLine(info) {
     const identity = info.network_identity || {};
     const asn = identity.asn ? `${identity.asn} ${identity.as_name || ''}`.trim() : 'Unknown';
-    const ipv4 = englishRegionName(identity.youtube_region);
-    const ipv6 = englishRegionName(identity.youtube_region_ipv6);
-    return `<span class="node-network-identity"><span title="ASN · Direct IPv4">${escapeHtml(asn)}</span><span aria-hidden="true">·</span><span class="node-google-region" title="Region detected by YouTube Premium · Direct IPv4"><img src="/google-mark.svg" alt="Google" width="14" height="14">IPv4 ${escapeHtml(ipv4)}</span><span aria-hidden="true">·</span><span title="Region detected by YouTube Premium · Direct IPv6">IPv6 ${escapeHtml(ipv6)}</span></span>`;
+    const parts = [`<span title="ASN · Direct IPv4">${escapeHtml(asn)}</span>`];
+    let showGoogle = true;
+    for (const [family, available, code] of [
+      ['IPv4', identity.ipv4_available, identity.youtube_region],
+      ['IPv6', identity.ipv6_available, identity.youtube_region_ipv6],
+    ]) {
+      // Older agents do not report availability: keep Unknown until upgraded.
+      if (available === false && !code) continue;
+      const icon = showGoogle ? '<img src="/google-mark.svg" alt="Google" width="14" height="14">' : '';
+      parts.push(`<span class="node-google-region" title="Region detected by YouTube Premium · Direct ${family}">${icon}${family} ${escapeHtml(englishRegionName(code))}</span>`);
+      showGoogle = false;
+    }
+    return `<span class="node-network-identity">${parts.join('<span aria-hidden="true">·</span>')}</span>`;
   }
 
   function serverStatusBar(value) {
