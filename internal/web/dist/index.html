@@ -1,11 +1,12 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-site-theme="hex" data-theme="light">
+<html lang="zh-CN" data-site-theme="design" data-site-layout="cards" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>VibeMonitor</title>
   <link rel="stylesheet" href="/style.css">
   <link rel="stylesheet" href="/themes.css">
+  <link rel="stylesheet" href="/design.css" id="customThemeStylesheet">
   <link rel="icon" id="siteIcon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='10' fill='%230d9488'/></svg>">
 </head>
 <body>
@@ -74,9 +75,9 @@
   <div class="modal-overlay" id="themeManagementModal">
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="themeManagementTitle">
       <div class="modal-header"><h3 class="modal-title" id="themeManagementTitle">主题管理</h3><button type="button" class="modal-close" id="closeThemeManagementBtn" aria-label="关闭">&times;</button></div>
-      <p class="logo-upload-hint">选择主题后点击启用，对所有访客生效。默认主题保留当前外观。</p>
+      <p class="logo-upload-hint">选择主题后点击启用，对所有访客生效。默认主题为 Design，其他主题上传 ZIP 包后启用。</p>
       <div id="themeList" class="theme-list"></div>
-      <div class="theme-actions"><label class="btn" id="themeUploadLabel">上传主题包<input type="file" id="themePackageFile" accept=".zip,application/zip" hidden></label><a class="btn" href="/api/admin/themes/example" download>下载示例包</a><button type="button" class="btn btn-primary" id="activateThemeBtn">启用所选主题</button></div>
+      <div class="theme-actions"><label class="btn" id="themeUploadLabel">上传主题包<input type="file" id="themePackageFile" accept=".zip,application/zip" hidden></label><a class="btn" href="https://github.com/M48A1/vibemonitor/tree/main/themes" target="_blank" rel="noopener noreferrer">下载主题包</a><button type="button" class="btn btn-primary" id="activateThemeBtn">启用所选主题</button></div>
       <p class="logo-upload-hint">ZIP 最大 2MB，包含 theme.json 和一个 UTF-8 CSS 文件。主题包与启用状态保存在数据库中。</p>
       <p id="themeStatus" role="status" aria-live="polite"></p>
     </div>

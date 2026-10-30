@@ -43,6 +43,8 @@ type Client struct {
 	pingResults     []protocol.PingResult
 	pingTrigger     chan struct{}
 	networkIdentity *protocol.NetworkIdentity
+	identityTrigger chan struct{}
+	identityEpoch   string
 }
 
 const maxPingConcurrency = 8
@@ -74,7 +76,8 @@ func New(opts Options) *Client {
 				ExpectContinueTimeout: 1 * time.Second,
 			},
 		},
-		pingTrigger: make(chan struct{}, 1),
+		pingTrigger:     make(chan struct{}, 1),
+		identityTrigger: make(chan struct{}, 1),
 	}
 }
 
@@ -242,6 +245,20 @@ func (c *Client) handleRPCResult(result any) {
 	m, ok := result.(map[string]any)
 	if !ok {
 		return
+	}
+	// A new master process requests one fresh identity lookup from each agent.
+	// Record the epoch before signalling so normal metrics responses cannot flood it.
+	if epoch, ok := m["network_identity_epoch"].(string); ok && epoch != "" {
+		c.mu.Lock()
+		changed := c.identityEpoch != epoch
+		c.identityEpoch = epoch
+		c.mu.Unlock()
+		if changed {
+			select {
+			case c.identityTrigger <- struct{}{}:
+			default:
+			}
+		}
 	}
 	rawTargets, exists := m["ping_targets"]
 	if !exists || rawTargets == nil {

@@ -227,7 +227,7 @@ func (s *sqliteDB) initSchema() error {
 	}
 	// 兼容已有旧测试创建的数据库，确保 data_json 列存在
 	_, _ = s.db.Exec("ALTER TABLE nodes ADD COLUMN data_json TEXT DEFAULT ''")
-	for _, column := range []struct{ name, fallback string }{{"site_theme", "hex"}, {"color_mode", "light"}, {"telegram_bot_token", ""}, {"telegram_chat_id", ""}} {
+	for _, column := range []struct{ name, fallback string }{{"site_theme", DefaultTheme}, {"color_mode", "light"}, {"telegram_bot_token", ""}, {"telegram_chat_id", ""}} {
 		exists, err := s.hasConfigColumn(column.name)
 		if err != nil {
 			return err
@@ -316,7 +316,7 @@ func (s *sqliteDB) loadConfig() (*Config, error) {
 		{"telegram_reminder_hour", "9"}, {"telegram_reminder_timezone", "'Asia/Shanghai'"},
 		{"telegram_alert_epoch", "''"},
 		{"telegram_templates_json", "'{}'"},
-		{"site_theme", "'hex'"},
+		{"site_theme", "'design'"},
 	} {
 		exists, err := s.hasConfigColumn(field.name)
 		if err != nil {

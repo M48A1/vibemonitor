@@ -3,6 +3,7 @@
  * The table and details use VibeMonitor's existing data and controls.
  */
 :root {
+  --vibemonitor-layout: serverstatus;
   color-scheme: light;
   --background: #f5f5f5;
   --foreground: #212121;

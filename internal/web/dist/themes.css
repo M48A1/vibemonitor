@@ -2,6 +2,7 @@
 
 /* Soft glass surfaces over an ambient color field. */
 :root {
+  --vibemonitor-layout: cards;
   color-scheme: light;
   --background: #d8dcea;
   --foreground: #172235;
@@ -217,4 +218,3 @@ body .hex-card-footer::before { color: var(--label-orange); }
 .node-google-region { display: inline-flex; align-items: center; gap: 5px; }
 .node-google-region img { flex: 0 0 14px; width: 14px; height: 14px; }
 .ss-detail-value > .node-network-identity { margin-top: 4px; }
-html[data-site-theme="win2000"] .hex-node-identity .node-network-identity { color: #fff; }

@@ -139,8 +139,17 @@ func (c *Client) runNetworkIdentityWorker(ctx context.Context, refreshed chan<- 
 	ipv6 := newIdentityHTTPClient("tcp6")
 	defer ipv4.CloseIdleConnections()
 	defer ipv6.CloseIdleConnections()
-	ticker := time.NewTicker(networkIdentityInterval)
-	defer ticker.Stop()
+	c.runNetworkIdentityLoop(ctx, refreshed, ipv4, ipv6)
+}
+
+func (c *Client) runNetworkIdentityLoop(ctx context.Context, refreshed chan<- struct{}, ipv4, ipv6 *http.Client) {
+	// The initial basic-info response may already have queued the master's epoch.
+	// This immediate startup lookup fulfils that request as well.
+	select {
+	case <-c.identityTrigger:
+	default:
+	}
+	retries := 0
 	for {
 		if ctx.Err() != nil {
 			return
@@ -156,10 +165,26 @@ func (c *Client) runNetworkIdentityWorker(ctx context.Context, refreshed chan<- 
 		case refreshed <- struct{}{}:
 		default:
 		}
+
+		// Retry transient startup/refresh failures twice (1 and 4 minutes), then
+		// return to weekly probes. IPv6 absence alone does not cause retry traffic.
+		delay := networkIdentityInterval
+		if (identity.ASN == "" || (identity.YouTubeRegion == "" && identity.YouTubeRegionIPv6 == "")) && retries < 2 {
+			retries++
+			delay = time.Duration(retries*retries) * time.Minute
+		}
+		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case <-ticker.C:
+		case <-c.identityTrigger:
+			retries = 0
+		case <-timer.C:
+			if delay == networkIdentityInterval {
+				retries = 0
+			}
 		}
+		timer.Stop()
 	}
 }

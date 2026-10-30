@@ -1,41 +1,46 @@
 (() => {
-  let active = 'hex', choice = 'hex', busy = false;
+  let active = 'design', choice = 'design', busy = false;
   const status = document.getElementById('themeStatus');
   const list = document.getElementById('themeList');
   const activate = document.getElementById('activateThemeBtn');
   const file = document.getElementById('themePackageFile');
   const recovery = new URLSearchParams(location.search).get('theme') === 'default';
-  function setEffectiveTheme(id) {
-    if (document.documentElement.dataset.siteTheme === id) return;
-    document.documentElement.dataset.siteTheme = id;
+  function setEffectiveTheme(id, layout = 'cards') {
+    const root = document.documentElement;
+    if (root.dataset.siteTheme === id && root.dataset.siteLayout === layout) return;
+    root.dataset.siteTheme = id;
+    root.dataset.siteLayout = layout;
     if (typeof window.scheduleDashboard === 'function') window.scheduleDashboard();
   }
   function apply(id) {
     active = id;
+    const custom = !recovery && /^custom-[a-f0-9]{64}$/.test(id);
+    const effective = custom ? id : 'design';
+    const href = custom ? '/api/themes/' + id + '/style.css' : '/design.css';
     const current = document.getElementById('customThemeStylesheet');
-    const builtin = id === 'rakugaki' || id === 'win2000' || id === 'design' || id === 'serverstatus';
-    const valid = builtin || /^custom-[a-f0-9]{64}$/.test(id);
-    if (recovery || !valid) {
-      if (current) current.remove();
-      setEffectiveTheme('hex');
-      return;
-    }
-    const href = builtin ? '/' + id + '.css' : '/api/themes/' + id + '/style.css';
+    const activateStyle = () => {
+      const layout = custom && getComputedStyle(document.documentElement).getPropertyValue('--vibemonitor-layout').trim() === 'serverstatus' ? 'serverstatus' : 'cards';
+      setEffectiveTheme(effective, layout);
+    };
     if (current && current.getAttribute('href') === href) {
-      setEffectiveTheme(id);
+      if (current.sheet) activateStyle();
       return;
     }
     const link = document.createElement('link');
     link.id = 'customThemeStylesheet'; link.rel = 'stylesheet'; link.href = href;
+    link.onload = () => {
+      if (document.getElementById('customThemeStylesheet') === link) activateStyle();
+    };
     link.onerror = () => {
       if (document.getElementById('customThemeStylesheet') !== link) return;
       link.remove();
-      setEffectiveTheme('hex');
+      setEffectiveTheme('design');
+      if (custom) apply('design');
       status.textContent = '主题加载失败，已显示默认外观';
     };
     if (current) current.remove();
     document.head.appendChild(link);
-    setEffectiveTheme(id);
+    if (!custom) setEffectiveTheme('design');
   }
   async function request(url, options = {}) {
     const response = await fetch(url, { credentials: 'same-origin', ...options });

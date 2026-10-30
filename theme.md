@@ -1,6 +1,6 @@
-### 内置主题
+### 默认主题与独立安装包
 
-“主题管理”提供默认主题（现有玻璃外观）和 **Rakugaki · 手绘纸感**。后者参照 [monitor-theme-rakugaki](https://github.com/akanotanin/monitor-theme-rakugaki) 适配：米白点阵纸面、墨线描边、手绘圆角、硬偏移阴影、陶土橙点缀和等宽读数。概览改为四张统计卡片，保留节点指标、延迟与历史图表操作。第三个内置主题 **Win2000 · 经典桌面** 参照 [win2000](https://github.com/guboysky/win2000) 的 Windows 2000 界面自行编写样式：蓝色桌面、灰色立体窗口、蓝色渐变标题栏和分段进度条。三个内置主题的 Powered by VibeMonitor 均固定悬浮在屏幕底部。内置主题不可删除，选择保存在数据库中。
+Design 是唯一内置默认主题。Hex（原默认）、Rakugaki、Win2000、Design 和 ServerStatus 的独立 ZIP 安装包位于 [themes](themes/README.md)。其他主题仅在上传后出现在主题管理中；旧内置主题选择在升级后回到 Design，已上传的自定义主题保留。
 
 ### 自定义主题包
 
@@ -12,7 +12,7 @@ ZIP 包最大 2MB，根目录包含 `theme.json` 和其中指定的一个 CSS �
 {"name":"海蓝主题","version":"1.0.0","description":"基于默认主题修改主色","css":"theme.css"}
 ```
 
-`theme.css` 会在默认样式之后加载，可覆盖 CSS 变量和已有样式：
+`theme.css` 会替换 Design 样式层，在共享基础样式之后加载。表格主题可用 `:root { --vibemonitor-layout: serverstatus; }` 启用表格布局；其他主题使用卡片布局。可覆盖 CSS 变量和已有样式：
 
 ```css
 :root {

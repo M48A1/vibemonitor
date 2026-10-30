@@ -479,7 +479,7 @@ function updateSiteIconDisplay(iconUrl) {
 }
 
 function applyPublicSettings(data) {
-  const settings = JSON.stringify([data.site_title || '', data.site_icon || '', data.site_theme || 'hex']);
+  const settings = JSON.stringify([data.site_title || '', data.site_icon || '', data.site_theme || 'design']);
   if (settings === lastPublicSettings) return;
   lastPublicSettings = settings;
   if (data.site_title) {
@@ -487,7 +487,7 @@ function applyPublicSettings(data) {
     document.title = data.site_title;
   }
   updateSiteIconDisplay(data.site_icon || '');
-  window.VibeThemes.apply(data.site_theme || 'hex');
+  window.VibeThemes.apply(data.site_theme || 'design');
 }
 
 async function fetchPublicSettings() {

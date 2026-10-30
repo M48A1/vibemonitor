@@ -104,20 +104,21 @@ window.VibeHex = (() => {
   // per-interface accounting counters do not invalidate its rendered markup.
   function renderKey(node) {
     const r = node.last_report || {}, net = r.network || {};
-    const siteTheme = document.documentElement.dataset.siteTheme || 'hex';
+    const siteTheme = document.documentElement.dataset.siteTheme || 'design';
+    const siteLayout = document.documentElement.dataset.siteLayout || 'cards';
     return JSON.stringify([
       node.uuid, node.name, node.region, node.online, node.basic_info, node.profile,
       node.ping_preview, node.traffic_limit, node.cycle_total_used,
       node.reset_day, node.days_until_reset, !!node.last_report,
       r.cpu, r.ram, r.disk, r.ping_results, Math.floor((r.uptime || 0) / 60),
       net.up, net.down, net.totalUp, net.totalDown,
-      siteTheme, siteTheme === 'serverstatus' ? [r.swap, r.load, r.connections, r.process] : null,
+      siteTheme, siteLayout, siteLayout === 'serverstatus' ? [r.swap, r.load, r.connections, r.process] : null,
       new Date().toDateString()
     ]);
   }
 
   function renderNode(node) {
-    if (document.documentElement.dataset.siteTheme === 'serverstatus') return renderServerStatusNode(node);
+    if (document.documentElement.dataset.siteLayout === 'serverstatus') return renderServerStatusNode(node);
     const r = node.last_report || {};
     const info = node.basic_info || {};
     const live = node.online && !!node.last_report;

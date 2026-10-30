@@ -12,11 +12,12 @@ import (
 )
 
 type RPCHandler struct {
-	store *store.Store
+	store         *store.Store
+	identityEpoch string
 }
 
 func NewRPCHandler(s *store.Store) *RPCHandler {
-	return &RPCHandler{store: s}
+	return &RPCHandler{store: s, identityEpoch: store.GenerateToken(16)}
 }
 
 func extractToken(r *http.Request) string {
@@ -73,8 +74,9 @@ func (h *RPCHandler) HandleV2RPC(w http.ResponseWriter, r *http.Request) {
 		targets := h.store.NodeTargets(node.UUID)
 		log.Printf("[RPC] BasicInfo reported from node %s", node.Name)
 		writeJSON(w, http.StatusOK, protocol.SuccessResponse(req.ID, map[string]any{
-			"status":       "success",
-			"ping_targets": targets,
+			"status":                 "success",
+			"ping_targets":           targets,
+			"network_identity_epoch": h.identityEpoch,
 		}))
 
 	case protocol.MethodAgentReport:
@@ -90,9 +92,10 @@ func (h *RPCHandler) HandleV2RPC(w http.ResponseWriter, r *http.Request) {
 		}
 		targets := h.store.NodeTargets(node.UUID)
 		writeJSON(w, http.StatusOK, protocol.SuccessResponse(req.ID, map[string]any{
-			"status":       "success",
-			"events":       []any{},
-			"ping_targets": targets,
+			"status":                 "success",
+			"events":                 []any{},
+			"ping_targets":           targets,
+			"network_identity_epoch": h.identityEpoch,
 		}))
 
 	case protocol.MethodAgentPull:

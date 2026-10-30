@@ -370,7 +370,7 @@ func (s *Store) load(defaultPassword, username string) error {
 			AdminPassword:               hashedPassword,
 			AdminUsername:               username,
 			SiteTitle:                   "VibeMonitor",
-			SiteTheme:                   "hex",
+			SiteTheme:                   DefaultTheme,
 			ColorMode:                   "light",
 			AutoDiscoveryKey:            GenerateToken(16),
 			PingTargets:                 []protocol.PingTarget{},
