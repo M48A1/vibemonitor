@@ -37,7 +37,7 @@ window.VibeHex = (() => {
       parts.push(`<span class="node-google-region" title="Region detected by YouTube Premium · Direct ${family}">${icon}${family} ${escapeHtml(englishRegionName(code))}</span>`);
       showGoogle = false;
     }
-    return `<span class="node-network-identity"><span class="node-asn" title="ASN · Direct IPv4">${escapeHtml(asn)}</span>${parts.join('<span aria-hidden="true">·</span>')}</span>`;
+    return `<span class="node-network-identity"><span class="node-asn" title="ASN · Direct IPv4">ASN：${escapeHtml(asn)}</span>${parts.join('<span aria-hidden="true">·</span>')}</span>`;
   }
 
   function serverStatusBar(value) {
