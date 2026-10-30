@@ -45,10 +45,10 @@ type BasicInfoParams struct {
 // NetworkIdentity is a weekly snapshot of the node's direct IPv4 egress.
 // Empty fields mean that the corresponding provider could not be queried.
 type NetworkIdentity struct {
-	ASN          string    `json:"asn"`
-	ASName       string    `json:"as_name"`
-	GoogleRegion string    `json:"google_region"`
-	CheckedAt    time.Time `json:"checked_at"`
+	ASN           string    `json:"asn"`
+	ASName        string    `json:"as_name"`
+	YouTubeRegion string    `json:"youtube_region"`
+	CheckedAt     time.Time `json:"checked_at"`
 }
 
 type BasicInfo struct {

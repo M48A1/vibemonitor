@@ -16,8 +16,16 @@ window.VibeHex = (() => {
   function networkIdentityLine(info) {
     const identity = info.network_identity || {};
     const asn = identity.asn ? `${identity.asn} ${identity.as_name || ''}`.trim() : 'Unknown';
-    const region = identity.google_region || 'Unknown';
-    return `<span class="node-network-identity"><span title="ASN · Direct IPv4">${escapeHtml(asn)}</span><span aria-hidden="true">·</span><span class="node-google-region" title="Google region · Direct IPv4"><img src="/google-mark.svg" alt="Google" width="14" height="14">${escapeHtml(region)}</span></span>`;
+    let region = 'Unknown';
+    const code = identity.youtube_region || '';
+    if (/^[A-Z]{2}$/.test(code)) {
+      try {
+        region = new Intl.DisplayNames(['en'], { type: 'region', fallback: 'none' }).of(code) || 'Unknown';
+      } catch (_) {
+        region = code;
+      }
+    }
+    return `<span class="node-network-identity"><span title="ASN · Direct IPv4">${escapeHtml(asn)}</span><span aria-hidden="true">·</span><span class="node-google-region" title="Region detected by YouTube Premium · Direct IPv4"><img src="/google-mark.svg" alt="Google" width="14" height="14">${escapeHtml(region)}</span></span>`;
   }
 
   function serverStatusBar(value) {
