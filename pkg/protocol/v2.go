@@ -42,20 +42,30 @@ type BasicInfoParams struct {
 }
 
 // BasicInfo describes static hardware and OS information of a client node
+// NetworkIdentity is a weekly snapshot of the node's direct IPv4 egress.
+// Empty fields mean that the corresponding provider could not be queried.
+type NetworkIdentity struct {
+	ASN          string    `json:"asn"`
+	ASName       string    `json:"as_name"`
+	GoogleRegion string    `json:"google_region"`
+	CheckedAt    time.Time `json:"checked_at"`
+}
+
 type BasicInfo struct {
-	ReportIntervalSeconds float64 `json:"report_interval_seconds,omitempty"`
-	CPUName               string  `json:"cpu_name"`
-	CPUCores              int     `json:"cpu_cores"`
-	CPUPhysicalCores      int     `json:"cpu_physical_cores"`
-	Arch                  string  `json:"arch"`
-	OS                    string  `json:"os"`
-	KernelVersion         string  `json:"kernel_version"`
-	MemTotal              int64   `json:"mem_total"`
-	SwapTotal             int64   `json:"swap_total"`
-	DiskTotal             int64   `json:"disk_total"`
-	GPUName               string  `json:"gpu_name"`
-	Virtualization        string  `json:"virtualization"`
-	Version               string  `json:"version"`
+	NetworkIdentity       *NetworkIdentity `json:"network_identity,omitempty"`
+	ReportIntervalSeconds float64          `json:"report_interval_seconds,omitempty"`
+	CPUName               string           `json:"cpu_name"`
+	CPUCores              int              `json:"cpu_cores"`
+	CPUPhysicalCores      int              `json:"cpu_physical_cores"`
+	Arch                  string           `json:"arch"`
+	OS                    string           `json:"os"`
+	KernelVersion         string           `json:"kernel_version"`
+	MemTotal              int64            `json:"mem_total"`
+	SwapTotal             int64            `json:"swap_total"`
+	DiskTotal             int64            `json:"disk_total"`
+	GPUName               string           `json:"gpu_name"`
+	Virtualization        string           `json:"virtualization"`
+	Version               string           `json:"version"`
 }
 
 // ReportParams wraps agent.report parameters

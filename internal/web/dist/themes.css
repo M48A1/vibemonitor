@@ -211,3 +211,10 @@ body .hex-card-footer::before { color: var(--label-orange); }
 @media (prefers-reduced-motion: reduce) {
   *, *::after { transition: none !important; animation: none !important; }
 }
+
+/* Weekly direct-egress identity, immediately below the operating system. */
+.node-network-identity { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 7px; color: var(--muted-foreground); font-size: 11px; line-height: 1.5; min-width: 0; overflow-wrap: anywhere; }
+.node-google-region { display: inline-flex; align-items: center; gap: 5px; }
+.node-google-region img { flex: 0 0 14px; width: 14px; height: 14px; }
+.ss-detail-value > .node-network-identity { margin-top: 4px; }
+html[data-site-theme="win2000"] .hex-node-identity .node-network-identity { color: #fff; }

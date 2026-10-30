@@ -38,10 +38,11 @@ type Client struct {
 	collector  monitor.Collector
 	httpClient *http.Client
 
-	mu          sync.RWMutex
-	pingTargets []protocol.PingTarget
-	pingResults []protocol.PingResult
-	pingTrigger chan struct{}
+	mu              sync.RWMutex
+	pingTargets     []protocol.PingTarget
+	pingResults     []protocol.PingResult
+	pingTrigger     chan struct{}
+	networkIdentity *protocol.NetworkIdentity
 }
 
 const maxPingConcurrency = 8
@@ -137,6 +138,9 @@ func (c *Client) Run(ctx context.Context) error {
 		}
 		if err == nil {
 			info.ReportIntervalSeconds = c.interval.Seconds()
+			c.mu.RLock()
+			info.NetworkIdentity = c.networkIdentity
+			c.mu.RUnlock()
 			var resp *protocol.Response
 			resp, err = c.postRPCContext(ctx, protocol.MethodAgentBasicInfo, protocol.BasicInfoParams{Info: info})
 			if ctx.Err() != nil {
@@ -162,6 +166,10 @@ func (c *Client) Run(ctx context.Context) error {
 		return nil
 	}
 
+	// Network lookups run independently from sampling and reporting.
+	identityRefreshed := make(chan struct{}, 1)
+	go c.runNetworkIdentityWorker(ctx, identityRefreshed)
+
 	// 2. Start Ping monitoring worker
 	go c.runPingWorker(ctx)
 	// Keep sampling while HTTP reports or basic-info refreshes are blocked.
@@ -184,6 +192,8 @@ func (c *Client) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			log.Printf("[Agent] Stopped by context.")
 			return nil
+		case <-identityRefreshed:
+			reportBasicInfo()
 		case <-basicTicker.C:
 			reportBasicInfo()
 		case <-ticker.C:

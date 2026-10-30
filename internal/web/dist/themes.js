@@ -13,6 +13,13 @@ window.VibeHex = (() => {
     return `<${tag} class="hex-metric${interactive ? ' metric-button' : ''}"${attributes}><div class="metric-meta"><span class="metric-name">${label}</span><strong>${pct == null ? '—' : pct.toFixed(1) + '%'}</strong></div><div class="progress-track"><div class="progress-bar ${level}" style="width:${pct || 0}%"></div></div><small>${detail}</small></${tag}>`;
   }
 
+  function networkIdentityLine(info) {
+    const identity = info.network_identity || {};
+    const asn = identity.asn ? `${identity.asn} ${identity.as_name || ''}`.trim() : 'Unknown';
+    const region = identity.google_region || 'Unknown';
+    return `<span class="node-network-identity"><span title="ASN · Direct IPv4">${escapeHtml(asn)}</span><span aria-hidden="true">·</span><span class="node-google-region" title="Google region · Direct IPv4"><img src="/google-mark.svg" alt="Google" width="14" height="14">${escapeHtml(region)}</span></span>`;
+  }
+
   function serverStatusBar(value) {
     const pct = value == null ? null : Math.max(0, Math.min(100, value));
     const level = pct >= 90 ? ' critical' : pct >= 80 ? ' warn' : '';
@@ -54,7 +61,7 @@ window.VibeHex = (() => {
         </summary>
         <div class="ss-expanded">
           <div class="ss-detail-grid">
-            ${detail('系统', `${escapeHtml(info.os || '等待上报')}${info.arch ? ' · ' + escapeHtml(info.arch) : ''}`)}
+            ${detail('系统', `${escapeHtml(info.os || '等待上报')}${info.arch ? ' · ' + escapeHtml(info.arch) : ''}${networkIdentityLine(info)}`)}
             ${detail('CPU', `${escapeHtml(info.cpu_name || cpu.name || '—')} · ${escapeHtml(info.cpu_cores || cpu.cores || '—')} 核`)}
             ${detail('负载', live ? [load.load1, load.load5, load.load15].map(v => (number(v) || 0).toFixed(2)).join(' / ') : '—')}
             ${detail('内存', live ? capacity(ram) : '—')}
@@ -113,7 +120,7 @@ window.VibeHex = (() => {
     const limit = number(node.traffic_limit);
     const traffic = limit > 0 ? percent(used, limit) : null;
     return `<article class="node-card hex-card ${node.online ? '' : 'offline'}" data-node-id="${escapeHtml(node.uuid)}">
-      <div class="hex-node-header"><div class="hex-node-identity"><span class="hex-region">${getRegionBadge(node.region)}</span><h2>${escapeHtml(node.name)}</h2><span class="hex-system">${escapeHtml(info.os || '等待上报')} ${info.arch ? '· ' + escapeHtml(info.arch) : ''}</span></div><span class="hex-status ${node.online ? 'is-online' : ''}"><i></i>${node.online ? '在线' : '离线'}</span></div>
+      <div class="hex-node-header"><div class="hex-node-identity"><span class="hex-region">${getRegionBadge(node.region)}</span><h2>${escapeHtml(node.name)}</h2><span class="hex-system">${escapeHtml(info.os || '等待上报')} ${info.arch ? '· ' + escapeHtml(info.arch) : ''}</span>${networkIdentityLine(info)}</div><span class="hex-status ${node.online ? 'is-online' : ''}"><i></i>${node.online ? '在线' : '离线'}</span></div>
       <div class="hex-resources">
         ${metric('CPU', live ? number(cpu.usage) : null, `${info.cpu_cores || cpu.cores || '—'} 核`, node.uuid, 'cpu')}
         ${metric('内存', live ? percent(ram.used, ram.total) : null, capacity(ram), node.uuid, 'memory')}

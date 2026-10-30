@@ -1100,6 +1100,11 @@ func (s *Store) IngestBasicInfo(token string, info protocol.BasicInfo) (*Node, e
 	}
 
 	node := s.nodes[uuid]
+	// Preserve the persisted weekly snapshot while a restarted/legacy agent
+	// has no lookup result yet. A completed failed lookup explicitly clears it.
+	if info.NetworkIdentity == nil && node.BasicInfo != nil {
+		info.NetworkIdentity = node.BasicInfo.NetworkIdentity
+	}
 	node.BasicInfo = &info
 	s.dirty = true
 	node.LastSeen = time.Now().UTC()
