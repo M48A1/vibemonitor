@@ -35,7 +35,9 @@ body::before {
 }
 ::selection { background: var(--primary-light); color: var(--foreground); }
 .container {
-  max-width: 1480px;
+  /* A centred sheet: at 1480 the node rows ran edge to edge on wide screens,
+     so the compact meters and ping strips looked stranded in a blank card. */
+  max-width: 1200px;
   width: calc(100% - 48px);
   margin: 32px auto 96px;
   padding: 24px 28px 28px;
@@ -83,7 +85,10 @@ body::before {
 .node-card, .node-card:hover { background: transparent; border: 0; border-radius: 0; box-shadow: none; }
 .hex-card {
   display: grid;
-  grid-template-columns: repeat(3, minmax(90px, 1fr)) minmax(0, 7.8fr);
+  /* The meters take a fixed, readable width and the identity columns absorb the
+     rest, so a row ends at the card's right edge instead of trailing off into a
+     blank band. */
+  grid-template-columns: repeat(3, minmax(90px, 1fr)) minmax(0, 540px);
   grid-template-areas:
     "identity identity identity resources"
     "network network network resources"
@@ -120,7 +125,7 @@ body .hex-card .metric-button:focus-visible .metric-name { color: var(--primary)
 .node-google-region img { flex-basis: 1em; width: 1em; height: 1em; }
 .hex-status { padding: 3px 6px; border-radius: 5px; background: var(--card-data-bg); }
 .hex-status.is-online { background: color-mix(in srgb, var(--success) 12%, transparent); }
-.hex-resources { grid-area: resources; margin-left: 18px; gap: 6px 16px; }
+.hex-resources { grid-area: resources; gap: 6px 12px; }
 .hex-metric { gap: 3px; }
 .hex-metric .metric-meta strong { font-size: 12px; font-weight: 500; }
 .hex-metric .metric-name { font-size: 11px; }
@@ -136,7 +141,7 @@ body .hex-card .metric-button:focus-visible .metric-name { color: var(--primary)
 .hex-facts > div { align-items: flex-start; gap: 2px; text-align: left; }
 .hex-facts > div + div { border: 0; }
 .hex-facts strong { font-size: 10px; }
-.hex-probes { grid-area: probes; margin-left: 18px; padding: 0; border: 0; }
+.hex-probes { grid-area: probes; padding: 0; border: 0; }
 .hex-billing { grid-area: billing; padding: 0; gap: 6px; border: 0; background: transparent; border-radius: 0; }
 .hex-billing > div { gap: 2px; }
 .hex-card-footer { grid-area: price; min-width: 0; flex-direction: column; align-items: flex-start; gap: 2px; margin-top: 0; border: 0; padding: 0; font-size: 11px; }
@@ -159,18 +164,19 @@ body .hex-card .metric-button:focus-visible .metric-name { color: var(--primary)
 .theme-row { background: var(--card-bg); border-radius: 8px; }
 /* Retain shared fixed positioning, safe-area inset and horizontal centering. */
 .powered-by-pill { background: rgba(253, 252, 249, .94); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-lg); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
-/* Wide screens fit all six metrics in one strip. */
-@media (min-width: 1320px) {
+/* Six metrics share one strip as soon as the centred sheet reaches full width,
+   so a 1280 laptop keeps a single row of stats. */
+@media (min-width: 1248px) {
   .hex-stats-grid { --hex-stat-columns: 6; }
 }
 @media (max-width: 1120px) {
   .hex-card { grid-template-columns: repeat(3, minmax(80px, 1fr)) minmax(0, 5.4fr); }
-  .hex-stats-grid { --hex-stat-columns: 2; }
-  .hex-stat:nth-child(n) { padding: 14px; }
 }
 @media (max-width: 720px) {
   .container { width: calc(100% - 24px); margin-top: 18px; padding: 18px 14px; border-radius: 12px; }
   .hex-stat dd strong { font-size: 20px; }
+  .hex-stats-grid { --hex-stat-columns: 2; }
+  .hex-stat:nth-child(n) { padding: 14px; }
   .hex-card {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     grid-template-areas:
@@ -183,7 +189,6 @@ body .hex-card .metric-button:focus-visible .metric-name { color: var(--primary)
     padding: 10px 0;
     gap: 8px 6px;
   }
-  .hex-resources, .hex-probes { margin-left: 0; }
   .hex-facts strong { font-size: 11px; }
 }
 @media (max-width: 360px) {

@@ -26,7 +26,7 @@
   --shadow-sm: 0 10px 30px rgba(42, 55, 99, .12);
   --shadow-md: 0 20px 48px rgba(42, 55, 99, .18);
 }
-.container { position: relative; z-index: 1; max-width: 1480px; padding: 24px 36px 96px; }
+.container { position: relative; z-index: 1; max-width: 1200px; padding: 24px 36px 96px; }
 body { background: var(--background); }
 .powered-by-pill {
   position: fixed;

@@ -178,7 +178,7 @@ body {
 button, input, select, textarea { font-family: inherit; }
 
 .container {
-  max-width: 1440px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 24px 24px 60px;
 }
@@ -778,6 +778,9 @@ body:has(.modal-overlay.active) { overflow: hidden; }
 .sample-bar.slow { background:#fbbf24; } .sample-bar.lost { background:#fb7185; }
 .sample-bar.empty { opacity:.35; }
 @media (max-width:400px) { .ping-panels { grid-template-columns:1fr; } }
+/* The CPU / memory / disk / traffic meters follow the ping strip: capped to the
+   same width so each one reads as a gauge instead of a full-width bar. */
+@media (min-width:721px) { .hex-resources { max-width:540px; } }
 
 /* Password input with toggle button */
 .password-input-wrap {
