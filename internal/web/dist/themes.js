@@ -88,7 +88,7 @@ window.VibeHex = (() => {
           <span class="ss-cell ss-region">${getRegionBadge(node.region)}</span>
           <span class="ss-cell ss-system" title="${escapeHtml(info.os || '等待上报')}">${escapeHtml(info.os || '等待上报')}</span>
           <span class="ss-cell ss-uptime">${live ? formatUptime(r.uptime) : '—'}</span>
-          <span class="ss-cell ss-expiry${expiryState}">${bill.remaining}</span>
+          <span class="ss-cell ss-expiry${expiryState}">${bill.date}</span>
           <span class="ss-cell ss-load${loadState}">${load1 != null ? load1.toFixed(2) : '—'}</span>
           <span class="ss-cell ss-network"><span>↓ ${speed(net.down)}</span><span>↑ ${speed(net.up)}</span></span>
           <span class="ss-cell ss-traffic">${serverStatusBar(trafficUsage)}</span>
@@ -110,8 +110,8 @@ window.VibeHex = (() => {
             ${detail('累计流量', live ? `↓ ${formatBytes(net.totalDown || 0)} · ↑ ${formatBytes(net.totalUp || 0)}` : '—')}
             ${detail('周期流量', limit > 0 ? `${formatBytes(used || 0)} / ${formatBytes(limit)}` : '未设置配额')}
             ${detail('在线时长', live ? formatUptime(r.uptime) : '—')}
-            ${detail('到期时间', `${bill.date} · ${bill.remaining}`)}
-            ${detail('流量重置', node.reset_day > 0 ? `每月 ${node.reset_day} 日${node.days_until_reset != null ? ' · 剩余 ' + node.days_until_reset + ' 天' : ''}` : '未设置')}
+            ${detail('到期时间', bill.date)}
+            ${detail('流量重置', node.reset_day > 0 ? `每月 ${node.reset_day} 日` : '未设置')}
             ${detail('费用金额', bill.price)}
           </div>
           <div class="ss-actions">
@@ -136,7 +136,7 @@ window.VibeHex = (() => {
     return JSON.stringify([
       node.uuid, node.name, node.region, node.online, node.basic_info, node.profile,
       node.ping_preview, node.traffic_limit, node.cycle_total_used,
-      node.reset_day, node.days_until_reset, !!node.last_report,
+      node.reset_day, !!node.last_report,
       r.cpu, r.ram, r.disk, r.ping_results, Math.floor((r.uptime || 0) / 60),
       net.up, net.down, net.totalUp, net.totalDown,
       siteTheme, siteLayout, siteLayout === 'serverstatus' ? [r.swap, r.load, r.connections, r.process] : null,
@@ -168,7 +168,7 @@ window.VibeHex = (() => {
       <div class="hex-network"><div><span>↑ 上行</span><strong>${speed(net.up)}</strong></div><button class="hex-network-total" type="button" data-action="resource" data-uuid="${escapeHtml(node.uuid)}" data-metric="network" title="查看实时速率历史曲线" aria-label="查看实时速率历史曲线"><span>实时速率${historyIcon()}</span><strong>${speed(totalRate)}</strong></button><div><span>↓ 下行</span><strong>${speed(net.down)}</strong></div></div>
       <div class="hex-facts"><div><span>累计上传</span><strong>${number(net.totalUp) == null ? '—' : formatBytes(net.totalUp)}</strong></div><div><span>累计下载</span><strong>${number(net.totalDown) == null ? '—' : formatBytes(net.totalDown)}</strong></div><div><span>在线时长</span><strong>${live && number(r.uptime) != null ? formatUptime(r.uptime) : '—'}</strong></div></div>
       <div class="hex-probes">${renderPingPanels(node)}</div>
-      <div class="hex-billing"><div><span>到期时间</span><strong>${bill.date}</strong><small>${bill.remaining}</small></div><div><span>流量重置</span><strong>${node.reset_day > 0 ? '每月 ' + node.reset_day + ' 日' : '未设置'}</strong><small>${node.reset_day > 0 && node.days_until_reset != null ? (node.days_until_reset === 0 ? '今日重置' : '剩余 ' + node.days_until_reset + ' 天') : '按节点账期统计'}</small></div></div>
+      <div class="hex-billing"><div><span>到期时间</span><strong>${bill.date}</strong></div><div><span>流量重置</span><strong>${node.reset_day > 0 ? '每月 ' + node.reset_day + ' 日' : '未设置'}</strong></div></div>
       <footer class="hex-card-footer"><strong>${bill.price}</strong></footer>
     </article>`;
   }
