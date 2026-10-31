@@ -886,6 +886,9 @@ type NodeOptions struct {
 var (
 	ErrInvalidNodeOrder = errors.New("invalid node order")
 	ErrNodeNotFound     = errors.New("node not found")
+	// ErrNodeNameTaken means a node with that name already exists. Callers turn
+	// it into a conflict rather than a failure: the request was well formed.
+	ErrNodeNameTaken = errors.New("node name already exists")
 )
 
 func (s *Store) CreateNode(name, group, region string) (*Node, error) {
@@ -905,6 +908,25 @@ func (s *Store) CreateNodeWithOptions(opts NodeOptions) (*Node, error) {
 }
 
 func (s *Store) CreateNodeWithOptionsContext(ctx context.Context, opts NodeOptions) (*Node, error) {
+	return s.createNodeContext(ctx, opts, false)
+}
+
+// CreateNodeWithUniqueNameContext creates a node only when no existing node
+// already carries the name, compared without case: hostnames are not case
+// sensitive, and two nodes differing only by case would be impossible to tell
+// apart in the panel. Self-registration uses it so that a machine which
+// installs twice does not leave a second, indistinguishable entry behind. The
+// check shares the critical section with the insert, so two registrations
+// racing on one hostname cannot both pass.
+func (s *Store) CreateNodeWithUniqueNameContext(ctx context.Context, name, group, region string) (*Node, error) {
+	return s.createNodeContext(ctx, NodeOptions{
+		Name:   name,
+		Group:  group,
+		Region: region,
+	}, true)
+}
+
+func (s *Store) createNodeContext(ctx context.Context, opts NodeOptions, uniqueName bool) (*Node, error) {
 	if err := validateTrafficOptions(opts, false); err != nil {
 		return nil, err
 	}
@@ -937,6 +959,13 @@ func (s *Store) CreateNodeWithOptionsContext(ctx context.Context, opts NodeOptio
 	}
 	if opts.Region == "" {
 		opts.Region = "DEFAULT"
+	}
+	if uniqueName {
+		for _, existing := range s.nodes {
+			if strings.EqualFold(existing.Name, opts.Name) {
+				return nil, ErrNodeNameTaken
+			}
+		}
 	}
 
 	trafficLimitBytes, _ := trafficGBToBytes(opts.TrafficLimitGB) // Validated above.

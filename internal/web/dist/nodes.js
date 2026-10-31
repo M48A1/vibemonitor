@@ -554,6 +554,63 @@ function setEditNodeBusy(message) {
   status.hidden = !message;
 }
 
+// The panel's own build version is fetched once: it cannot change while the
+// page is open, and only the edit dialog asks for it.
+let panelVersionPromise = null;
+
+function loadPanelVersion() {
+  if (!panelVersionPromise) {
+    panelVersionPromise = fetch('/api/version', { credentials: 'same-origin', cache: 'no-store' })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => (data && typeof data.version === 'string' ? data.version.trim() : ''))
+      .catch(() => '');
+  }
+  return panelVersionPromise;
+}
+
+// "v1.2.3" and "1.2.3-rc1" are the same build as far as an operator cares.
+function versionParts(value) {
+  const cleaned = String(value || '').trim().replace(/^v/i, '').split(/[+\-]/)[0];
+  return /^\d+(\.\d+)*$/.test(cleaned) ? cleaned.split('.').map(Number) : null;
+}
+
+// Compares the agent build a node reports with the panel it reports to, so an
+// outdated probe is visible without reading the unit file on the host.
+function versionState(agent, panel) {
+  if (!agent) return { state: 'unknown', label: '节点未上报版本' };
+  const a = versionParts(agent), p = versionParts(panel);
+  if (!a || !p) return { state: '', label: '' };
+  for (let i = 0; i < Math.max(a.length, p.length); i++) {
+    const diff = (a[i] || 0) - (p[i] || 0);
+    if (diff) return diff < 0
+      ? { state: 'outdated', label: '低于主控，可升级探针' }
+      : { state: 'match', label: '高于主控' };
+  }
+  return { state: 'match', label: '与主控一致' };
+}
+
+function renderNodeVersions(node) {
+  const agent = String((node.basic_info && node.basic_info.version) || '').trim();
+  const panelEl = document.getElementById('editPanelVersion');
+  const agentEl = document.getElementById('editAgentVersion');
+  const stateEl = document.getElementById('editVersionState');
+  const uuid = node.uuid;
+  agentEl.textContent = agent || '未上报';
+  panelEl.textContent = '读取中…';
+  stateEl.hidden = true;
+  stateEl.textContent = '';
+  loadPanelVersion().then(panel => {
+    // Another node may have been opened while the version was in flight.
+    if (document.getElementById('editNodeUUID').value !== uuid) return;
+    panelEl.textContent = panel || '未知';
+    const verdict = versionState(agent, panel);
+    stateEl.textContent = verdict.label;
+    stateEl.hidden = !verdict.label;
+    if (verdict.state) stateEl.dataset.state = verdict.state;
+    else delete stateEl.dataset.state;
+  });
+}
+
 document.getElementById('retryEditNodeBtn').addEventListener('click', () => {
   openEditModal(document.getElementById('editNodeUUID').value);
 });
@@ -569,6 +626,7 @@ window.openEditModal = async function(uuid) {
   editNodeProfileReady = false;
   document.getElementById('editNodeUUID').value = node.uuid;
   document.getElementById('editNodeName').value = node.name || '';
+  renderNodeVersions(node);
   document.getElementById('editNodeRegion').value = node.region || '';
   const quotaInput = document.getElementById('editNodeTrafficLimit');
   quotaInput.value = node.traffic_limit > 0 ? String(node.traffic_limit / (1024*1024*1024)) : '';

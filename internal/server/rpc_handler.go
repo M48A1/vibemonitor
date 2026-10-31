@@ -3,6 +3,7 @@ package server
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -191,7 +192,19 @@ func (h *RPCHandler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 		name = "auto-node"
 	}
 
-	node, err := h.store.CreateNodeContext(r.Context(), name, "Auto", "DEFAULT")
+	// A machine that installs twice would otherwise leave two nodes with the
+	// same name, and nothing in the panel could tell them apart. Refuse instead,
+	// and say which node holds the name so the operator can either delete it or
+	// register under a different name.
+	node, err := h.store.CreateNodeWithUniqueNameContext(r.Context(), name, "Auto", "DEFAULT")
+	if errors.Is(err, store.ErrNodeNameTaken) {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"status": "conflict",
+			"error":  "a node with this name already exists",
+			"data":   map[string]any{"name": name},
+		})
+		return
+	}
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{
 			"status": "error",

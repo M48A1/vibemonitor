@@ -332,6 +332,11 @@
       </div>
       <p id="editNodeStatus" role="status" aria-live="polite" hidden></p>
       <button type="button" class="btn" id="retryEditNodeBtn" hidden>重新加载</button>
+      <div class="version-row" id="editNodeVersions">
+        <span class="version-cell">主控版本 <b id="editPanelVersion">—</b></span>
+        <span class="version-cell">节点版本 <b id="editAgentVersion">—</b></span>
+        <span class="version-state" id="editVersionState" hidden></span>
+      </div>
       <form id="editNodeForm">
         <input type="hidden" id="editNodeUUID">
         <div class="form-group">

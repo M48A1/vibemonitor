@@ -564,6 +564,40 @@ body:has(.modal-overlay.active) { overflow: hidden; }
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 32%, transparent);
 }
 
+/* Panel and agent versions side by side: one glance says whether the probe
+   reporting this node is the same build as the panel it reports to. */
+.version-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  margin: 4px 0 14px;
+  padding: 10px 14px;
+  background: var(--card-data-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+
+.version-cell b {
+  color: var(--foreground);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.version-state {
+  padding: 2px 9px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.version-state[data-state="match"] { color: #35a680; }
+.version-state[data-state="outdated"] { color: #fbbf24; }
+.version-state[data-state="unknown"] { color: var(--muted-foreground); }
+
 .telegram-template-section {
   border-top: 1px solid var(--border);
   padding-top: 14px;

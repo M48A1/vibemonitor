@@ -627,7 +627,7 @@ configure_domain_proxy() {
         if [ -s "$UPDATE_DIR/acme-probe-error" ]; then cat "$UPDATE_DIR/acme-probe-error" >&2; fi
         if nginx -T >"$UPDATE_DIR/nginx-expanded.conf" 2>"$UPDATE_DIR/nginx-expanded-error"; then
             if ! grep -Fq "# configuration file $NGINX_CONF:" "$UPDATE_DIR/nginx-expanded.conf"; then
-                warn "Nginx 未加载 $NGINX_CONF；请检查 nginx.conf 的 conf.d 引用。"
+                warn "Nginx 未加载 ${NGINX_CONF}；请检查 nginx.conf 的 conf.d 引用。"
             fi
             if grep -iq 'conflicting server name' "$UPDATE_DIR/nginx-expanded-error"; then
                 warn "Nginx 检测到重复的 server_name；请检查旧站点是否占用了 $domain:80。"
@@ -733,7 +733,7 @@ configure_existing_server_domain() {
     old_listen="--listen $(unit_arg "0.0.0.0:$port")"
     new_listen="--listen $(unit_arg "127.0.0.1:$port")"
     content=$(cat "$unit")
-    [[ "$content" == *"$old_listen"* || "$content" == *"$new_listen"* ]] || error "主控服务未使用预期的监听地址和端口，请检查 $unit。"
+    [[ "$content" == *"$old_listen"* || "$content" == *"$new_listen"* ]] || error "主控服务未使用预期的监听地址和端口，请检查 ${unit}。"
     old_domain=$(managed_proxy_domain)
     begin_update "$SERVER_SERVICE"
     configure_domain_proxy "$domain" "$port" "$email"
@@ -746,7 +746,7 @@ configure_existing_server_domain() {
     finish_update "$port" "$domain"
     success "访问地址：https://$domain"
     if [ -n "$old_domain" ] && [ "$old_domain" != "$domain" ]; then
-        info "旧域名 $old_domain 已从反代配置移除。请将各探针的主控地址改为 https://$domain。"
+        info "旧域名 $old_domain 已从反代配置移除。请将各探针的主控地址改为 https://${domain}。"
         info "旧证书仍由 Certbot 保留；确认不再使用后，可在管理菜单选择 10 清理。"
     fi
 }
@@ -760,7 +760,7 @@ ensure_agent_user() {
     [ -x "$shell" ] || shell=/sbin/nologin
     [ -x "$shell" ] || shell=/bin/false
     useradd --system --no-create-home --home-dir /nonexistent --shell "$shell" --user-group "$AGENT_USER" >/dev/null 2>&1 ||
-        error "无法创建运行探针的系统用户 $AGENT_USER。"
+        error "无法创建运行探针的系统用户 ${AGENT_USER}。"
 }
 
 # Installs the credential where systemd reads it as root. It must not be an
@@ -784,15 +784,31 @@ AGENT_REGISTERED_NAME=""
 AGENT_REGISTERED_TOKEN=""
 
 register_node() {
-    local server="$1" key="$2" name reply token
+    local server="$1" key="$2" wanted="${3:-}" name reply token code
     [[ "$key" =~ ^[[:xdigit:]]{32}$ ]] || error "临时注册密钥格式不正确：面板生成的密钥是 32 位十六进制。"
-    name=$(hostname 2>/dev/null || true)
-    name=$(printf '%s' "$name" | tr -c 'A-Za-z0-9._-' '-' | cut -c1-64 | sed 's/[-.]*$//')
-    [ -n "$name" ] || name=auto-node
-    reply=$(curl -4 -fsS --connect-timeout 10 --max-time 30 \
-        -H "Authorization: Bearer $key" --data '' \
+    if [ -n "$wanted" ]; then
+        name=$(printf '%s' "$wanted" | tr -c 'A-Za-z0-9._-' '-' | cut -c1-64 | sed 's/[-.]*$//')
+        [ -n "$name" ] || error "节点名称只能包含字母、数字、点、下划线和连字符。"
+    else
+        name=$(hostname 2>/dev/null || true)
+        name=$(printf '%s' "$name" | tr -c 'A-Za-z0-9._-' '-' | cut -c1-64 | sed 's/[-.]*$//')
+        [ -n "$name" ] || name=auto-node
+    fi
+    # The status code decides what to say: a name that is already taken is a
+    # conflict on the panel, not a broken server, and the operator can fix it by
+    # choosing another name rather than by retrying blindly.
+    code=$(curl -4 -sS --connect-timeout 10 --max-time 30 -o "$UPDATE_DIR/register.json" \
+        -w '%{http_code}' -H "Authorization: Bearer $key" --data '' \
         "$server/api/clients/register?name=$name") ||
-        error "注册失败：请确认面板里的“临时注册”仍在开放，且本机可以访问主控。"
+        error "注册失败：无法连接主控 ${server}，请确认本机可以访问它。"
+    reply=$(cat "$UPDATE_DIR/register.json" 2>/dev/null || true)
+    case "$code" in
+        200) ;;
+        409) error "主控已有名为“${name}”的节点。请换一个名字重新注册：在注册命令上加 -n 新名字（例如 -n ${name}-2），或先在面板删除旧节点。" ;;
+        401) error "注册失败：面板的“临时注册”已关闭或密钥无效，请重新生成后再试。" ;;
+        429) error "注册失败：同一地址注册过于频繁，请 5 分钟后再试。" ;;
+        *) error "注册失败（HTTP ${code}）：$reply" ;;
+    esac
     token=$(printf '%s' "$reply" | sed -n 's/.*"token"[[:space:]]*:[[:space:]]*"\([0-9a-fA-F]\{32\}\)".*/\1/p')
     [ -n "$token" ] || error "主控没有返回节点 Token：$reply"
     AGENT_REGISTERED_NAME="$name"
@@ -800,13 +816,14 @@ register_node() {
 }
 
 install_agent() {
-    local server="$1" token="$2" interval="${3:-1s}" register="${4:-}"
-    validate_unit_args "$INSTALL_BIN" "$CONFIG_DIR" "$UNIT_DIR" "$server" "$token" "$interval" "$register"
+    local server="$1" token="$2" interval="${3:-1s}" register="${4:-}" requested_name="${5:-}"
+    validate_unit_args "$INSTALL_BIN" "$CONFIG_DIR" "$UNIT_DIR" "$server" "$token" "$interval" "$register" "$requested_name"
     [[ "$server" == http://* || "$server" == https://* ]] || error "Server URL must start with http:// or https://."
     if [ -n "$register" ]; then
         [ -z "$token" ] || error "节点 Token 与临时注册密钥只需提供其中一个。"
     else
         [ -n "$token" ] || error "A node token is required."
+        [ -z "$requested_name" ] || error "节点名称只能与临时注册（-r）一起使用。"
     fi
     local args
     args="$(unit_arg "$INSTALL_BIN") agent --interval $(unit_arg "$interval")"
@@ -816,7 +833,7 @@ install_agent() {
     # Registered after the download: a failed download then leaves no node
     # behind on the panel.
     if [ -n "$register" ]; then
-        register_node "$server" "$register"
+        register_node "$server" "$register" "$requested_name"
         token="$AGENT_REGISTERED_TOKEN"
         info "已注册新节点：$AGENT_REGISTERED_NAME"
     fi
@@ -1008,8 +1025,10 @@ menu() {
                read_secret "节点 Token（输入不显示；留空改用临时注册）: " token
                register=''
                if [ -z "$token" ]; then read_secret "临时注册密钥（面板“临时注册”生成）: " register; fi
+               node_name=''
+               if [ -n "$register" ]; then read_input "节点名称（留空使用主机名）: " node_name; fi
                read_input "上报间隔 [1s]: " interval
-               ( install_agent "$server" "$token" "${interval:-1s}" "$register" ) ;;
+               ( install_agent "$server" "$token" "${interval:-1s}" "$register" "$node_name" ) ;;
             5) uninstall_agent ;;
             6) show_status ;;
             7) manage_services restart ;;
@@ -1064,22 +1083,23 @@ case "$CMD" in
         [ -n "$domain" ] || error "Domain is required."
         configure_existing_server_domain "$domain" "$port" "$email" ;;
     agent)
-        server=""; token=""; interval=1s; register=""
+        server=""; token=""; interval=1s; register=""; node_name=""
         while [ $# -gt 0 ]; do
             case "$1" in
                 -s|--server) server="${2:?missing server}"; shift 2 ;;
                 -t|--token) token="${2:?missing token}"; shift 2 ;;
                 -r|--register) register="${2:?missing registration key}"; shift 2 ;;
+                -n|--name) node_name="${2:?missing node name}"; shift 2 ;;
                 -i|--interval) interval="${2:?missing interval}"; shift 2 ;;
                 *) error "Unknown agent option: $1" ;;
             esac
         done
-        install_agent "$server" "$token" "$interval" "$register" ;;
+        install_agent "$server" "$token" "$interval" "$register" "$node_name" ;;
     menu) menu ;;
     status) show_status ;;
     restart) systemctl restart "$SERVER_SERVICE" "$AGENT_SERVICE" ;;
     uninstall) uninstall_all ;;
     agent-uninstall|uninstall-agent) uninstall_agent ;;
-    help|--help|-h) echo "Usage: $0 [update [-p PORT] | server [-p PORT] -u USER -w PASSWORD [-d DOMAIN] [-e EMAIL] | domain -d DOMAIN [-p PORT] [-e EMAIL] | agent -s URL {-t TOKEN | -r REGISTER_KEY} [-i INTERVAL] | agent-uninstall | status | restart | uninstall]" ;;
+    help|--help|-h) echo "Usage: $0 [update [-p PORT] | server [-p PORT] -u USER -w PASSWORD [-d DOMAIN] [-e EMAIL] | domain -d DOMAIN [-p PORT] [-e EMAIL] | agent -s URL {-t TOKEN | -r REGISTER_KEY [-n NAME]} [-i INTERVAL] | agent-uninstall | status | restart | uninstall]" ;;
     *) error "Unknown command: $CMD" ;;
 esac
