@@ -35,12 +35,11 @@ body::before {
 }
 ::selection { background: var(--primary-light); color: var(--foreground); }
 .container {
-  /* A centred sheet: at 1480 the node rows ran edge to edge on wide screens,
-     so the compact meters and ping strips looked stranded in a blank card. */
-  max-width: 1200px;
+  /* Keep the dashboard and its six summary cells compact on wide screens. */
+  max-width: 960px;
   width: calc(100% - 48px);
-  margin: 32px auto 96px;
-  padding: 24px 28px 28px;
+  margin: 20px auto 72px;
+  padding: 16px 20px 20px;
   background: rgba(253, 252, 249, .94);
   border: 1px solid rgba(255, 255, 255, .8);
   border-radius: 18px;
@@ -49,8 +48,8 @@ body::before {
   -webkit-backdrop-filter: blur(16px);
 }
 .navbar {
-  margin-bottom: 24px;
-  padding: 0 0 18px;
+  margin-bottom: 18px;
+  padding: 0 0 14px;
   background: transparent;
   border: 0;
   border-bottom: 1px solid var(--border);
@@ -60,7 +59,8 @@ body::before {
 .brand-title { color: var(--foreground); font-size: 18px; font-weight: 650; }
 .hex-section-label { font-size: 13px; font-weight: 650; color: var(--foreground); }
 .hex-section-label::before { background: var(--success); }
-.hex-stats { display: block; margin-bottom: 24px; }
+.hex-stats { display: block; margin-bottom: 14px; }
+.hex-section-heading { margin-bottom: 12px; }
 .hex-globe-panel { display: none; }
 /* 1px gaps over a bordered grid draw the dividers at any column count. */
 .hex-stats-grid {
@@ -77,32 +77,32 @@ body::before {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
-.hex-stat:nth-child(n) { padding: 16px 20px; gap: 8px; border: 0; background: var(--card-data-bg); }
-.hex-stat dd strong { font-size: 22px; letter-spacing: -.4px; }
-.hex-stat small { font-size: 11px; }
+.hex-stat:nth-child(n) { padding: 10px; gap: 4px; border: 0; background: var(--card-data-bg); }
+.hex-stat dd strong { font-size: 20px; letter-spacing: -.4px; }
+.hex-stat small { font-size: 10px; }
 .controls-bar { margin-bottom: 14px; }
 .node-grid { grid-template-columns: minmax(0, 1fr); gap: 0; background: transparent; border: 0; border-radius: 0; box-shadow: none; }
 .node-card, .node-card:hover { background: transparent; border: 0; border-radius: 0; box-shadow: none; }
 .hex-card {
   display: grid;
-  /* Below the tablet breakpoint the identity columns absorb the leftover width
-     so a row ends at the card's right edge instead of trailing off into a blank
-     band; above it the columns are pinned (see the min-width:1121px block). */
-  grid-template-columns: repeat(3, minmax(90px, 1fr)) minmax(0, 540px);
+  /* Let the resource meters fill their column instead of leaving a blank band
+     between the online dot and CPU. */
+  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 5.1fr);
   grid-template-areas:
     "identity identity identity resources"
     "network network network resources"
     "facts facts facts probes"
     "billing billing price probes";
   align-items: start;
-  gap: 6px 6px;
-  padding: 10px 0;
+  gap: 3px 1em;
+  font-size: 12px;
+  padding: 6px 0;
 }
 .hex-card + .hex-card { border-top: 1px solid var(--border); }
 .hex-card:hover { transform: none; background: var(--card-data-bg); }
-.hex-node-header { grid-area: identity; gap: 10px; }
+.hex-node-header { grid-area: identity; gap: 6px; }
 .hex-node-identity h2 { font-size: 14px; font-weight: 650; }
-.hex-node-identity { row-gap: 4px; }
+.hex-node-identity { row-gap: 2px; }
 /* Keep system, ASN, service regions and resource captions at one text level. */
 .hex-system,
 .node-network-identity,
@@ -120,14 +120,14 @@ body .hex-card .hex-metric.metric-button .metric-name { color: var(--foreground)
    keep the hover and keyboard focus colour muted. */
 body .hex-card .metric-button:hover .metric-name,
 body .hex-card .metric-button:focus-visible .metric-name { color: var(--primary); }
-.node-network-identity { gap: 4px 12px; }
+.node-network-identity { gap: 2px 10px; font-size: 10px; line-height: 1.4; }
 .node-google-region { gap: 5px; }
 .node-google-region img { flex-basis: 1em; width: 1em; height: 1em; }
 /* The status chip is a dot in this theme: the halo shrinks with the card. */
 .hex-status { width: 13px; height: 13px; }
 .hex-status.is-online { background: color-mix(in srgb, var(--success) 12%, transparent); }
-.hex-resources { grid-area: resources; gap: 6px 12px; }
-.hex-metric { gap: 3px; }
+.hex-resources { grid-area: resources; gap: 4px 10px; }
+.hex-metric { gap: 2px; }
 .hex-metric .metric-meta strong { font-size: 12px; font-weight: 500; }
 .hex-metric .metric-name { font-size: 11px; }
 .progress-track { height: 4px; border-radius: 99px; background: #e6e5e0; }
@@ -135,20 +135,22 @@ body .hex-card .metric-button:focus-visible .metric-name { color: var(--primary)
 .progress-bar.high { background: var(--warning); }
 .progress-bar.critical { background: var(--destructive); }
 .hex-network { grid-area: network; padding-top: 0; gap: 8px 4px; }
-.hex-network > div, .hex-network > button { align-items: flex-start; gap: 2px; text-align: left; }
-.hex-network strong { font-size: 13px; }
+.hex-network > div, .hex-network > button { align-items: flex-start; gap: 1px; text-align: left; line-height: 1.4; }
+.hex-network strong { font-size: 12px; }
 .hex-network span { font-size: 10px; }
 .hex-facts { grid-area: facts; column-gap: 4px; }
-.hex-facts > div { align-items: flex-start; gap: 2px; text-align: left; }
+.hex-facts > div { align-items: flex-start; gap: 1px; text-align: left; line-height: 1.4; }
+.hex-facts span, .hex-billing span { font-size: 10px; }
 .hex-facts > div + div { border: 0; }
 .hex-facts strong { font-size: 10px; }
 .hex-probes { grid-area: probes; padding: 0; border: 0; }
 .hex-billing { grid-area: billing; padding: 0; gap: 8px 4px; border: 0; background: transparent; border-radius: 0; }
-.hex-billing > div { gap: 2px; }
-.hex-card-footer { grid-area: price; min-width: 0; flex-direction: column; align-items: flex-start; gap: 2px; margin-top: 0; border: 0; padding: 0; font-size: 11px; }
-.hex-card-footer strong { color: var(--foreground); font-size: 12px; }
-.hex-probes .ping-sample-row { padding-top: 4px; }
-.hex-probes .ping-row-heading { margin-bottom: 4px; }
+.hex-billing > div { gap: 1px; line-height: 1.4; }
+.hex-billing strong { font-size: 11px; }
+.hex-card-footer { grid-area: price; min-width: 0; flex-direction: column; align-items: flex-start; gap: 1px; margin-top: 0; border: 0; padding: 0; font-size: 10px; line-height: 1.4; }
+.hex-card-footer strong { color: var(--foreground); font-size: 11px; }
+.hex-probes .ping-sample-row { padding-top: 3px; }
+.hex-probes .ping-row-heading { margin-bottom: 3px; }
 .sample-bar { height: 6px; border-radius: 2px; }
 .sample-bar.fast { background: var(--success); opacity: .8; }
 .btn { border-radius: 7px; background: var(--control-bg); box-shadow: var(--shadow-sm); }
@@ -165,27 +167,16 @@ body .hex-card .metric-button:focus-visible .metric-name { color: var(--primary)
 .theme-row { background: var(--card-bg); border-radius: 8px; }
 /* Retain shared fixed positioning, safe-area inset and horizontal centering. */
 .powered-by-pill { background: rgba(253, 252, 249, .94); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-lg); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
-/* Six metrics share one strip as soon as the centred sheet reaches full width,
-   so a 1280 laptop keeps a single row of stats. */
-@media (min-width: 1248px) {
+/* Six metrics share one strip when the compact sheet reaches full width. */
+@media (min-width: 1008px) {
   .hex-stats-grid { --hex-stat-columns: 6; }
 }
-/* Past the tablet breakpoint the identity columns would stretch until the four
-   rows drifted apart. Pinning them keeps the uplink, totals and billing rows
-   (price included) on the same three 131px columns, and the metres column
-   absorbs the rest at a fixed width, flush right. */
-@media (min-width: 1121px) {
-  .hex-card { grid-template-columns: repeat(3, minmax(80px, 131px)) minmax(0, 1fr); }
-  .hex-resources, .hex-probes { width: 100%; max-width: 540px; margin-left: auto; }
-}
-@media (max-width: 1120px) {
-  .hex-card { grid-template-columns: repeat(3, minmax(80px, 1fr)) minmax(0, 5.4fr); }
-}
+.hex-resources, .hex-probes { width: 100%; min-width: 0; }
 @media (max-width: 720px) {
   .container { width: calc(100% - 24px); margin-top: 18px; padding: 18px 14px; border-radius: 12px; }
   .hex-stat dd strong { font-size: 20px; }
   .hex-stats-grid { --hex-stat-columns: 2; }
-  .hex-stat:nth-child(n) { padding: 14px; }
+  .hex-stat:nth-child(n) { padding: 10px; }
   .hex-card {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     grid-template-areas:
@@ -196,7 +187,7 @@ body .hex-card .metric-button:focus-visible .metric-name { color: var(--primary)
       "resources resources resources"
       "probes probes probes";
     padding: 10px 0;
-    gap: 8px 6px;
+    gap: 5px 6px;
   }
   .hex-facts strong { font-size: 11px; }
 }
