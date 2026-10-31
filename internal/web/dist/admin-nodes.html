@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-site-theme="design" data-site-layout="cards" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex">
+  <meta name="description" content="VibeMonitor 管理后台 · 节点管理">
+  <meta name="theme-color" content="#eeece8">
+  <title>节点管理 · 管理后台</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/themes.css">
+  <link rel="stylesheet" href="/admin.css">
+  <link rel="stylesheet" href="/design.css" id="customThemeStylesheet">
+  <link rel="icon" id="siteIcon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='10' fill='%230d9488'/></svg>">
+</head>
+<body class="admin-body" data-page-title="节点管理">
+  <a class="admin-skip" href="#adminMain">跳到主要内容</a>
+  <header class="admin-topbar">
+    <a class="admin-brand" href="/admin/nodes">
+      <img class="admin-brand-icon" id="adminBrandIcon" alt="" src="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='10' fill='%230d9488'/></svg>">
+      <span id="adminBrandTitle">VibeMonitor</span>
+    </a>
+    <div class="admin-topbar-actions">
+      <a class="btn" href="/">监控面板</a>
+      <button type="button" class="btn" id="adminLogoutBtn" hidden>退出登录</button>
+    </div>
+  </header>
+
+  <div class="admin-shell">
+    <nav class="admin-sidebar" id="adminSidebar" aria-label="管理后台导航">
+      <a class="admin-nav-link" href="/admin/nodes" data-admin-nav="nodes">节点管理</a>
+      <a class="admin-nav-link" href="/admin/settings" data-admin-nav="settings">基本设置</a>
+      <a class="admin-nav-link" href="/admin/theme" data-admin-nav="theme">主题管理</a>
+      <a class="admin-nav-link" href="/admin/telegram" data-admin-nav="telegram">外部通信设置</a>
+      <a class="admin-nav-link admin-nav-public" href="/">返回监控面板</a>
+      <span class="admin-nav-foot">VibeMonitor 管理后台</span>
+    </nav>
+
+    <main class="admin-main" id="adminMain">
+      <p class="admin-loading" id="adminLoading">正在验证管理员登录状态…</p>
+
+      <div id="adminContent" hidden>
+        <div class="admin-page-head">
+          <div>
+            <h1 class="admin-title">节点管理</h1>
+            <p class="admin-subtitle">新增、编辑、排序监控节点，并获取接入命令与临时注册窗口。</p>
+          </div>
+          <div class="admin-page-actions">
+            <button type="button" class="btn btn-primary" id="newNodeBtn">新建节点</button>
+            <button type="button" class="btn" id="sortNodesBtn">节点排序</button>
+            <button type="button" class="btn" id="refreshNodesBtn">刷新</button>
+          </div>
+        </div>
+
+        <section class="admin-card" aria-labelledby="nodeListHeading">
+          <h2 class="admin-card-title" id="nodeListHeading">节点列表 <span class="admin-count" id="nodeCount">0</span></h2>
+          <div class="admin-table-wrap">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th scope="col">状态</th>
+                  <th scope="col">名称</th>
+                  <th scope="col">位置</th>
+                  <th scope="col">系统</th>
+                  <th scope="col">到期</th>
+                  <th scope="col">周期流量</th>
+                  <th scope="col">CPU / 内存</th>
+                  <th scope="col"><span class="visually-hidden">操作</span></th>
+                </tr>
+              </thead>
+              <tbody id="nodeTableBody"></tbody>
+            </table>
+          </div>
+          <p class="admin-empty" id="nodeEmpty" hidden>暂无监控节点，点击「新建节点」开始。</p>
+          <p class="admin-table-hint">表格可左右滑动查看全部列。</p>
+        </section>
+
+
+        <section class="admin-card" id="nodeFormCard" hidden aria-labelledby="nodeFormTitle">
+          <h2 class="admin-card-title" id="nodeFormTitle">新建节点</h2>
+          <p class="version-row" data-mode="edit" hidden>
+            <span class="version-cell">主控版本 <b id="nodeFormPanelVersion">读取中…</b></span>
+            <span class="version-cell">节点版本 <b id="nodeFormAgentVersion">未上报</b></span>
+            <span class="version-state" id="nodeFormVersionState" role="status" hidden></span>
+          </p>
+          <form class="admin-form" id="nodeForm" autocomplete="off">
+            <input type="hidden" id="nodeFormUUID">
+            <div class="admin-form-grid">
+              <div class="form-group">
+                <label class="form-label" for="nodeFormName">节点名称</label>
+                <input class="form-input" id="nodeFormName" required placeholder="例如: Tokyo-VPS-01">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="nodeFormRegion">地区代码 / 国旗代码</label>
+                <input class="form-input" id="nodeFormRegion" placeholder="例如: JP, US, CN, HK, SG" value="JP">
+              </div>
+            </div>
+            <div class="admin-form-grid">
+              <div class="form-group">
+                <label class="form-label" for="nodeFormTrafficLimit">月流量配额 (GB, 选填)</label>
+                <input type="number" class="form-input" id="nodeFormTrafficLimit" min="0" step="any" placeholder="如 1000">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="nodeFormResetDay">每月重置日 (1-31，留空为 1 日)</label>
+                <input type="number" class="form-input" id="nodeFormResetDay" min="1" max="31" placeholder="默认 1 日">
+              </div>
+              <div class="form-group" data-mode="new">
+                <label class="form-label" for="nodeFormInitialUsed">当前周期已用流量 (GB, 选填)</label>
+                <input type="number" class="form-input" id="nodeFormInitialUsed" min="0" step="any" placeholder="仅本周期叠加，下周期自动清零">
+              </div>
+              <div class="form-group" data-mode="edit" hidden>
+                <label class="form-label" for="nodeFormCycleUsed">手动设置当前周期已用流量 (GB)</label>
+                <input type="number" class="form-input" id="nodeFormCycleUsed" min="0" step="any" placeholder="留空不修改">
+                <small id="nodeFormCycleUsedHint">留空则继续按探针上报累计。</small>
+              </div>
+            </div>
+            <div class="admin-form-grid">
+              <div class="form-group">
+                <label class="form-label" for="nodeFormTrafficWarning">流量预警基准 (%)</label>
+                <input type="number" class="form-input" id="nodeFormTrafficWarning" min="0" max="100" step="any" value="0" placeholder="例如 80；0 不提前预警">
+                <small>达到月流量配额的此比例时，通过 Telegram 提前提醒，每个账期最多一次。</small>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="nodeFormCPUThreshold">CPU 负载阈值 (%)</label>
+                <input type="number" class="form-input" id="nodeFormCPUThreshold" min="0" max="100" step="any" placeholder="留空不限制">
+                <small>达到此值时计入首页高负载节点；留空则不参与统计。</small>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="nodeFormTargets">此节点的 TCP 测试目标</label>
+              <textarea class="form-input form-textarea" id="nodeFormTargets" rows="3" placeholder="电信,example.com:443&#10;移动,1.1.1.1:443"></textarea>
+              <small>每行一个“名称,地址:端口”，支持 tcp://、http://、https:// 链接（仅测 TCP 连接，不检查网页）。留空不测试。</small>
+            </div>
+            <div class="form-group">
+              <label><input type="checkbox" id="nodeFormAlertsDisabled"> 关闭此节点的 Telegram 告警</label>
+            </div>
+            <fieldset class="admin-fieldset">
+              <legend>账单信息</legend>
+              <div class="admin-form-grid">
+                <div class="form-group">
+                  <label class="form-label" for="nodeFormDue">到期日</label>
+                  <input type="date" class="form-input" id="nodeFormDue">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="nodeFormCycle">付款周期</label>
+                  <select class="form-input form-select" id="nodeFormCycle">
+                    <option value="">未设置</option>
+                    <option value="month">月付</option>
+                    <option value="quarter">季付</option>
+                    <option value="year">年付</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="nodeFormPrice">每期金额</label>
+                  <input type="number" class="form-input" id="nodeFormPrice" min="0" max="1000000000" step="0.01" placeholder="0.00">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="nodeFormCurrency">币种</label>
+                  <select class="form-input form-select" id="nodeFormCurrency">
+                    <option>CNY</option><option>USD</option><option>EUR</option>
+                    <option>HKD</option><option>JPY</option><option>GBP</option>
+                  </select>
+                </div>
+              </div>
+            </fieldset>
+            <p class="form-note" id="nodeFormStatus" role="status" aria-live="polite"></p>
+            <div class="admin-form-actions">
+              <button type="button" class="btn" id="nodeFormCancelBtn">取消</button>
+              <button type="submit" class="btn btn-primary" id="nodeFormSubmitBtn">创建节点</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="admin-card" id="guideCard" hidden aria-labelledby="guideTitle">
+          <h2 class="admin-card-title" id="guideTitle">节点接入命令</h2>
+          <div class="admin-code-list">
+            <div>
+              <span class="form-label">Linux 一键安装命令 (推荐，自动配置 Systemd)</span>
+              <div class="code-box" id="guideInstallCmd">curl -fsSL … | bash</div>
+              <div class="admin-inline-actions">
+                <button type="button" class="btn" data-copy-target="guideInstallCmd">复制安装命令</button>
+              </div>
+            </div>
+            <div>
+              <span class="form-label">单二进制运行命令</span>
+              <div class="code-box" id="guideRunCmd">./vibemonitor agent --server … --token …</div>
+              <div class="admin-inline-actions">
+                <button type="button" class="btn" data-copy-target="guideRunCmd">复制运行命令</button>
+              </div>
+            </div>
+            <div>
+              <span class="form-label">卸载探针</span>
+              <div class="code-box" id="guideUninstallCmd">curl -fsSL … | bash -s -- agent-uninstall</div>
+              <div class="admin-inline-actions">
+                <button type="button" class="btn" data-copy-target="guideUninstallCmd">复制卸载命令</button>
+              </div>
+            </div>
+            <div>
+              <span class="form-label">通信 Token</span>
+              <div class="code-box" id="guideToken">…</div>
+              <div class="admin-inline-actions">
+                <button type="button" class="btn" data-copy-target="guideToken">复制 Token</button>
+              </div>
+            </div>
+          </div>
+          <div class="admin-inline-actions">
+            <button type="button" class="btn" id="closeGuideBtn">收起</button>
+          </div>
+        </section>
+
+        <section class="admin-card" id="sortCard" hidden aria-labelledby="sortNodesTitle">
+          <h2 class="admin-card-title" id="sortNodesTitle">节点排序</h2>
+          <p class="admin-note">拖动节点调整显示顺序，或使用上下按钮微调。保存后按当前列表顺序显示节点。</p>
+          <div class="sort-nodes-list" id="sortNodesList"></div>
+          <p class="form-note" id="sortNodesStatus" role="status" aria-live="polite"></p>
+          <div class="admin-inline-actions">
+            <button type="button" class="btn btn-primary" id="saveSortNodesBtn">保存排序</button>
+            <button type="button" class="btn" id="cancelSortNodesBtn">收起</button>
+          </div>
+        </section>
+
+        <section class="admin-card" id="registerCard" aria-labelledby="registerTitle">
+          <h2 class="admin-card-title" id="registerTitle">临时注册节点</h2>
+          <p class="admin-note">开放注册后，拿到下面命令的人都能在有效期内创建节点；到期自动关闭，也可以随时手动关闭。关闭后密钥立即失效。</p>
+          <div class="admin-form-grid">
+            <div class="form-group">
+              <label class="form-label" for="registerMinutes">有效时长（分钟，1–1440）</label>
+              <input type="number" class="form-input" id="registerMinutes" min="1" max="1440" step="1" value="60">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="registerCommand">注册命令</label>
+              <textarea class="form-input form-textarea" id="registerCommand" rows="2" readonly placeholder="点击“开放注册”生成命令"></textarea>
+              <small>在目标机器上以 root 执行；命令会创建节点、下载并安装探针，节点名取机器的主机名。</small>
+            </div>
+          </div>
+          <p class="form-note" id="registerStatus" role="status" aria-live="polite"></p>
+          <div class="admin-inline-actions">
+            <button type="button" class="btn btn-primary" id="openRegisterWindowBtn">开放注册</button>
+            <button type="button" class="btn" id="closeRegisterWindowBtn" disabled>关闭注册</button>
+            <button type="button" class="btn" id="copyRegisterCommandBtn" disabled>复制命令</button>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <p class="admin-status" id="adminStatus" role="status" aria-live="polite" hidden></p>
+
+  <script src="/admin-core.js"></script>
+  <script src="/admin-nodes.js"></script>
+</body>
+</html>

@@ -1,0 +1,345 @@
+/* Management area layout. Controls, tables and dialogs keep using the classes
+ * from style.css, so every installed theme colours the backend through the same
+ * CSS variables as the public dashboard. */
+
+.admin-body {
+  min-height: 100vh;
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.admin-skip {
+  position: absolute;
+  left: -9999px;
+  top: 8px;
+  z-index: 100;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: var(--card-bg);
+  color: var(--primary);
+  font-size: 13px;
+  text-decoration: none;
+}
+.admin-skip:focus-visible { left: 12px; }
+
+/* Top bar keeps the site identity and the way back to the dashboard visible. */
+.admin-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 20px;
+  background: color-mix(in srgb, var(--card-bg) 92%, transparent);
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+}
+.admin-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: var(--foreground);
+  font-size: 15px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.admin-brand span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-brand-icon {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: var(--muted);
+  object-fit: contain;
+}
+.admin-topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.admin-topbar-actions .btn { padding: 7px 12px; font-size: 12.5px; }
+
+.admin-shell {
+  display: grid;
+  grid-template-columns: 224px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 24px 20px 72px;
+}
+
+.admin-sidebar {
+  position: sticky;
+  top: 76px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+}
+.admin-nav-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  color: var(--foreground);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.admin-nav-link:hover { background: var(--card-hover); }
+.admin-nav-link[aria-current="page"] {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+.admin-nav-link[aria-current="page"]::after { content: '●'; font-size: 9px; }
+.admin-nav-public {
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 9px 9px;
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+.admin-nav-foot {
+  margin-top: 8px;
+  padding: 12px 12px 2px;
+  border-top: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+
+.admin-main { min-width: 0; display: flex; flex-direction: column; gap: 18px; }
+.admin-page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  /* A card surface keeps the page title readable on themes with a busy body
+   * background (for example the Win2000 desktop). */
+  padding: 16px 20px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-sm);
+}
+.admin-title { font-size: 22px; font-weight: 700; letter-spacing: -0.3px; }
+.admin-subtitle { margin-top: 4px; color: var(--muted-foreground); font-size: 13px; }
+.admin-page-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.admin-page-actions .btn { padding: 9px 14px; font-size: 13px; }
+
+.admin-card {
+  min-width: 0;
+  padding: 18px 20px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-sm);
+  /* Anchored cards must clear the sticky top bar. */
+  scroll-margin-top: 76px;
+}
+.admin-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 15px;
+  font-weight: 700;
+}
+.admin-count {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--primary-light);
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 600;
+}
+.admin-hint { color: var(--muted-foreground); font-size: 12.5px; line-height: 1.6; }
+.admin-note { margin-top: 8px; color: var(--muted-foreground); font-size: 12px; line-height: 1.6; }
+.admin-empty { padding: 18px 0; color: var(--muted-foreground); font-size: 13px; text-align: center; }
+
+
+/* Node table: scrolls sideways on narrow screens instead of squeezing cells. */
+.admin-table-wrap { overflow-x: auto; }
+.admin-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.admin-table th {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.admin-table td { padding: 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.admin-table tbody tr:last-child td { border-bottom: 0; }
+.admin-table tbody tr:hover { background: var(--card-hover); }
+.admin-node-name { display: block; font-weight: 600; }
+.admin-node-meta { display: block; color: var(--muted-foreground); font-size: 11.5px; }
+.admin-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.admin-pill[data-state="online"] {
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: var(--success);
+}
+.admin-pill[data-state="offline"] {
+  background: color-mix(in srgb, var(--destructive) 12%, transparent);
+  color: var(--destructive);
+}
+.admin-row-actions { display: flex; flex-wrap: nowrap; gap: 6px; justify-content: flex-end; }
+.admin-row-actions .btn { padding: 6px 10px; font-size: 12px; }
+/* Keep the action buttons on one line instead of stacking them. */
+.admin-table td:last-child { white-space: nowrap; }
+.admin-table-hint { display: none; margin-top: 10px; color: var(--muted-foreground); font-size: 12px; }
+
+.admin-bar {
+  display: block;
+  position: relative;
+  min-width: 68px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--muted);
+  overflow: hidden;
+}
+.admin-bar > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: var(--primary);
+}
+.admin-bar[data-level="warn"] > span { background: var(--warning); }
+.admin-bar[data-level="critical"] > span { background: var(--destructive); }
+.admin-bar-label { display: block; margin-bottom: 4px; color: var(--muted-foreground); font-size: 11.5px; }
+
+/* Panel and probe versions side by side: one glance says whether the agent
+   reporting this node is the same build as the panel it reports to. */
+.version-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  margin: 4px 0 14px;
+  padding: 10px 14px;
+  background: var(--card-data-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+
+.version-cell b {
+  color: var(--foreground);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.version-state {
+  padding: 2px 9px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.version-state[data-state="match"] { color: #35a680; }
+.version-state[data-state="outdated"] { color: #fbbf24; }
+.version-state[data-state="unknown"] { color: var(--muted-foreground); }
+
+/* Forms reuse .form-group/.form-input from style.css. */
+.admin-form { display: flex; flex-direction: column; gap: 14px; }
+.admin-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+.admin-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.admin-fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.admin-fieldset legend { padding: 0 6px; color: var(--muted-foreground); font-size: 12px; font-weight: 700; }
+.admin-inline-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+
+.admin-loading { padding: 12vh 0; color: var(--muted-foreground); font-size: 13px; text-align: center; }
+
+.admin-status {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  z-index: 60;
+  max-width: calc(100vw - 32px);
+  padding: 10px 18px;
+  transform: translateX(-50%);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card-bg);
+  box-shadow: var(--shadow-md);
+  color: var(--foreground);
+  font-size: 13px;
+}
+.admin-status[data-kind="success"] {
+  border-color: color-mix(in srgb, var(--success) 45%, var(--border));
+  color: var(--success);
+}
+.admin-status[data-kind="error"] {
+  border-color: color-mix(in srgb, var(--destructive) 45%, var(--border));
+  color: var(--destructive);
+}
+
+.admin-code-list { display: flex; flex-direction: column; gap: 12px; }
+.admin-kv { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 14px; font-size: 12.5px; }
+.admin-kv dt { color: var(--muted-foreground); }
+.admin-kv dd { color: var(--foreground); word-break: break-all; }
+
+@media (max-width: 900px) {
+  .admin-shell {
+    grid-template-columns: 1fr;
+    gap: 16px;
+    padding: 16px 14px 64px;
+  }
+  .admin-sidebar {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .admin-nav-link { flex: 1 1 auto; justify-content: center; font-size: 12.5px; }
+  .admin-nav-link[aria-current="page"]::after { content: none; }
+  .admin-nav-public { margin-top: 0; padding-top: 10px; border-top: 0; }
+  .admin-nav-foot { display: none; }
+  .admin-page-head { flex-direction: column; align-items: stretch; }
+  .admin-page-actions .btn { flex: 1 1 auto; justify-content: center; }
+  .admin-card { padding: 16px; }
+  /* The node table scrolls sideways on phones instead of squeezing its cells. */
+  .admin-table { min-width: 640px; }
+  .admin-table th, .admin-table td { white-space: nowrap; }
+  .admin-table-hint { display: block; }
+}

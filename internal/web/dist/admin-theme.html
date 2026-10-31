@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-site-theme="design" data-site-layout="cards" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex">
+  <meta name="description" content="VibeMonitor 管理后台 · 主题管理">
+  <meta name="theme-color" content="#eeece8">
+  <title>主题管理 · 管理后台</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/themes.css">
+  <link rel="stylesheet" href="/admin.css">
+  <link rel="stylesheet" href="/design.css" id="customThemeStylesheet">
+  <link rel="icon" id="siteIcon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='10' fill='%230d9488'/></svg>">
+</head>
+<body class="admin-body" data-page-title="主题管理">
+  <a class="admin-skip" href="#adminMain">跳到主要内容</a>
+  <header class="admin-topbar">
+    <a class="admin-brand" href="/admin/nodes">
+      <img class="admin-brand-icon" id="adminBrandIcon" alt="" src="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='10' fill='%230d9488'/></svg>">
+      <span id="adminBrandTitle">VibeMonitor</span>
+    </a>
+    <div class="admin-topbar-actions">
+      <a class="btn" href="/">监控面板</a>
+      <button type="button" class="btn" id="adminLogoutBtn" hidden>退出登录</button>
+    </div>
+  </header>
+
+  <div class="admin-shell">
+    <nav class="admin-sidebar" id="adminSidebar" aria-label="管理后台导航">
+      <a class="admin-nav-link" href="/admin/nodes" data-admin-nav="nodes">节点管理</a>
+      <a class="admin-nav-link" href="/admin/settings" data-admin-nav="settings">基本设置</a>
+      <a class="admin-nav-link" href="/admin/theme" data-admin-nav="theme">主题管理</a>
+      <a class="admin-nav-link" href="/admin/telegram" data-admin-nav="telegram">外部通信设置</a>
+      <a class="admin-nav-link admin-nav-public" href="/">返回监控面板</a>
+      <span class="admin-nav-foot">VibeMonitor 管理后台</span>
+    </nav>
+
+    <main class="admin-main" id="adminMain">
+      <p class="admin-loading" id="adminLoading">正在验证管理员登录状态…</p>
+
+      <div id="adminContent" hidden>
+        <div class="admin-page-head">
+          <div>
+            <h1 class="admin-title">主题管理</h1>
+            <p class="admin-subtitle">选中主题可即时预览，点击启用后对所有访客生效。</p>
+          </div>
+        </div>
+
+        <section class="admin-card" aria-labelledby="themeListTitle">
+          <h2 class="admin-card-title" id="themeListTitle">可用主题</h2>
+          <div id="themeList" class="theme-list"></div>
+          <div class="theme-actions">
+            <label class="btn" id="themeUploadLabel">上传主题包
+              <input type="file" id="themePackageFile" accept=".zip,application/zip" class="visually-hidden">
+            </label>
+            <a class="btn" href="https://github.com/M48A1/vibemonitor/tree/main/themes" target="_blank" rel="noopener noreferrer">下载主题包</a>
+            <button type="button" class="btn btn-primary" id="activateThemeBtn">启用所选主题</button>
+          </div>
+          <p class="logo-upload-hint">ZIP 最大 2MB，包含 theme.json 和一个 UTF-8 CSS 文件。主题包与启用状态保存在数据库中。</p>
+          <p id="themeStatus" class="form-note" role="status" aria-live="polite"></p>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <p class="admin-status" id="adminStatus" role="status" aria-live="polite" hidden></p>
+
+  <script src="/admin-core.js"></script>
+  <script src="/admin-theme.js"></script>
+</body>
+</html>

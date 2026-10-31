@@ -1,7 +1,7 @@
 // Initialize
 updateConnectionStatus();
 setInterval(updateConnectionStatus, 1000);
-resetPasswordFields();
+resetLoginPasswordFields();
 fetchNodes();
 connectWebSocket();
 checkAdminAuth();

@@ -24,12 +24,24 @@ const assetCacheControl = "public, max-age=31536000, immutable"
 // the versioned asset URLs and therefore has to stay fresh.
 const documentCacheControl = "no-cache"
 
+// adminDocuments are the extra HTML entry points of the management area. They
+// live next to the dashboard shell and are served from explicit routes so the
+// SPA fallback keeps pointing unknown paths at index.html.
+var adminDocuments = []string{
+	"admin-nodes.html",
+	"admin-settings.html",
+	"admin-theme.html",
+	"admin-telegram.html",
+}
+
 var (
 	fileETags = make(map[string]string)
 	// buildVersion fingerprints the whole bundle so asset URLs can be cached hard.
 	buildVersion string
 	// indexHTML is index.html with every local asset URL pinned to buildVersion.
 	indexHTML []byte
+	// documentHTML holds every HTML entry point with pinned asset URLs.
+	documentHTML = make(map[string][]byte)
 )
 
 func init() {
@@ -69,9 +81,22 @@ func init() {
 	buildVersion = hex.EncodeToString(fingerprint.Sum(nil)[:4])
 
 	// Pin the asset URLs in the shell so browsers can cache them forever.
-	raw, err := fs.ReadFile(sub, "index.html")
+	indexHTML = []byte(pinAssetURLs(sub, "index.html", assets))
+	documentHTML["index.html"] = indexHTML
+	for _, name := range adminDocuments {
+		documentHTML[name] = []byte(pinAssetURLs(sub, name, assets))
+	}
+	// The served shell is a rewrite of index.html, so its validator has to change
+	// whenever the pinned asset version does.
+	fileETags["index.html"] = etagOf(fileETags["index.html"] + buildVersion)
+}
+
+// pinAssetURLs rewrites every local CSS/JS reference of an embedded document to
+// carry buildVersion, so the referenced files may be cached immutably.
+func pinAssetURLs(sub fs.FS, name string, assets []string) string {
+	raw, err := fs.ReadFile(sub, name)
 	if err != nil {
-		panic("web: cannot read index.html: " + err.Error())
+		panic("web: cannot read " + name + ": " + err.Error())
 	}
 	doc := string(raw)
 	for _, p := range assets {
@@ -87,10 +112,7 @@ func init() {
 			doc = strings.ReplaceAll(doc, attr+`="/`+p+`"`, attr+`="/`+p+`?v=`+buildVersion+`"`)
 		}
 	}
-	indexHTML = []byte(doc)
-	// The served shell is a rewrite of index.html, so its validator has to change
-	// whenever the pinned asset version does.
-	fileETags["index.html"] = etagOf(fileETags["index.html"] + buildVersion)
+	return doc
 }
 
 // etagOf derives a strong validator from a fingerprint string.
@@ -157,5 +179,28 @@ func Handler() http.Handler {
 
 		w.Header().Set("Cache-Control", cacheControl)
 		fileServer.ServeHTTP(w, r)
+	})
+}
+
+// DocumentHandler serves one of the admin HTML entry points. It revalidates on
+// every request, exactly like the dashboard shell, so a new build is picked up
+// immediately while conditional requests still avoid the body.
+func DocumentHandler(name string) http.Handler {
+	doc, ok := documentHTML[name]
+	if !ok {
+		panic("web: unknown document " + name)
+	}
+	etag := etagOf(name + "=" + string(doc))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", documentCacheControl)
+		w.Header().Set("ETag", etag)
+		if match := r.Header.Get("If-None-Match"); match != "" && (match == "*" || strings.Contains(match, etag)) {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("Content-Length", strconv.Itoa(len(doc)))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(doc)
 	})
 }

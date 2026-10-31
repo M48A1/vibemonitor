@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-site-theme="design" data-site-layout="cards" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex">
+  <meta name="description" content="VibeMonitor 管理后台 · 基本设置">
+  <meta name="theme-color" content="#eeece8">
+  <title>基本设置 · 管理后台</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/themes.css">
+  <link rel="stylesheet" href="/admin.css">
+  <link rel="stylesheet" href="/design.css" id="customThemeStylesheet">
+  <link rel="icon" id="siteIcon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='10' fill='%230d9488'/></svg>">
+</head>
+<body class="admin-body" data-page-title="基本设置">
+  <a class="admin-skip" href="#adminMain">跳到主要内容</a>
+  <header class="admin-topbar">
+    <a class="admin-brand" href="/admin/nodes">
+      <img class="admin-brand-icon" id="adminBrandIcon" alt="" src="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='10' fill='%230d9488'/></svg>">
+      <span id="adminBrandTitle">VibeMonitor</span>
+    </a>
+    <div class="admin-topbar-actions">
+      <a class="btn" href="/">监控面板</a>
+      <button type="button" class="btn" id="adminLogoutBtn" hidden>退出登录</button>
+    </div>
+  </header>
+
+  <div class="admin-shell">
+    <nav class="admin-sidebar" id="adminSidebar" aria-label="管理后台导航">
+      <a class="admin-nav-link" href="/admin/nodes" data-admin-nav="nodes">节点管理</a>
+      <a class="admin-nav-link" href="/admin/settings" data-admin-nav="settings">基本设置</a>
+      <a class="admin-nav-link" href="/admin/theme" data-admin-nav="theme">主题管理</a>
+      <a class="admin-nav-link" href="/admin/telegram" data-admin-nav="telegram">外部通信设置</a>
+      <a class="admin-nav-link admin-nav-public" href="/">返回监控面板</a>
+      <span class="admin-nav-foot">VibeMonitor 管理后台</span>
+    </nav>
+
+    <main class="admin-main" id="adminMain">
+      <p class="admin-loading" id="adminLoading">正在验证管理员登录状态…</p>
+
+      <div id="adminContent" hidden>
+        <div class="admin-page-head">
+          <div>
+            <h1 class="admin-title">基本设置</h1>
+            <p class="admin-subtitle">网站名称、地址栏图标与管理员密码。保存后对所有访客生效。</p>
+          </div>
+        </div>
+
+        <section class="admin-card" aria-labelledby="siteSettingsTitle">
+          <h2 class="admin-card-title" id="siteSettingsTitle">站点信息</h2>
+          <form class="admin-form" id="settingsForm" autocomplete="off">
+            <div class="form-group">
+              <label class="form-label" for="settingSiteTitle">网站名称</label>
+              <input class="form-input" id="settingSiteTitle" maxlength="80" placeholder="例如 VibeMonitor">
+              <small>显示在监控面板标题、浏览器标签页和管理后台顶部。</small>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="settingSiteIconFile">地址栏网站图标（favicon）</label>
+              <div class="logo-upload-row">
+                <div class="logo-preview-box" id="logoPreviewBox" title="当前网站图标预览">
+                  <div id="logoPreviewContent" class="brand-icon"></div>
+                </div>
+                <div class="logo-upload-actions">
+                  <input type="file" id="settingSiteIconFile" accept="image/png,image/jpeg,image/svg+xml,image/webp,image/x-icon,image/gif" hidden>
+                  <button type="button" class="btn btn-primary" id="btnSelectLogo">上传图标</button>
+                  <button type="button" class="btn" id="btnResetLogo">恢复默认</button>
+                  <span id="logoUploadStatus" class="logo-status-text"></span>
+                </div>
+              </div>
+              <div class="logo-upload-hint">用于浏览器标签页和地址栏。支持 PNG、JPG、SVG、WebP、ICO 格式（最大 2MB），保存于服务器本地。</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="settingNewPassword">新管理员密码（留空则不修改）</label>
+              <div class="password-input-wrap">
+                <input type="password" class="form-input" id="settingNewPassword" minlength="8" autocomplete="new-password" placeholder="至少 8 位">
+                <button type="button" class="btn-toggle-pwd" data-target="settingNewPassword" title="显示密码" aria-label="显示密码" aria-pressed="false">👁️</button>
+              </div>
+              <small>修改密码会清除所有已登录的管理员会话，需要用新密码重新登录。</small>
+            </div>
+            <p class="form-note" id="settingsStatus" role="status" aria-live="polite"></p>
+            <div class="admin-form-actions">
+              <button type="submit" class="btn btn-primary">保存设置</button>
+            </div>
+          </form>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <p class="admin-status" id="adminStatus" role="status" aria-live="polite" hidden></p>
+
+  <script src="/admin-core.js"></script>
+  <script src="/admin-settings.js"></script>
+</body>
+</html>

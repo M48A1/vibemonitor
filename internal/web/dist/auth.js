@@ -51,6 +51,23 @@ function requireAdmin(action) {
   openModal('loginModal');
 }
 
+// Management pages are served to a signed-in admin only, so a menu click asks
+// for the password first and then follows the link. The dashboard dialog is the
+// single place a session can be started.
+document.addEventListener('click', (event) => {
+  // Leave middle-clicks and "open in new tab" to the browser: that tab gets the
+  // same bounce, and stealing the gesture would look broken.
+  if (event.defaultPrevented || event.button > 0 || event.metaKey || event.ctrlKey ||
+      event.shiftKey || event.altKey) return;
+  const target = event.target;
+  const link = target && target.closest ? target.closest('.site-menu-panel a[href^="/admin"]') : null;
+  if (!link || isAdmin) return;
+  event.preventDefault();
+  const href = link.getAttribute('href');
+  closeSiteMenu();
+  requireAdmin(() => { location.href = href; });
+});
+
 document.getElementById('loginForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const password = document.getElementById('loginPassword').value;

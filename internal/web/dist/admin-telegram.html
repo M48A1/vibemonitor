@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-site-theme="design" data-site-layout="cards" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex">
+  <meta name="description" content="VibeMonitor 管理后台 · 外部通信设置">
+  <meta name="theme-color" content="#eeece8">
+  <title>外部通信设置 · 管理后台</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/themes.css">
+  <link rel="stylesheet" href="/admin.css">
+  <link rel="stylesheet" href="/design.css" id="customThemeStylesheet">
+  <link rel="icon" id="siteIcon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='10' fill='%230d9488'/></svg>">
+</head>
+<body class="admin-body" data-page-title="外部通信设置">
+  <a class="admin-skip" href="#adminMain">跳到主要内容</a>
+  <header class="admin-topbar">
+    <a class="admin-brand" href="/admin/nodes">
+      <img class="admin-brand-icon" id="adminBrandIcon" alt="" src="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='10' fill='%230d9488'/></svg>">
+      <span id="adminBrandTitle">VibeMonitor</span>
+    </a>
+    <div class="admin-topbar-actions">
+      <a class="btn" href="/">监控面板</a>
+      <button type="button" class="btn" id="adminLogoutBtn" hidden>退出登录</button>
+    </div>
+  </header>
+
+  <div class="admin-shell">
+    <nav class="admin-sidebar" id="adminSidebar" aria-label="管理后台导航">
+      <a class="admin-nav-link" href="/admin/nodes" data-admin-nav="nodes">节点管理</a>
+      <a class="admin-nav-link" href="/admin/settings" data-admin-nav="settings">基本设置</a>
+      <a class="admin-nav-link" href="/admin/theme" data-admin-nav="theme">主题管理</a>
+      <a class="admin-nav-link" href="/admin/telegram" data-admin-nav="telegram">外部通信设置</a>
+      <a class="admin-nav-link admin-nav-public" href="/">返回监控面板</a>
+      <span class="admin-nav-foot">VibeMonitor 管理后台</span>
+    </nav>
+
+    <main class="admin-main" id="adminMain">
+      <p class="admin-loading" id="adminLoading">正在验证管理员登录状态…</p>
+
+      <div id="adminContent" hidden>
+        <div class="admin-page-head">
+          <div>
+            <h1 class="admin-title">外部通信设置</h1>
+            <p class="admin-subtitle">Telegram 告警：节点离线、资源超限、流量与到期提醒。</p>
+          </div>
+        </div>
+
+        <section class="admin-card" aria-labelledby="telegramSettingsTitle">
+          <h2 class="admin-card-title" id="telegramSettingsTitle">Telegram</h2>
+          <form class="admin-form" id="telegramForm" autocomplete="off">
+            <div class="form-group">
+              <label><input type="checkbox" id="telegramEnabled"> 启用节点、资源、流量和到期提醒</label>
+              <small>CPU 使用节点阈值，内存阈值为 85%，流量达到节点额度时告警。</small>
+            </div>
+            <div class="admin-form-grid">
+              <div class="form-group">
+                <label class="form-label" for="telegramBotToken">Bot Token</label>
+                <input class="form-input" id="telegramBotToken" autocomplete="off" placeholder="填写 BotFather 提供的 Token">
+                <small>留空保留已保存的 Token。</small>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="telegramChatID">Chat ID</label>
+                <input class="form-input" id="telegramChatID" placeholder="例如 123456789 或 -1001234567890">
+              </div>
+            </div>
+            <div class="admin-form-grid">
+              <div class="form-group">
+                <label class="form-label" for="telegramOfflineDelay">离线告警阈值（秒）</label>
+                <input type="number" class="form-input" id="telegramOfflineDelay" min="0" max="3600" step="1" value="60">
+                <small>距离最后上报达到此时间且节点已离线时告警；0 表示按面板离线判定立即告警。</small>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="telegramReminderDays">到期提醒提前天数</label>
+                <input type="number" class="form-input" id="telegramReminderDays" min="0" max="7" step="1" value="7">
+                <small>到期前每天提醒一次，0 表示关闭到期提醒。</small>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="telegramReminderHour">每日提醒时间（0–23 时）</label>
+                <input type="number" class="form-input" id="telegramReminderHour" min="0" max="23" step="1" value="9">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="telegramReminderTimezone">提醒时区</label>
+                <input class="form-input" id="telegramReminderTimezone" value="Asia/Shanghai" placeholder="例如 Asia/Shanghai">
+              </div>
+            </div>
+            <details class="telegram-template-section" id="telegramTemplateDetails">
+              <summary class="admin-card-title">报警消息模板</summary>
+              <p class="admin-note">可编辑每类告警正文。变量会在发送时替换；清空单项并保存会使用默认文案。每项最多 2048 字节。</p>
+              <div class="telegram-template-fields">
+                <div class="form-group"><label class="form-label" for="telegramTemplateOffline">节点离线</label><textarea class="form-input form-textarea" id="telegramTemplateOffline" rows="2"></textarea><small>变量：<code>{node}</code> 节点名、<code>{last_seen}</code> 最后上报时间</small></div>
+                <div class="form-group"><label class="form-label" for="telegramTemplateRecovery">节点恢复</label><textarea class="form-input form-textarea" id="telegramTemplateRecovery" rows="2"></textarea><small>变量：<code>{node}</code> 节点名、<code>{last_seen}</code> 最后上报时间</small></div>
+                <div class="form-group"><label class="form-label" for="telegramTemplateCPU">CPU 告警</label><textarea class="form-input form-textarea" id="telegramTemplateCPU" rows="2"></textarea><small>变量：<code>{node}</code>、<code>{cpu}</code> 当前使用率、<code>{cpu_threshold}</code> 阈值</small></div>
+                <div class="form-group"><label class="form-label" for="telegramTemplateMemory">内存告警</label><textarea class="form-input form-textarea" id="telegramTemplateMemory" rows="2"></textarea><small>变量：<code>{node}</code>、<code>{memory}</code> 当前使用率、<code>{memory_threshold}</code> 阈值</small></div>
+                <div class="form-group"><label class="form-label" for="telegramTemplateTraffic">流量告警</label><textarea class="form-input form-textarea" id="telegramTemplateTraffic" rows="2"></textarea><small>变量：<code>{node}</code>、<code>{used_gib}</code> 本周期已用 GiB、<code>{limit_gib}</code> 额度 GiB</small></div>
+                <div class="form-group"><label class="form-label" for="telegramTemplateTrafficWarning">流量提前预警</label><textarea class="form-input form-textarea" id="telegramTemplateTrafficWarning" rows="2"></textarea><small>变量：<code>{node}</code>、<code>{used_gib}</code> 已用 GiB、<code>{limit_gib}</code> 额度 GiB、<code>{percent}</code> 已用比例、<code>{warning_percent}</code> 预警基准</small></div>
+                <div class="form-group"><label class="form-label" for="telegramTemplateDue">到期提醒</label><textarea class="form-input form-textarea" id="telegramTemplateDue" rows="2"></textarea><small>变量：<code>{node}</code>、<code>{due_date}</code> 到期日期、<code>{days}</code> 剩余天数</small></div>
+              </div>
+              <div class="admin-inline-actions">
+                <button type="button" class="btn" id="resetTelegramTemplatesBtn">填入全部默认文案</button>
+              </div>
+            </details>
+            <p class="form-note" id="telegramStatus" role="status" aria-live="polite"></p>
+            <div class="admin-form-actions">
+              <button type="button" class="btn" id="testTelegramBtn">测试 Telegram 连接</button>
+              <button type="button" class="btn btn-danger" id="clearTelegramBtn">清除凭据并关闭告警</button>
+              <button type="submit" class="btn btn-primary">保存 Telegram 配置</button>
+            </div>
+          </form>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <p class="admin-status" id="adminStatus" role="status" aria-live="polite" hidden></p>
+
+  <script src="/admin-core.js"></script>
+  <script src="/admin-telegram.js"></script>
+</body>
+</html>

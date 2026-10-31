@@ -1,9 +1,7 @@
 // VibeMonitor Modern Dashboard Script
 
 let nodes = [];
-// UUIDs are never reused. Ignore pre-deletion HTTP/WS snapshots for this page.
-const deletedNodeIDs = new Set();
-const deletingNodeIDs = new Set();
+// Set by auth.js; the dashboard itself only reads public data.
 let isAdmin = false;
 let ws = null;
 let wsHasData = false;
@@ -11,7 +9,6 @@ let lastWSDataAt = 0;
 let lastDashboardUpdate = 0;
 let dashboardRevision = 0;
 let dashboardConnectionFailed = false;
-const pendingNodeForms = new WeakSet();
 
 function updateConnectionStatus() {
   const status = document.getElementById('connectionStatus');
@@ -27,7 +24,7 @@ function updateConnectionStatus() {
 }
 
 function acceptNodeSnapshot(data) {
-  nodes = data.filter(node => !deletedNodeIDs.has(node.uuid));
+  nodes = data;
   dashboardRevision++;
   lastDashboardUpdate = Date.now();
   dashboardConnectionFailed = false;
@@ -133,21 +130,8 @@ function resetLoginPasswordFields() {
   if (unInput) { unInput.autocomplete = 'username'; }
 }
 
-function resetSettingsPasswordFields() {
-  const spInput = document.getElementById('settingNewPassword');
-  if (spInput) { spInput.type = 'password'; spInput.value = ''; spInput.autocomplete = 'new-password'; }
-  const toggleBtn = document.querySelector('.btn-toggle-pwd[data-target="settingNewPassword"]');
-  if (toggleBtn && typeof setPasswordVisibility === 'function') setPasswordVisibility(toggleBtn, spInput, false);
-}
-
-function resetPasswordFields() {
-  resetLoginPasswordFields();
-  resetSettingsPasswordFields();
-}
-
 window.closeModal = function(id) {
   if (!id) {
-    if (typeof cancelEditNodeLoad === 'function') cancelEditNodeLoad();
     cancelPingHistory();
     cancelResourceHistory();
     if (typeof cancelRankings === 'function') cancelRankings();
@@ -162,7 +146,7 @@ window.closeModal = function(id) {
       }
     }
     if (closedAny) restoreDialogFocus();
-    resetPasswordFields();
+    resetLoginPasswordFields();
     return;
   }
   const m = typeof id === 'string' ? document.getElementById(id) : id;
@@ -171,19 +155,12 @@ window.closeModal = function(id) {
     m.classList.remove('active');
   }
   const modalId = (m && m.id) || id;
-  if (modalId === 'editNodeModal' && typeof cancelEditNodeLoad === 'function') cancelEditNodeLoad();
   if (modalId === 'pingChartModal') cancelPingHistory();
   if (modalId === 'resourceChartModal') cancelResourceHistory();
   if (modalId === 'rankingsModal' && typeof cancelRankings === 'function') cancelRankings();
   if (modalId === 'loginModal') {
     resetLoginPasswordFields();
     pendingAdminAction = null;
-  }
-  if (modalId === 'settingsModal') {
-    resetSettingsPasswordFields();
-  }
-  if (modalId === 'externalSettingsModal') {
-    document.getElementById('telegramBotToken').value = '';
   }
   if (wasActive && (typeof document.querySelector !== 'function' || !document.querySelector('.modal-overlay.active'))) {
     restoreDialogFocus();
@@ -193,14 +170,7 @@ window.closeModal = function(id) {
 // Bind modal overlay backdrop click to close
 const modalOverlayIds = [
   'rankingsModal',
-  'themeManagementModal',
-  'settingsModal',
-  'externalSettingsModal',
   'loginModal',
-  'selectNodeModal',
-  'addNodeModal',
-  'editNodeModal',
-  'nodeGuideModal',
   'pingChartModal',
   'resourceChartModal'
 ];
@@ -217,20 +187,8 @@ modalOverlayIds.forEach(id => {
 
 // Bind all explicit close/cancel buttons
 const modalCloseBtnBindings = [
-  { id: 'closeThemeManagementBtn', modalId: 'themeManagementModal' },
-  { id: 'closeSettingsModalBtn', modalId: 'settingsModal' },
-  { id: 'cancelSettingsModalBtn', modalId: 'settingsModal' },
-  { id: 'closeExternalSettingsModalBtn', modalId: 'externalSettingsModal' },
   { id: 'closeLoginModalBtn', modalId: 'loginModal' },
   { id: 'cancelLoginModalBtn', modalId: 'loginModal' },
-  { id: 'closeSelectNodeModalBtn', modalId: 'selectNodeModal' },
-  { id: 'closeSelectNodeBottomBtn', modalId: 'selectNodeModal' },
-  { id: 'closeAddNodeModalBtn', modalId: 'addNodeModal' },
-  { id: 'cancelAddNodeModalBtn', modalId: 'addNodeModal' },
-  { id: 'closeEditNodeModalBtn', modalId: 'editNodeModal' },
-  { id: 'cancelEditNodeModalBtn', modalId: 'editNodeModal' },
-  { id: 'closeNodeGuideModalBtn', modalId: 'nodeGuideModal' },
-  { id: 'closeNodeGuideBottomBtn', modalId: 'nodeGuideModal' },
   { id: 'closePingChartModalBtn', modalId: 'pingChartModal' },
   { id: 'closePingChartBottomBtn', modalId: 'pingChartModal' },
   { id: 'closeResourceChartModalBtn', modalId: 'resourceChartModal' },
@@ -240,19 +198,6 @@ modalCloseBtnBindings.forEach(binding => {
   const btn = document.getElementById(binding.id);
   if (btn && typeof btn.addEventListener === 'function') {
     btn.addEventListener('click', () => closeModal(binding.modalId));
-  }
-});
-
-// Guide command copy buttons
-const guideCopyBtns = [
-  { id: 'copyGuideInstallBtn', targetId: 'guideInstallCmd' },
-  { id: 'copyGuideRunBtn', targetId: 'guideRunCmd' },
-  { id: 'copyGuideUninstallBtn', targetId: 'guideUninstallCmd' }
-];
-guideCopyBtns.forEach(item => {
-  const btn = document.getElementById(item.id);
-  if (btn && typeof btn.addEventListener === 'function') {
-    btn.addEventListener('click', () => copyGuideCommand(item.targetId));
   }
 });
 
@@ -474,9 +419,6 @@ document.getElementById('nodeGrid').addEventListener('click', (event) => {
   const node = nodes.find(n => n.uuid === action.dataset.uuid);
   if (!node) return;
   switch (action.dataset.action) {
-    case 'edit': if (isAdmin) openEditModal(node.uuid); break;
-    case 'guide': if (isAdmin) showGuide(node.uuid); break;
-    case 'delete': if (isAdmin) deleteNode(node.uuid); break;
     case 'ping': openPingChart(node.uuid, node.name, action.dataset.target); break;
     case 'resource': openResourceChart(node.uuid, node.name, action.dataset.metric); break;
   }
@@ -505,22 +447,11 @@ async function fetchNodes(force = false) {
 
 const DEFAULT_SITE_ICON_URL = document.getElementById('siteIcon').getAttribute('href');
 
+// The favicon is the only icon spot on the dashboard; the management page that
+// uploads a new one previews it itself.
 function updateSiteIconDisplay(iconUrl) {
-  const preview = document.getElementById('logoPreviewContent');
   const siteIcon = document.getElementById('siteIcon');
-  const effectiveUrl = iconUrl || DEFAULT_SITE_ICON_URL;
-  if (siteIcon) siteIcon.href = effectiveUrl;
-  if (preview) {
-    preview.innerHTML = `<img src="${escapeHtml(effectiveUrl)}" alt="网站图标预览" width="28" height="28">`;
-    const img = preview.querySelector('img');
-    if (img && iconUrl) {
-      img.onerror = () => {
-        img.onerror = null;
-        img.src = DEFAULT_SITE_ICON_URL;
-        if (siteIcon) siteIcon.href = DEFAULT_SITE_ICON_URL;
-      };
-    }
-  }
+  if (siteIcon) siteIcon.href = iconUrl || DEFAULT_SITE_ICON_URL;
 }
 
 function applyPublicSettings(data) {
@@ -585,3 +516,38 @@ function connectWebSocket() {
     setTimeout(connectWebSocket, 3000);
   };
 }
+
+// Site menu: the title opens the management menu, whose entries are plain links
+// to the /admin pages, so only the open/close behaviour lives here.
+const siteMenu = document.getElementById('siteMenu');
+const siteMenuTrigger = document.getElementById('siteMenuTrigger');
+const nodeManagementMenu = document.getElementById('nodeManagementMenu');
+
+function closeSiteMenu() {
+  siteMenu.open = false;
+  nodeManagementMenu.open = false;
+}
+
+siteMenu.addEventListener('toggle', () => {
+  if (!siteMenu.open) nodeManagementMenu.open = false;
+});
+siteMenu.addEventListener('click', (event) => {
+  if (event.target.closest('button')) {
+    closeSiteMenu();
+    siteMenuTrigger.focus();
+  }
+});
+siteMenu.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    closeSiteMenu();
+    siteMenuTrigger.focus();
+  }
+});
+siteMenu.addEventListener('focusout', (event) => {
+  // Safari can leave relatedTarget null until a menu button's click runs.
+  if (event.relatedTarget && !siteMenu.contains(event.relatedTarget)) closeSiteMenu();
+});
+document.addEventListener('click', (event) => {
+  if (!siteMenu.contains(event.target)) closeSiteMenu();
+});
+

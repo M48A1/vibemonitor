@@ -141,7 +141,7 @@ make release-all
 
 数据库访问约定：凡是由 HTTP 请求、探针上报或后台循环触发的读写，都接收调用方的 `context.Context`（`store` 包中的 `*Context` 方法），客户端断开或服务关闭会中止对应查询。只有启动阶段的工作（建库、迁移、加载快照）不带 ctx。新增数据库调用时请沿用该约定，不要退回 `context.Background()` 包装。
 
-前端直接发布 `internal/web/dist` 中的文件，无额外打包步骤。`index.html` 按顺序加载共享状态与渲染（`app.js`）、认证、设置、节点管理、Ping 历史和资源历史，最后由 `bootstrap.js` 启动请求与定时器。这些经典脚本共享页面作用域，新增跨模块调用时需保持加载顺序。本地保留的 DOM 回归测试从 HTML 中的 `data-dashboard-module` 脚本列表加载相同模块，并覆盖五种内置主题。
+前端直接发布 `internal/web/dist` 中的文件，无额外打包步骤。`index.html` 先加载主题应用（`theme-apply.js`），再按顺序加载共享状态、渲染、对话框与站点菜单（`app.js`）、认证、Ping 历史、资源历史和排行榜，最后由 `bootstrap.js` 启动请求与定时器；公开首页只保留公开卡片与图表对话框，不含任何管理入口。管理功能是独立的 HTML 入口：`/admin/nodes`、`/admin/settings`、`/admin/theme`、`/admin/telegram` 分别由 `admin-nodes.html` 等文档和同名脚本实现，共享 `admin-core.js` 与 `admin.css`；`/admin` 重定向到节点页，未知的 `/admin/*` 返回 404；四个管理页都要求管理员会话，未登录时与 `/admin` 一样 302 回 `/`，页面文件本身不下发，登录入口只有首页标题菜单里的登录对话框（登录后自动进入所点页面）。这些经典脚本共享页面作用域，新增跨模块调用时需保持加载顺序；`data-dashboard-module` 标记参与共享作用域的首页脚本。
 
 ### Ping 探测时间与升级兼容
 

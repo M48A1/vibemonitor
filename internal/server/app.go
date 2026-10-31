@@ -84,6 +84,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerAuthRoutes(mux)
 	s.registerNodeRoutes(mux)
 	s.registerSettingsRoutes(mux)
+	s.registerAdminPageRoutes(mux)
 
 	// 3. WebSocket Clients endpoint
 	mux.HandleFunc("GET /api/clients", s.wsHub.HandleWS)

@@ -137,22 +137,32 @@ func TestIndexReferencesShippedAssets(t *testing.T) {
 		if strings.HasPrefix(ref, "/api/") {
 			continue // served by the API, not the embedded FS
 		}
+		// The management pages and the installer are served by explicit routes.
+		if ref == "/admin" || strings.HasPrefix(ref, "/admin/") || ref == "/install.sh" {
+			continue
+		}
 		if _, err := fs.Stat(sub, strings.TrimPrefix(ref, "/")); err != nil {
 			t.Errorf("index.html references %s which is not embedded: %v", ref, err)
 		}
 	}
 }
 
-// TestIndexPinsAssetURLsToBuildVersion ensures the shell only references URLs a
-// browser is allowed to cache forever.
-func TestIndexPinsAssetURLsToBuildVersion(t *testing.T) {
+// TestDocumentsPinAssetURLsToBuildVersion ensures every shipped asset is
+// referenced by one of the entry points and that no reference skips the build
+// version a browser needs to cache it forever.
+func TestDocumentsPinAssetURLsToBuildVersion(t *testing.T) {
 	if buildVersion == "" {
 		t.Fatal("buildVersion is empty")
 	}
-	body := serve(Handler(), "/", nil).Body.String()
+	var all strings.Builder
+	all.WriteString(serve(Handler(), "/", nil).Body.String())
+	for _, name := range adminDocuments {
+		all.WriteString(serve(DocumentHandler(name), "/"+name, nil).Body.String())
+	}
+	body := all.String()
 
 	for p := range fileETags {
-		if strings.Contains(p, "/") || p == "index.html" {
+		if strings.Contains(p, "/") || p == "index.html" || strings.HasSuffix(p, ".html") {
 			continue
 		}
 		switch strings.ToLower(path.Ext(p)) {
@@ -167,6 +177,61 @@ func TestIndexPinsAssetURLsToBuildVersion(t *testing.T) {
 		if !strings.Contains(body, `="/`+p+`?v=`+buildVersion+`"`) {
 			t.Errorf("%s is not referenced with ?v=%s", p, buildVersion)
 		}
+	}
+}
+
+// TestDashboardShellShipsNoManagementDialogs keeps management UI on its own
+// pages: a dialog that lives in the public shell cannot be deep linked, so the
+// /admin pages must own it instead.
+func TestDashboardShellShipsNoManagementDialogs(t *testing.T) {
+	body := serve(Handler(), "/", nil).Body.String()
+	for _, id := range []string{
+		"settingsModal", "externalSettingsModal", "themeManagementModal",
+		"addNodeModal", "registerNodeModal", "sortNodesModal", "selectNodeModal",
+		"editNodeModal", "nodeGuideModal",
+	} {
+		if strings.Contains(body, `id="`+id+`"`) {
+			t.Errorf("dashboard shell still ships the %s dialog", id)
+		}
+	}
+	for _, src := range []string{`/settings.js`, `/nodes.js`} {
+		if strings.Contains(body, src) {
+			t.Errorf("dashboard shell still loads the removed %s", src)
+		}
+	}
+	// The dashboard may only render the public cards, so its scripts must not
+	// carry the management handlers either.
+	app := serve(Handler(), "/app.js", nil).Body.String()
+	for _, fn := range []string{"openEditModal", "showGuide", "deleteNode", "copyGuideCommand"} {
+		if strings.Contains(app, fn) {
+			t.Errorf("dashboard app.js still references %s", fn)
+		}
+	}
+}
+
+// TestAdminDocumentsShipNoLoginForm keeps one login dialog in the product: the
+// management pages are only served to a signed-in admin, so a copy of the form
+// inside them could never be reached.
+func TestAdminDocumentsShipNoLoginForm(t *testing.T) {
+	for _, name := range adminDocuments {
+		body := serve(DocumentHandler(name), "/"+name, nil).Body.String()
+		for _, marker := range []string{"adminGate", "adminLoginForm", "adminLoginUsername", "adminLoginPassword"} {
+			if strings.Contains(body, marker) {
+				t.Errorf("%s still ships %s", name, marker)
+			}
+		}
+		if !strings.Contains(body, `id="adminLoading"`) {
+			t.Errorf("%s lost its loading notice", name)
+		}
+	}
+	// Losing the session mid-visit sends the page back to the dashboard, which
+	// owns the dialog, instead of showing a second, unreachable form.
+	core := serve(Handler(), "/admin-core.js", nil).Body.String()
+	if strings.Contains(core, "wireLogin") || strings.Contains(core, "adminLoginForm") {
+		t.Error("admin-core.js still wires a page-local login form")
+	}
+	if !strings.Contains(core, "location.replace('/')") {
+		t.Error("admin-core.js does not bounce an expired session to the dashboard")
 	}
 }
 
