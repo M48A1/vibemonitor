@@ -85,9 +85,9 @@ body::before {
 .node-card, .node-card:hover { background: transparent; border: 0; border-radius: 0; box-shadow: none; }
 .hex-card {
   display: grid;
-  /* The meters take a fixed, readable width and the identity columns absorb the
-     rest, so a row ends at the card's right edge instead of trailing off into a
-     blank band. */
+  /* Below the tablet breakpoint the identity columns absorb the leftover width
+     so a row ends at the card's right edge instead of trailing off into a blank
+     band; above it the columns are pinned (see the min-width:1121px block). */
   grid-template-columns: repeat(3, minmax(90px, 1fr)) minmax(0, 540px);
   grid-template-areas:
     "identity identity identity resources"
@@ -133,16 +133,16 @@ body .hex-card .metric-button:focus-visible .metric-name { color: var(--primary)
 .progress-bar { border-radius: 99px; background: var(--success); }
 .progress-bar.high { background: var(--warning); }
 .progress-bar.critical { background: var(--destructive); }
-.hex-network { grid-area: network; padding-top: 0; gap: 8px 4px; max-width: 400px; }
+.hex-network { grid-area: network; padding-top: 0; gap: 8px 4px; }
 .hex-network > div, .hex-network > button { align-items: flex-start; gap: 2px; text-align: left; }
 .hex-network strong { font-size: 13px; }
 .hex-network span { font-size: 10px; }
-.hex-facts { grid-area: facts; }
+.hex-facts { grid-area: facts; column-gap: 4px; }
 .hex-facts > div { align-items: flex-start; gap: 2px; text-align: left; }
 .hex-facts > div + div { border: 0; }
 .hex-facts strong { font-size: 10px; }
 .hex-probes { grid-area: probes; padding: 0; border: 0; }
-.hex-billing { grid-area: billing; padding: 0; gap: 6px; border: 0; background: transparent; border-radius: 0; }
+.hex-billing { grid-area: billing; padding: 0; gap: 8px 4px; border: 0; background: transparent; border-radius: 0; }
 .hex-billing > div { gap: 2px; }
 .hex-card-footer { grid-area: price; min-width: 0; flex-direction: column; align-items: flex-start; gap: 2px; margin-top: 0; border: 0; padding: 0; font-size: 11px; }
 .hex-card-footer strong { color: var(--foreground); font-size: 12px; }
@@ -168,6 +168,14 @@ body .hex-card .metric-button:focus-visible .metric-name { color: var(--primary)
    so a 1280 laptop keeps a single row of stats. */
 @media (min-width: 1248px) {
   .hex-stats-grid { --hex-stat-columns: 6; }
+}
+/* Past the tablet breakpoint the identity columns would stretch until the four
+   rows drifted apart. Pinning them keeps the uplink, totals and billing rows
+   (price included) on the same three 131px columns, and the metres column
+   absorbs the rest at a fixed width, flush right. */
+@media (min-width: 1121px) {
+  .hex-card { grid-template-columns: repeat(3, minmax(80px, 131px)) minmax(0, 1fr); }
+  .hex-resources, .hex-probes { width: 100%; max-width: 540px; margin-left: auto; }
 }
 @media (max-width: 1120px) {
   .hex-card { grid-template-columns: repeat(3, minmax(80px, 1fr)) minmax(0, 5.4fr); }
