@@ -22,6 +22,8 @@ ZIP 包最大 2MB，根目录包含 `theme.json` 和其中指定的一个 CSS �
 }
 ```
 
+可点击查看履历的资源名称使用 `.metric-button .metric-name`，名称右侧的 `.metric-history-icon` 是折线图标提示；主题可覆盖这两个类来强化或弱化该提示。表格布局的 ServerStatus 使用独立的“CPU 历史”等按钮，不受这两条规则影响。
+
 每个主题包仅包含说明和 CSS，不支持 JavaScript 或额外文件；图片可使用 CSS data URL。最多保存 32 个自定义主题，相同 CSS 再次上传会更新主题名称和说明。若主题影响管理入口，在页面网址加上 `?theme=default`（已有参数时使用 `&theme=default`）即可临时以默认外观打开，然后在主题管理中启用默认主题。
 
 ### 实时数据与性能

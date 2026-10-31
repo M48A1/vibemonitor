@@ -108,6 +108,13 @@ body .hex-card .hex-metric .metric-name {
   font-weight: 400;
   line-height: 1.5;
 }
+/* Clickable metrics keep the caption tone but turn bold, use the body ink and
+   step up to the value size, so the chart behind each one is easy to find. */
+body .hex-card .hex-metric.metric-button .metric-name { color: var(--foreground); font-size: 12px; font-weight: 650; }
+/* Higher specificity than the flat caption rule above, which would otherwise
+   keep the hover and keyboard focus colour muted. */
+body .hex-card .metric-button:hover .metric-name,
+body .hex-card .metric-button:focus-visible .metric-name { color: var(--primary); }
 .node-network-identity { gap: 4px 12px; }
 .node-google-region { gap: 5px; }
 .node-google-region img { flex-basis: 1em; width: 1em; height: 1em; }

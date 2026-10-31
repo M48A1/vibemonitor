@@ -121,6 +121,15 @@ body::before {
 .metric-button { width: 100%; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .metric-button:hover .metric-name { color: var(--primary); text-decoration: underline; }
 .metric-button:focus-visible { outline: 2px solid var(--primary); outline-offset: 5px; border-radius: 3px; }
+/* Every caption that opens a history chart carries a chart glyph and a bolder
+   weight, so the click target reads as interactive without hovering. */
+.metric-button .metric-name { font-weight: 600; }
+.hex-network-total span { font-weight: 600; }
+.metric-history-icon { width: 1em; height: 1em; margin-left: 3px; vertical-align: -0.15em; opacity: .55; }
+.metric-button:hover .metric-history-icon,
+.metric-button:focus-visible .metric-history-icon,
+.hex-network-total:hover .metric-history-icon,
+.hex-network-total:focus-visible .metric-history-icon { opacity: 1; }
 .hex-metric .metric-meta { gap: 6px; align-items: center; }
 .hex-metric .metric-meta strong { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .hex-metric small { font-size: 10px; color: var(--muted-foreground); overflow-wrap: anywhere; }
