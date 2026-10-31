@@ -139,6 +139,10 @@ type Config struct {
 	TelegramReminderTimezone    string                `json:"telegram_reminder_timezone,omitempty"`
 	TelegramAlertEpoch          string                `json:"telegram_alert_epoch,omitempty"`
 	TelegramTemplates           TelegramTemplates     `json:"telegram_templates"`
+	// RegisterUntil is the Unix second the registration window closes. Zero
+	// means no window is open: the key is not accepted, and the panel has to
+	// open one before a new machine can register itself.
+	RegisterUntil int64 `json:"register_until,omitempty"`
 }
 
 type Store struct {

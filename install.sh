@@ -2,10 +2,17 @@
 # VibeMonitor Linux (x86-64 / arm64) installer and maintenance commands.
 set -e
 umask 077
+# useradd lives in sbin, which a root shell entered through `su` without `-`
+# does not always carry on PATH.
+PATH="$PATH:/usr/sbin:/sbin"
 GITHUB_REPO="M48A1/vibemonitor"
 INSTALL_BIN="/usr/local/bin/vibemonitor"
 CONFIG_DIR="/etc/vibemonitor"
 UNIT_DIR="/etc/systemd/system"
+# The token lives here rather than in ExecStart, where every local user could
+# read it out of /proc/PID/cmdline.
+AGENT_ENV="$CONFIG_DIR/agent.env"
+AGENT_USER="vibemonitor"
 SERVER_SERVICE="vibemonitor-server"
 AGENT_SERVICE="vibemonitor-agent"
 NGINX_CONF="/etc/nginx/conf.d/vibemonitor.conf"
@@ -75,18 +82,20 @@ begin_update() {
     PROXY_NGINX_WAS_ACTIVE=0
     PROXY_NGINX_WAS_ENABLED=0
     RENEW_TIMER_CREATED=0
+    AGENT_ENV_TOUCHED=0
     systemctl is-active --quiet "$UPDATE_SERVICE" && WAS_ACTIVE=1
     systemctl is-enabled --quiet "$UPDATE_SERVICE" && WAS_ENABLED=1
     trap 'rm -rf "$UPDATE_DIR"' EXIT
     if [ -f "$INSTALL_BIN" ]; then cp -p "$INSTALL_BIN" "$UPDATE_DIR/previous-binary"; fi
     if [ -f "$UNIT_DIR/$UPDATE_SERVICE.service" ]; then cp -p "$UNIT_DIR/$UPDATE_SERVICE.service" "$UPDATE_DIR/previous-unit"; fi
+    if [ -f "$AGENT_ENV" ]; then cp -p "$AGENT_ENV" "$UPDATE_DIR/previous-agent-env"; fi
     trap cleanup_update EXIT
 }
 
 cleanup_update() {
     local result=$? rollback_failed=0
     trap - EXIT
-    if [ "$UPDATE_COMMITTED" != 1 ] && { [ "$BINARY_REPLACED" = 1 ] || [ "$UNIT_TOUCHED" = 1 ] || [ "$SERVICE_TOUCHED" = 1 ]; }; then
+    if [ "$UPDATE_COMMITTED" != 1 ] && { [ "$BINARY_REPLACED" = 1 ] || [ "$UNIT_TOUCHED" = 1 ] || [ "$SERVICE_TOUCHED" = 1 ] || [ "$AGENT_ENV_TOUCHED" = 1 ]; }; then
         warn "操作失败；正在恢复原有程序和服务配置。"
         # A health check can fail after starting a previously stopped service.
         # Always stop the replacement before restoring its binary and unit.
@@ -114,6 +123,16 @@ cleanup_update() {
                 cp -p "$UPDATE_DIR/previous-unit" "$UNIT_DIR/$UPDATE_SERVICE.service" || rollback_failed=1
             else
                 rm -f "$UNIT_DIR/$UPDATE_SERVICE.service" || rollback_failed=1
+            fi
+        fi
+        # The restored unit is the one that was running before, so its
+        # credential has to go back too: an older unit carries the token on its
+        # own command line and does not read this file at all.
+        if [ "$AGENT_ENV_TOUCHED" = 1 ]; then
+            if [ -f "$UPDATE_DIR/previous-agent-env" ]; then
+                cp -p "$UPDATE_DIR/previous-agent-env" "$AGENT_ENV" || rollback_failed=1
+            else
+                rm -f "$AGENT_ENV" || rollback_failed=1
             fi
         fi
         systemctl daemon-reload || rollback_failed=1
@@ -264,8 +283,18 @@ clear_server_data() {
     if systemctl is-active --quiet "$SERVER_SERVICE"; then
         systemctl stop "$SERVER_SERVICE" || error "Cannot stop server; data was not deleted."
     fi
+    # An agent installed on the same host keeps its credential in this directory.
+    # Held in memory rather than a temporary file: the token never leaves the
+    # machine, and never lands anywhere with looser permissions.
+    local kept_env=""
+    if [ -f "$AGENT_ENV" ]; then kept_env=$(cat "$AGENT_ENV") || error "Cannot read $AGENT_ENV."; fi
     # Stop first: shutdown flush must finish before deleting persistent files.
     rm -rf -- "$CONFIG_DIR"
+    if [ -n "$kept_env" ]; then
+        mkdir -p "$CONFIG_DIR"
+        printf '%s\n' "$kept_env" > "$AGENT_ENV" || error "Cannot restore $AGENT_ENV."
+        chmod 600 "$AGENT_ENV"
+    fi
     success "全部配置、账号、监控数据和备份已删除。"
 }
 
@@ -722,27 +751,106 @@ configure_existing_server_domain() {
     fi
 }
 
+# The agent reads /proc and runs ping(8); that is all it needs. A fixed system
+# user keeps a compromised agent from being root, and keeps the unit readable.
+ensure_agent_user() {
+    if id -u "$AGENT_USER" >/dev/null 2>&1; then return 0; fi
+    command -v useradd >/dev/null 2>&1 || error "Missing dependency: useradd (passwd package)."
+    local shell=/usr/sbin/nologin
+    [ -x "$shell" ] || shell=/sbin/nologin
+    [ -x "$shell" ] || shell=/bin/false
+    useradd --system --no-create-home --home-dir /nonexistent --shell "$shell" --user-group "$AGENT_USER" >/dev/null 2>&1 ||
+        error "无法创建运行探针的系统用户 $AGENT_USER。"
+}
+
+# Installs the credential where systemd reads it as root. It must not be an
+# argument of ExecStart: /proc/PID/cmdline is world readable, so any local user
+# could read the token there and report for this node.
+write_agent_env() {
+    local server="$1" token="$2"
+    validate_unit_args "$server" "$token"
+    printf 'VIBEMONITOR_SERVER=%s\nVIBEMONITOR_TOKEN=%s\n' "$server" "$token" > "$UPDATE_DIR/agent.env" ||
+        error "无法写入探针环境文件。"
+    chmod 600 "$UPDATE_DIR/agent.env"
+    AGENT_ENV_TOUCHED=1
+    mv -f "$UPDATE_DIR/agent.env" "$AGENT_ENV" || error "无法安装探针环境文件：$AGENT_ENV"
+}
+
+# Creates a node through the panel's temporary registration window. The key is
+# spent on the machine being installed, so the panel never has to keep a
+# standing credential: the window closes on its own, and one address cannot
+# register in a loop.
+AGENT_REGISTERED_NAME=""
+AGENT_REGISTERED_TOKEN=""
+
+register_node() {
+    local server="$1" key="$2" name reply token
+    [[ "$key" =~ ^[[:xdigit:]]{32}$ ]] || error "临时注册密钥格式不正确：面板生成的密钥是 32 位十六进制。"
+    name=$(hostname 2>/dev/null || true)
+    name=$(printf '%s' "$name" | tr -c 'A-Za-z0-9._-' '-' | cut -c1-64 | sed 's/[-.]*$//')
+    [ -n "$name" ] || name=auto-node
+    reply=$(curl -4 -fsS --connect-timeout 10 --max-time 30 \
+        -H "Authorization: Bearer $key" --data '' \
+        "$server/api/clients/register?name=$name") ||
+        error "注册失败：请确认面板里的“临时注册”仍在开放，且本机可以访问主控。"
+    token=$(printf '%s' "$reply" | sed -n 's/.*"token"[[:space:]]*:[[:space:]]*"\([0-9a-fA-F]\{32\}\)".*/\1/p')
+    [ -n "$token" ] || error "主控没有返回节点 Token：$reply"
+    AGENT_REGISTERED_NAME="$name"
+    AGENT_REGISTERED_TOKEN="$token"
+}
+
 install_agent() {
-    local server="$1" token="$2" interval="${3:-1s}"
-    validate_unit_args "$INSTALL_BIN" "$CONFIG_DIR" "$UNIT_DIR" "$server" "$token" "$interval"
+    local server="$1" token="$2" interval="${3:-1s}" register="${4:-}"
+    validate_unit_args "$INSTALL_BIN" "$CONFIG_DIR" "$UNIT_DIR" "$server" "$token" "$interval" "$register"
     [[ "$server" == http://* || "$server" == https://* ]] || error "Server URL must start with http:// or https://."
-    [ -n "$token" ] || error "A node token is required."
+    if [ -n "$register" ]; then
+        [ -z "$token" ] || error "节点 Token 与临时注册密钥只需提供其中一个。"
+    else
+        [ -n "$token" ] || error "A node token is required."
+    fi
     local args
-    args="$(unit_arg "$INSTALL_BIN") agent --server $(unit_arg "$server") --token $(unit_arg "$token") --interval $(unit_arg "$interval")"
+    args="$(unit_arg "$INSTALL_BIN") agent --interval $(unit_arg "$interval")"
     check_root; detect_arch; check_dependencies
     begin_update "$AGENT_SERVICE"
     download_binary
+    # Registered after the download: a failed download then leaves no node
+    # behind on the panel.
+    if [ -n "$register" ]; then
+        register_node "$server" "$register"
+        token="$AGENT_REGISTERED_TOKEN"
+        info "已注册新节点：$AGENT_REGISTERED_NAME"
+    fi
+    ensure_agent_user
+    write_agent_env "$server" "$token"
     UNIT_TOUCHED=1
     cat > "$UNIT_DIR/$AGENT_SERVICE.service" <<EOF
 [Unit]
 Description=VibeMonitor Agent
 After=network-online.target
+Wants=network-online.target
 [Service]
 Type=simple
+EnvironmentFile=$AGENT_ENV
 Environment=GOMEMLIMIT=25MiB
 ExecStart=$args
 Restart=always
 RestartSec=5
+# The agent only reads files and opens sockets: no privilege to gain, no path to
+# write, and a memory ceiling of its own. MemoryHigh throttles a leaky agent,
+# MemoryMax stops the machine from noticing it at all. ping(8) needs CAP_NET_RAW,
+# and NoNewPrivileges=yes stops the binary's own file capability from being
+# granted, so the service carries it for its children instead.
+User=$AGENT_USER
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
+MemoryHigh=64M
+MemoryMax=128M
 [Install]
 WantedBy=multi-user.target
 EOF
@@ -789,7 +897,8 @@ uninstall_all() {
         rm -rf -- "$UNIT_DIR/$service.service.d"
     done
     systemctl daemon-reload
-    rm -f "$INSTALL_BIN"
+    rm -f "$INSTALL_BIN" "$AGENT_ENV"
+    userdel "$AGENT_USER" 2>/dev/null || true
     info "程序、配置、账号、数据和备份已全部删除。"
 }
 
@@ -800,11 +909,12 @@ uninstall_agent() {
     [ "$confirmation" = yes ] || return 0
     systemctl stop "$AGENT_SERVICE" 2>/dev/null || true
     systemctl disable "$AGENT_SERVICE" 2>/dev/null || true
-    rm -f "$UNIT_DIR/$AGENT_SERVICE.service"
+    rm -f "$UNIT_DIR/$AGENT_SERVICE.service" "$AGENT_ENV"
     systemctl daemon-reload
     if [ ! -f "$UNIT_DIR/$SERVER_SERVICE.service" ]; then
         rm -f "$INSTALL_BIN"
     fi
+    userdel "$AGENT_USER" 2>/dev/null || true
     success "本机探针 Token、服务文件和程序已彻底清理；服务端节点记录未修改。"
 }
 read_secret() {
@@ -859,7 +969,7 @@ manage_services() {
 }
 
 menu() {
-    local choice port port_default password username domain current_domain email server token interval pause
+    local choice port port_default password username domain current_domain email server token interval register pause
     while true; do
         menu_header
         read_input "请选择 [0-11]: " choice
@@ -895,9 +1005,11 @@ menu() {
                    ( configure_existing_server_domain "$domain" "" "$email" )
                fi ;;
             4) read_input "主控地址（http:// 或 https://）: " server
-               read_secret "节点 Token（输入不显示）: " token
+               read_secret "节点 Token（输入不显示；留空改用临时注册）: " token
+               register=''
+               if [ -z "$token" ]; then read_secret "临时注册密钥（面板“临时注册”生成）: " register; fi
                read_input "上报间隔 [1s]: " interval
-               ( install_agent "$server" "$token" "${interval:-1s}" ) ;;
+               ( install_agent "$server" "$token" "${interval:-1s}" "$register" ) ;;
             5) uninstall_agent ;;
             6) show_status ;;
             7) manage_services restart ;;
@@ -952,21 +1064,22 @@ case "$CMD" in
         [ -n "$domain" ] || error "Domain is required."
         configure_existing_server_domain "$domain" "$port" "$email" ;;
     agent)
-        server=""; token=""; interval=1s
+        server=""; token=""; interval=1s; register=""
         while [ $# -gt 0 ]; do
             case "$1" in
                 -s|--server) server="${2:?missing server}"; shift 2 ;;
                 -t|--token) token="${2:?missing token}"; shift 2 ;;
+                -r|--register) register="${2:?missing registration key}"; shift 2 ;;
                 -i|--interval) interval="${2:?missing interval}"; shift 2 ;;
                 *) error "Unknown agent option: $1" ;;
             esac
         done
-        install_agent "$server" "$token" "$interval" ;;
+        install_agent "$server" "$token" "$interval" "$register" ;;
     menu) menu ;;
     status) show_status ;;
     restart) systemctl restart "$SERVER_SERVICE" "$AGENT_SERVICE" ;;
     uninstall) uninstall_all ;;
     agent-uninstall|uninstall-agent) uninstall_agent ;;
-    help|--help|-h) echo "Usage: $0 [update [-p PORT] | server [-p PORT] -u USER -w PASSWORD [-d DOMAIN] [-e EMAIL] | domain -d DOMAIN [-p PORT] [-e EMAIL] | agent -s URL -t TOKEN [-i INTERVAL] | agent-uninstall | status | restart | uninstall]" ;;
+    help|--help|-h) echo "Usage: $0 [update [-p PORT] | server [-p PORT] -u USER -w PASSWORD [-d DOMAIN] [-e EMAIL] | domain -d DOMAIN [-p PORT] [-e EMAIL] | agent -s URL {-t TOKEN | -r REGISTER_KEY} [-i INTERVAL] | agent-uninstall | status | restart | uninstall]" ;;
     *) error "Unknown command: $CMD" ;;
 esac

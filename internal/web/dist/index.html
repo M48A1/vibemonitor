@@ -29,6 +29,7 @@
               <div class="node-management-menu">
                 <button type="button" class="site-menu-item site-menu-level-2" id="editExistingNodeBtn">编辑现有节点</button>
                 <button type="button" class="site-menu-item site-menu-level-2" id="addNodeBtn">新建节点</button>
+                <button type="button" class="site-menu-item site-menu-level-2" id="registerNodeBtn">临时注册</button>
                 <button type="button" class="site-menu-item site-menu-level-2" id="sortNodesBtn">节点排序</button>
               </div>
             </details>
@@ -293,6 +294,32 @@
           <button type="submit" class="btn btn-primary">创建节点</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Temporary Registration Modal -->
+  <div class="modal-overlay" id="registerNodeModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="registerNodeTitle">
+      <div class="modal-header">
+        <h3 class="modal-title" id="registerNodeTitle">临时注册节点</h3>
+        <button type="button" class="modal-close" id="closeRegisterNodeBtn" data-close-modal="registerNodeModal" aria-label="关闭">&times;</button>
+      </div>
+      <p class="logo-upload-hint">开放注册后，拿到下面命令的人都能在有效期内创建节点；到期自动关闭，也可以随时手动关闭。关闭后密钥立即失效。</p>
+      <div class="form-group">
+        <label class="form-label" for="registerMinutes">有效时长（分钟，1–1440）</label>
+        <input type="number" class="form-input" id="registerMinutes" min="1" max="1440" step="1" value="60">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="registerCommand">注册命令</label>
+        <textarea class="form-input form-textarea" id="registerCommand" rows="3" readonly placeholder="点击“开放注册”生成命令"></textarea>
+        <small>在目标机器上以 root 执行；命令会创建节点、下载并安装探针，节点名取机器的主机名。</small>
+      </div>
+      <p id="registerStatus" class="form-note" role="status" aria-live="polite"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn" id="copyRegisterCommandBtn">复制命令</button>
+        <button type="button" class="btn" id="closeRegisterWindowBtn">关闭注册</button>
+        <button type="button" class="btn btn-primary" id="openRegisterWindowBtn">开放注册</button>
+      </div>
     </div>
   </div>
 

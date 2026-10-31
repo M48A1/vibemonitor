@@ -1,23 +1,36 @@
 package server
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"io"
 	"log"
 	"net/http"
+	"net/netip"
 	"strings"
+	"time"
 
 	"vibemonitor/internal/store"
 	"vibemonitor/pkg/protocol"
 )
 
 type RPCHandler struct {
-	store         *store.Store
-	identityEpoch string
+	store          *store.Store
+	identityEpoch  string
+	limit          rpcLimiter
+	registerLimit  loginLimiter
+	trustedProxies []netip.Prefix
 }
 
-func NewRPCHandler(s *store.Store) *RPCHandler {
-	return &RPCHandler{store: s, identityEpoch: store.GenerateToken(16)}
+func NewRPCHandler(s *store.Store, trustedProxies []netip.Prefix) *RPCHandler {
+	return &RPCHandler{store: s, identityEpoch: store.GenerateToken(16), trustedProxies: trustedProxies}
+}
+
+// pruneLimits forgets the pace of tokens that stopped reporting, so a long-lived
+// server does not accumulate an entry per node ever created.
+func (h *RPCHandler) pruneLimits() {
+	h.limit.pruneExpired()
+	h.registerLimit.pruneExpired()
 }
 
 func extractToken(r *http.Request) string {
@@ -66,6 +79,10 @@ func (h *RPCHandler) HandleV2RPC(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, protocol.ErrorResponse(req.ID, -32602, "invalid basic info params", err.Error()))
 			return
 		}
+		if !h.limit.allow(protocol.MethodAgentBasicInfo, token, time.Now(), basicInfoSpacing) {
+			writeJSON(w, http.StatusTooManyRequests, protocol.ErrorResponse(req.ID, -32000, "basic info arrives too often; retry later", nil))
+			return
+		}
 		node, err := h.store.IngestBasicInfo(token, params.Info)
 		if err != nil {
 			writeJSON(w, http.StatusUnauthorized, protocol.ErrorResponse(req.ID, -32000, err.Error(), nil))
@@ -83,6 +100,10 @@ func (h *RPCHandler) HandleV2RPC(w http.ResponseWriter, r *http.Request) {
 		var params protocol.ReportParams
 		if err := json.Unmarshal(req.Params, &params); err != nil {
 			writeJSON(w, http.StatusOK, protocol.ErrorResponse(req.ID, -32602, "invalid report params", err.Error()))
+			return
+		}
+		if !h.limit.allow(protocol.MethodAgentReport, token, time.Now(), reportSpacing(params.Report.ReportIntervalSeconds)) {
+			writeJSON(w, http.StatusTooManyRequests, protocol.ErrorResponse(req.ID, -32000, "reports arrive faster than the interval this node declares; this one was not stored", nil))
 			return
 		}
 		node, err := h.store.IngestReport(token, params.Report)
@@ -113,26 +134,60 @@ func (h *RPCHandler) HandleV2RPC(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// maxRegisterNameLen keeps a self-registered name from filling the panel; a
+// hostname is far shorter.
+const maxRegisterNameLen = 64
+
+// validRegisterName accepts the characters a hostname or a hand-typed node name
+// is likely to carry on a command line. Anything else falls back to a default
+// rather than refusing the install.
+func validRegisterName(name string) bool {
+	if name == "" || len(name) > maxRegisterNameLen {
+		return false
+	}
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '-' || r == '_' || r == '.':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 func (h *RPCHandler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	auth := r.Header.Get("Authorization")
-	adKey := strings.TrimPrefix(auth, "Bearer ")
-	config := h.store.GetConfig()
-
-	if config.AutoDiscoveryKey == "" || adKey != config.AutoDiscoveryKey {
+	adKey := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	// One read of key and deadline: an expiring window must not hand a key to a
+	// request that arrived before it closed and a refusal to one that did not.
+	// The comparison is constant time because the key is a credential.
+	key, open := h.store.RegistrationOpen(time.Now())
+	if !open || subtle.ConstantTimeCompare([]byte(adKey), []byte(key)) != 1 {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{
 			"status": "error",
-			"error":  "invalid auto discovery key",
+			"error":  "no registration window is open, or the key is invalid",
+		})
+		return
+	}
+
+	// A window is meant for one machine at a time: the same address registering
+	// in a loop would create nodes without bound.
+	if !h.registerLimit.allow(r, h.trustedProxies...) {
+		w.Header().Set("Retry-After", "300")
+		writeJSON(w, http.StatusTooManyRequests, map[string]any{
+			"status": "error",
+			"error":  "too many registrations from this address; retry in 5 minutes",
 		})
 		return
 	}
 
 	name := r.URL.Query().Get("name")
-	if name == "" {
+	if !validRegisterName(name) {
 		name = "auto-node"
 	}
 

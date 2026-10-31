@@ -82,6 +82,135 @@ window.copyGuideCommand = async function(id) {
   }
 };
 
+// Temporary registration window.
+//
+// The server hands out a node token for anyone holding the window's key, so the
+// panel treats the key as a short-lived secret: it is only shown while the
+// window is open, the countdown comes from the server's clock, and closing the
+// window forgets both.
+const registerElements = () => ({
+  minutes: document.getElementById('registerMinutes'),
+  command: document.getElementById('registerCommand'),
+  status: document.getElementById('registerStatus'),
+  openBtn: document.getElementById('openRegisterWindowBtn'),
+  closeBtn: document.getElementById('closeRegisterWindowBtn'),
+  copyBtn: document.getElementById('copyRegisterCommandBtn')
+});
+
+let registerCountdown = null;
+let registerDeadline = 0;
+
+function stopRegisterCountdown() {
+  if (registerCountdown) {
+    clearInterval(registerCountdown);
+    registerCountdown = null;
+  }
+}
+
+function formatRegisterLeft(seconds) {
+  const left = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(left / 60);
+  return minutes > 0 ? `${minutes} 分 ${left % 60} 秒` : `${left} 秒`;
+}
+
+function applyRegisterWindow(data) {
+  const el = registerElements();
+  if (!el.command) return;
+  const open = !!(data && data.open);
+  if (data && data.max_minutes) el.minutes.max = String(data.max_minutes);
+  if (data && data.default_minutes) el.minutes.placeholder = String(data.default_minutes);
+  el.command.value = open ? `curl -fsSL ${window.location.origin}/install.sh?register=${data.register_key} | bash` : '';
+  el.copyBtn.disabled = !open;
+  el.closeBtn.disabled = !open;
+  // Re-opening rotates the key, which invalidates a command already handed out,
+  // so the button stays available but says what it does.
+  el.openBtn.textContent = open ? '重新生成' : '开放注册';
+  registerDeadline = Date.now() + Math.max(0, Number(data?.seconds_left) || 0) * 1000;
+
+  stopRegisterCountdown();
+  const tick = () => {
+    const modal = document.getElementById('registerNodeModal');
+    if (!modal || !modal.classList.contains('active')) { stopRegisterCountdown(); return; }
+    const left = Math.round((registerDeadline - Date.now()) / 1000);
+    if (!open) {
+      el.status.textContent = '当前没有开放的注册窗口。';
+      stopRegisterCountdown();
+      return;
+    }
+    if (left <= 0) {
+      // Re-read rather than guess: the key is gone from the server's answer too.
+      el.status.textContent = '注册窗口已关闭。';
+      stopRegisterCountdown();
+      void loadRegisterWindow();
+      return;
+    }
+    el.status.textContent = `注册窗口开放中，剩余 ${formatRegisterLeft(left)}。`;
+  };
+  tick();
+  if (open) registerCountdown = setInterval(tick, 1000);
+}
+
+async function loadRegisterWindow() {
+  try {
+    const res = await fetch('/api/admin/register', { credentials: 'same-origin', cache: 'no-store' });
+    if (!res.ok) throw new Error('无法读取注册状态，请重新登录后重试');
+    applyRegisterWindow(await res.json());
+  } catch (error) {
+    const el = registerElements();
+    if (el.status) el.status.textContent = error.message;
+  }
+}
+
+async function updateRegisterWindow(method, body) {
+  const el = registerElements();
+  try {
+    const res = await fetch('/api/admin/register', {
+      method,
+      credentials: 'same-origin',
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    applyRegisterWindow(data);
+  } catch (error) {
+    if (el.status) el.status.textContent = error.message;
+  }
+}
+
+const registerNodeBtn = document.getElementById('registerNodeBtn');
+if (registerNodeBtn) registerNodeBtn.addEventListener('click', () => {
+  nodeManagementMenu.open = false;
+  requireAdmin(() => {
+    openModal('registerNodeModal');
+    void loadRegisterWindow();
+  });
+});
+
+if (document.getElementById('openRegisterWindowBtn')) {
+  document.getElementById('openRegisterWindowBtn').addEventListener('click', () => {
+    const input = document.getElementById('registerMinutes');
+    const raw = Number(input.value || 0);
+    const max = Number(input.max) || 1440;
+    const minutes = Number.isFinite(raw) ? Math.min(max, Math.max(1, Math.round(raw))) : 60;
+    void updateRegisterWindow('POST', { minutes });
+  });
+  document.getElementById('closeRegisterWindowBtn').addEventListener('click', () => {
+    void updateRegisterWindow('DELETE');
+  });
+  document.getElementById('copyRegisterCommandBtn').addEventListener('click', async () => {
+    const command = document.getElementById('registerCommand').value;
+    if (!command) return;
+    try {
+      await navigator.clipboard.writeText(command);
+      document.getElementById('registerStatus').textContent = '命令已复制，窗口关闭后立即失效。';
+    } catch (e) {
+      alert('复制失败，请手动复制命令');
+    }
+  });
+  document.getElementById('closeRegisterNodeBtn').addEventListener('click', stopRegisterCountdown);
+}
+
 // A failed response does not prove the transaction failed (e.g. proxy timeout).
 async function requestNodeDeletion(uuid) {
   let failure;

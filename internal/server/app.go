@@ -54,7 +54,7 @@ func New(opts Options) (*Server, error) {
 		addr:           opts.ListenAddr,
 		store:          st,
 		wsHub:          NewWSHub(st),
-		rpc:            NewRPCHandler(st),
+		rpc:            NewRPCHandler(st, trustedProxies),
 		trustedProxies: trustedProxies,
 	}
 	return s, nil
@@ -147,6 +147,7 @@ func (s *Server) Run(ctx context.Context) error {
 			case <-cleanupTicker.C:
 				s.pruneExpiredTokens()
 				s.loginLimit.pruneExpired()
+				s.rpc.pruneLimits()
 			}
 		}
 	}()

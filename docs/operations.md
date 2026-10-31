@@ -8,11 +8,14 @@
 | --- | --- |
 | 可执行文件 | `/usr/local/bin/vibemonitor` |
 | 主控数据库 | `/etc/vibemonitor/vibemonitor-data.db` |
+| 探针环境文件 | `/etc/vibemonitor/agent.env`（权限 `600`，仅 root 可读） |
 | 主控服务 | `vibemonitor-server.service` |
 | 探针服务 | `vibemonitor-agent.service` |
 | Nginx 配置 | `/etc/nginx/conf.d/vibemonitor.conf` |
 
 数据库保存账号密码哈希、节点 Token、Telegram 配置、主题、图标和历史数据。应限制数据库文件的访问权限。SQLite 工作时可能生成同名的 `-wal`、`-shm` 文件。
+
+安装器写出的探针单元以专用系统用户 `vibemonitor` 运行，并启用 `NoNewPrivileges`、`ProtectSystem=strict`、`ProtectHome`、`PrivateTmp`、`PrivateDevices`、`MemoryHigh=64M`/`MemoryMax=128M` 等限制。Token 与主控地址保存在 `agent.env`（`EnvironmentFile`），不出现在 `ExecStart` 里——`/proc/PID/cmdline` 默认对所有本机用户可读，写进命令行等于公开 Token。因为 `NoNewPrivileges=yes` 会屏蔽 `ping` 自身的文件能力，单元改为携带 `AmbientCapabilities=CAP_NET_RAW`（子进程继承）；若系统禁用该能力，探针的 Ping 目标会全部失败，日志可见 `ping:` 报错。
 
 ```bash
 sudo systemctl status vibemonitor-server
@@ -46,11 +49,14 @@ v1 迁移删除 `ping_history` 上早期版本重复创建的 `idx_ping_lookup` 
 | --- | --- | --- |
 | `--server` / `-s` | `VIBEMONITOR_SERVER` | 主控最终访问 URL，例如 `https://monitor.example.com` |
 | `--token` / `-t` | `VIBEMONITOR_TOKEN` | 该节点的通信 Token |
+| `--register` / `-r` | 无（仅安装器参数） | 面板“临时注册”生成的密钥；安装时换取节点 Token，不落盘 |
 | `--interval` / `-i` | `VIBEMONITOR_INTERVAL` | 上报间隔，默认 `1s`，必须大于 0 且不超过 `1h` |
 | `--interfaces` | `VIBEMONITOR_INTERFACES` | 逗号分隔的网卡名；留空自动选择 |
 | 无对应命令行参数 | `VIBEMONITOR_DISK_PATH` | 采集该路径所在文件系统的容量，默认 `/` |
 
 命令行参数优先于同名环境变量。显式选择的网卡不存在时，采集会报错；多网卡、桥接或隧道环境可指定实际承载流量的网卡，并对照系统计数检查，避免重复统计。硬盘指标对应一个文件系统，并非所有磁盘容量之和。
+
+`install.sh` 写出的单元只用 `EnvironmentFile` 读取主控地址与 Token，`ExecStart` 里不再出现凭据。安装或重装时脚本以 `umask 077` 生成 `agent.env` 并 `chmod 600`；重装失败回滚会一并恢复旧的环境文件与旧单元。
 
 systemd 服务可通过 `sudo systemctl edit vibemonitor-agent` 添加环境配置，例如：
 
@@ -61,6 +67,20 @@ Environment="VIBEMONITOR_DISK_PATH=/data"
 ```
 
 保存后执行 `sudo systemctl daemon-reload` 和 `sudo systemctl restart vibemonitor-agent`。如果要改变上报间隔，先用 `systemctl cat vibemonitor-agent` 检查 `ExecStart`：安装器会显式传入间隔，此时只改环境变量不会覆盖它。
+
+## 临时注册
+
+新增机器有两种接入方式：面板“节点管理 → 新建节点”创建节点后用该节点的 Token 安装，或用“节点管理 → 临时注册”生成一条命令，把注册密钥带到目标机器换取 Token。
+
+- 注册窗口默认关闭。打开时服务端轮换密钥并记录到期时间（默认 60 分钟，最长 24 小时），到期自动失效，不需要任何后台任务。
+- 关闭窗口或到期后旧命令立即失效；每次“重新生成”都会换一把新密钥。
+- 同一来源地址 5 分钟内最多注册 10 次，超出返回 `429`。
+- 注册得到的节点名取目标机器主机名（只保留字母、数字、`.`、`_`、`-`，最长 64 字符），其余情况回退为 `auto-node`。
+- `/install.sh?register=<密钥>` 生成的引导脚本只携带该密钥，真正的校验发生在目标机器注册时；脚本仍会校验下载到的 `install.sh` 的 sha256。
+
+## 上报限流
+
+主控按 Token 对写入型 RPC 限速：相邻两次 `agent.report` 的间隔不得小于其声明上报间隔的一半（下限 50 毫秒，上限 30 秒），`agent.basic_info` 每秒最多一次。超限的请求返回 HTTP `429` 和 JSON-RPC 错误 `-32000`，不写入数据库；探针按失败处理并按节流频率记录日志。默认 1 秒上报间隔远高于下限，正常节点不会触及限制。
 
 ## 流量账期规则
 

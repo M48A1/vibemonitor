@@ -12,11 +12,27 @@ import (
 func HandleInstallScript(s *store.Store, trustedProxies ...netip.Prefix) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := r.URL.Query().Get("token")
-		if token == "" {
+		register := r.URL.Query().Get("register")
+		if token == "" && register == "" {
 			http.Error(w, "Error: missing token in URL, e.g. /install.sh?token=YOUR_TOKEN", http.StatusBadRequest)
 			return
 		}
-		if _, err := hex.DecodeString(token); err != nil || s.FindNodeByToken(token) == nil {
+		// The flag the embedded script hands to install.sh: a node token that
+		// already exists, or a registration key that creates one on the machine
+		// being installed. A key is only checked against the open window when the
+		// agent uses it, so here it merely has to be shaped like one.
+		flag, credential := "-t", token
+		if register != "" {
+			if len(register) != 32 {
+				http.Error(w, "Invalid registration key", http.StatusUnauthorized)
+				return
+			}
+			if _, err := hex.DecodeString(register); err != nil {
+				http.Error(w, "Invalid registration key", http.StatusUnauthorized)
+				return
+			}
+			flag, credential = "-r", register
+		} else if _, err := hex.DecodeString(token); err != nil || s.FindNodeByToken(token) == nil {
 			http.Error(w, "Invalid node token", http.StatusUnauthorized)
 			return
 		}
@@ -32,10 +48,11 @@ func HandleInstallScript(s *store.Store, trustedProxies ...netip.Prefix) http.Ha
 		}
 		serverURL := scheme + "://" + host
 
-		script := strings.NewReplacer("@SERVER@", serverURL, "@TOKEN@", token).Replace(`#!/usr/bin/env bash
+		script := strings.NewReplacer("@SERVER@", serverURL, "@CREDENTIAL_FLAG@", flag, "@CREDENTIAL@", credential).Replace(`#!/usr/bin/env bash
 set -e
 SERVER_URL="@SERVER@"
-TOKEN="@TOKEN@"
+CREDENTIAL_FLAG="@CREDENTIAL_FLAG@"
+CREDENTIAL="@CREDENTIAL@"
 if [ "$#" -gt 1 ]; then echo "Usage: bash -s -- [agent|agent-uninstall]" >&2; exit 1; fi
 case "${1-agent}" in
     agent) ACTION=agent ;;
@@ -65,7 +82,7 @@ printf '%s  %s\n' "$EXPECTED" "$TMP_DIR/install.sh" | sha256sum -c - >/dev/null
 if [ "$ACTION" = agent-uninstall ]; then
     bash "$TMP_DIR/install.sh" agent-uninstall
 else
-    bash "$TMP_DIR/install.sh" agent -s "$SERVER_URL" -t "$TOKEN"
+    bash "$TMP_DIR/install.sh" agent -s "$SERVER_URL" "$CREDENTIAL_FLAG" "$CREDENTIAL"
 fi
 `)
 
