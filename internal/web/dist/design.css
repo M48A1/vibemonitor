@@ -133,7 +133,7 @@ body .hex-card .metric-button:focus-visible .metric-name { color: var(--primary)
 .progress-bar { border-radius: 99px; background: var(--success); }
 .progress-bar.high { background: var(--warning); }
 .progress-bar.critical { background: var(--destructive); }
-.hex-network { grid-area: network; padding-top: 0; gap: 8px; }
+.hex-network { grid-area: network; padding-top: 0; gap: 8px 4px; max-width: 400px; }
 .hex-network > div, .hex-network > button { align-items: flex-start; gap: 2px; text-align: left; }
 .hex-network strong { font-size: 13px; }
 .hex-network span { font-size: 10px; }

@@ -121,6 +121,7 @@
     const data = await request('/api/nodes?view=dashboard');
     nodes = Array.isArray(data) ? data.filter(node => !deletedNodeIDs.has(node.uuid)) : [];
     renderNodes();
+    renderSortList();
   }
 
 
@@ -451,16 +452,23 @@
     });
   }
 
-  function openSort() {
+  // The sort card is permanently expanded, so the list follows the table: it is
+  // rebuilt when nodes are added or removed, while a pending drag order stays
+  // intact until it is saved.
+  let sortDragging = false;
+
+  function renderSortList(force) {
+    if (sortDragging) return;
     const list = $('sortNodesList');
-    $('sortNodesStatus').textContent = '';
+    const sorted = [...nodes].sort(compareNodes);
+    const rendered = [...list.querySelectorAll('.sort-node-item')].map(item => item.dataset.uuid);
+    if (!force && rendered.length === sorted.length && sorted.every(node => rendered.includes(node.uuid))) return;
     list.replaceChildren();
-    $('sortCard').hidden = false;
-    if (!nodes.length) {
+    if (!sorted.length) {
       list.textContent = '暂无节点，请先新建节点。';
       return;
     }
-    [...nodes].sort(compareNodes).forEach(node => {
+    for (const node of sorted) {
       const item = document.createElement('div');
       item.className = 'sort-node-item';
       item.draggable = true;
@@ -473,9 +481,14 @@
         + '<button type="button" class="sort-down-btn" title="下移" aria-label="下移">▼</button>'
         + '</span>';
       list.appendChild(item);
-    });
+    }
     updateSortButtons();
     updateSortBadges();
+  }
+
+  function openSort() {
+    $('sortNodesStatus').textContent = '';
+    renderSortList();
     $('sortCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
@@ -502,6 +515,7 @@
     list.addEventListener('dragstart', (event) => {
       dragItem = event.target.closest('.sort-node-item');
       if (!dragItem) return;
+      sortDragging = true;
       dragItem.classList.add('dragging');
       event.dataTransfer.effectAllowed = 'move';
       event.dataTransfer.setData('text/plain', '');
@@ -511,6 +525,7 @@
       if (dragItem) dragItem.classList.remove('dragging');
       list.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
       dragItem = null;
+      sortDragging = false;
       updateSortButtons();
       updateSortBadges();
     });
@@ -546,7 +561,10 @@
       const grip = event.target.closest('.sort-node-grip');
       if (!grip) return;
       touchItem = grip.closest('.sort-node-item');
-      if (touchItem) touchItem.classList.add('dragging');
+      if (touchItem) {
+        sortDragging = true;
+        touchItem.classList.add('dragging');
+      }
     }, { passive: true });
 
     list.addEventListener('touchmove', (event) => {
@@ -571,6 +589,7 @@
       if (!touchItem) return;
       touchItem.classList.remove('dragging');
       touchItem = null;
+      sortDragging = false;
       updateSortButtons();
       updateSortBadges();
     };
@@ -599,7 +618,7 @@
       statusEl.textContent = '排序已保存';
       statusEl.style.color = 'var(--primary)';
       await loadNodes();
-      setTimeout(() => { $('sortCard').hidden = true; }, 600);
+      renderSortList(true);
     } catch (error) {
       statusEl.textContent = '保存失败：' + error.message;
       statusEl.style.color = 'var(--destructive)';
@@ -698,8 +717,6 @@
     $('nodeForm').addEventListener('submit', submitForm);
     $('nodeFormCancelBtn').addEventListener('click', closeForm);
     $('closeGuideBtn').addEventListener('click', () => { $('guideCard').hidden = true; });
-    $('sortNodesBtn').addEventListener('click', openSort);
-    $('cancelSortNodesBtn').addEventListener('click', () => { $('sortCard').hidden = true; });
     $('saveSortNodesBtn').addEventListener('click', saveSort);
 
     $('openRegisterWindowBtn').addEventListener('click', () => {

@@ -48,7 +48,6 @@
           </div>
           <div class="admin-page-actions">
             <button type="button" class="btn btn-primary" id="newNodeBtn">新建节点</button>
-            <button type="button" class="btn" id="sortNodesBtn">节点排序</button>
             <button type="button" class="btn" id="refreshNodesBtn">刷新</button>
           </div>
         </div>
@@ -209,14 +208,13 @@
           </div>
         </section>
 
-        <section class="admin-card" id="sortCard" hidden aria-labelledby="sortNodesTitle">
+        <section class="admin-card" id="sortCard" aria-labelledby="sortNodesTitle">
           <h2 class="admin-card-title" id="sortNodesTitle">节点排序</h2>
           <p class="admin-note">拖动节点调整显示顺序，或使用上下按钮微调。保存后按当前列表顺序显示节点。</p>
           <div class="sort-nodes-list" id="sortNodesList"></div>
           <p class="form-note" id="sortNodesStatus" role="status" aria-live="polite"></p>
           <div class="admin-inline-actions">
             <button type="button" class="btn btn-primary" id="saveSortNodesBtn">保存排序</button>
-            <button type="button" class="btn" id="cancelSortNodesBtn">收起</button>
           </div>
         </section>
 
