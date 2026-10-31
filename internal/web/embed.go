@@ -29,6 +29,7 @@ const documentCacheControl = "no-cache"
 // SPA fallback keeps pointing unknown paths at index.html.
 var adminDocuments = []string{
 	"admin-nodes.html",
+	"admin-rankings.html",
 	"admin-settings.html",
 	"admin-theme.html",
 	"admin-telegram.html",

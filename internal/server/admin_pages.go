@@ -25,6 +25,7 @@ func (s *Server) registerAdminPageRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /admin", redirect)
 	mux.HandleFunc("GET /admin/{$}", redirect)
 	mux.Handle("GET /admin/nodes", s.adminPage("admin-nodes.html"))
+	mux.Handle("GET /admin/rankings", s.adminPage("admin-rankings.html"))
 	mux.Handle("GET /admin/settings", s.adminPage("admin-settings.html"))
 	mux.Handle("GET /admin/theme", s.adminPage("admin-theme.html"))
 	mux.Handle("GET /admin/telegram", s.adminPage("admin-telegram.html"))

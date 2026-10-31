@@ -81,11 +81,9 @@ a.site-menu-item { text-decoration: none; }
 .site-menu-logout { margin-top: 6px; border-top: 1px solid var(--border); border-radius: 0 0 6px 6px; color: var(--destructive); }
 .site-menu-panel > .site-menu-item, .site-menu-panel > .node-management { margin-bottom: 3px; }
 
-/* Historical rankings share the active theme's colors. */
-.modal.rankings-modal { max-width: 860px; width: calc(100% - 32px); gap: 0; }
-.rankings-modal .modal-header { margin-bottom: 20px; }
-.rankings-description { color: var(--muted-foreground); font-size: 13px; margin: -8px 0 20px; }
-.rankings-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+/* Historical rankings share the active theme's colors. The page lives in the
+   management area, so only the cards and the toolbar need styling here. */
+.rankings-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .rankings-period { color: var(--muted-foreground); font-size: 12px; margin: 12px 0 18px; }
 .rankings-status { color: var(--muted-foreground); font-size: 13px; }
 .rankings-status:empty { display: none; }
@@ -113,7 +111,6 @@ a.site-menu-item { text-decoration: none; }
   .ranking-card:last-child .ranking-node { max-width: 100%; }
 }
 @media (max-width: 600px) {
-  .modal.rankings-modal { padding: 18px; }
   .rankings-grid { grid-template-columns: minmax(0, 1fr); }
   .ranking-card { padding: 16px; }
 }
@@ -572,12 +569,6 @@ body:has(.modal-overlay.active) { overflow: hidden; }
   padding-top: 14px;
 }
 
-.telegram-template-section summary {
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 600;
-}
-
 .telegram-template-section p,
 .telegram-template-section small {
   color: var(--muted-foreground);
@@ -770,7 +761,10 @@ body:has(.modal-overlay.active) { overflow: hidden; }
 .node-card { gap: 12px; padding: 16px; }
 .billing-form { margin: 16px 0; }
 .billing-form label { display: grid; gap: 6px; font-size: 13px; }
-.ping-panels { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+/* The 24-sample history stays a compact sparkline: stretching it across the
+   whole card turned each sample into a wide block, so the two panels share a
+   fixed, readable width instead. */
+.ping-panels { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; max-width:540px; }
 .ping-panel { min-width:0; padding:12px; background:var(--card-data-bg); border-radius:14px; }
 .panel-label, .ping-empty { color:var(--muted-foreground); font-size:13px; }
 .ping-sample-row { display:block; width:100%; background:transparent; color:var(--foreground); border:0; padding:10px 0 0; cursor:pointer; text-align:left; }

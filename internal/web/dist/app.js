@@ -134,7 +134,6 @@ window.closeModal = function(id) {
   if (!id) {
     cancelPingHistory();
     cancelResourceHistory();
-    if (typeof cancelRankings === 'function') cancelRankings();
     const activeModals = typeof document.querySelectorAll === 'function'
       ? document.querySelectorAll('.modal-overlay.active')
       : [];
@@ -157,7 +156,6 @@ window.closeModal = function(id) {
   const modalId = (m && m.id) || id;
   if (modalId === 'pingChartModal') cancelPingHistory();
   if (modalId === 'resourceChartModal') cancelResourceHistory();
-  if (modalId === 'rankingsModal' && typeof cancelRankings === 'function') cancelRankings();
   if (modalId === 'loginModal') {
     resetLoginPasswordFields();
     pendingAdminAction = null;
@@ -169,7 +167,6 @@ window.closeModal = function(id) {
 
 // Bind modal overlay backdrop click to close
 const modalOverlayIds = [
-  'rankingsModal',
   'loginModal',
   'pingChartModal',
   'resourceChartModal'
@@ -249,12 +246,12 @@ if (typeof document.addEventListener === 'function') {
       }
       return;
     }
-    // Keep Tab inside the open dialog; rankings.js traps its own panel.
+    // Keep Tab inside the open dialog.
     if (e.key !== 'Tab') return;
     const overlay = typeof document.querySelector === 'function'
       ? document.querySelector('.modal-overlay.active')
       : null;
-    if (!overlay || overlay.id === 'rankingsModal') return;
+    if (!overlay) return;
     const candidates = overlay.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])');
     const focusables = [];
     for (let i = 0; i < candidates.length; i++) {

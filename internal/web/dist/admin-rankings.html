@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-site-theme="design" data-site-layout="cards" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex">
+  <meta name="description" content="VibeMonitor 管理后台 · 排行榜">
+  <meta name="theme-color" content="#eeece8">
+  <title>排行榜 · 管理后台</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/themes.css">
+  <link rel="stylesheet" href="/admin.css">
+  <link rel="stylesheet" href="/design.css" id="customThemeStylesheet">
+  <link rel="icon" id="siteIcon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='10' fill='%230d9488'/></svg>">
+</head>
+<body class="admin-body" data-page-title="排行榜">
+  <a class="admin-skip" href="#adminMain">跳到主要内容</a>
+  <header class="admin-topbar">
+    <a class="admin-brand" href="/admin/nodes">
+      <img class="admin-brand-icon" id="adminBrandIcon" alt="" src="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='10' fill='%230d9488'/></svg>">
+      <span id="adminBrandTitle">VibeMonitor</span>
+    </a>
+    <div class="admin-topbar-actions">
+      <a class="btn" href="/">监控面板</a>
+      <button type="button" class="btn" id="adminLogoutBtn" hidden>退出登录</button>
+    </div>
+  </header>
+
+  <div class="admin-shell">
+    <nav class="admin-sidebar" id="adminSidebar" aria-label="管理后台导航">
+      <a class="admin-nav-link" href="/admin/nodes" data-admin-nav="nodes">节点管理</a>
+      <a class="admin-nav-link" href="/admin/rankings" data-admin-nav="rankings">排行榜</a>
+      <a class="admin-nav-link" href="/admin/settings" data-admin-nav="settings">基本设置</a>
+      <a class="admin-nav-link" href="/admin/theme" data-admin-nav="theme">主题管理</a>
+      <a class="admin-nav-link" href="/admin/telegram" data-admin-nav="telegram">外部通信设置</a>
+      <a class="admin-nav-link admin-nav-public" href="/">返回监控面板</a>
+      <span class="admin-nav-foot">VibeMonitor 管理后台</span>
+    </nav>
+
+    <main class="admin-main" id="adminMain">
+      <p class="admin-loading" id="adminLoading">正在验证管理员登录状态…</p>
+
+      <div id="adminContent" hidden>
+        <div class="admin-page-head">
+          <div>
+            <h1 class="admin-title">排行榜</h1>
+            <p class="admin-subtitle">按北京时间统计今天、本周（周一起）与本月至今，每项取前三名。</p>
+          </div>
+        </div>
+
+        <section class="admin-card" aria-labelledby="rankingsHeading">
+          <h2 class="admin-card-title" id="rankingsHeading">五项指标</h2>
+          <div class="rankings-toolbar">
+            <div class="time-range-group" role="group" aria-label="统计周期">
+              <button type="button" class="range-btn active" data-ranking-period="day" aria-pressed="true">今天</button>
+              <button type="button" class="range-btn" data-ranking-period="week" aria-pressed="false">本周</button>
+              <button type="button" class="range-btn" data-ranking-period="month" aria-pressed="false">本月</button>
+            </div>
+            <button type="button" class="btn" id="refreshRankingsBtn">刷新</button>
+          </div>
+          <p class="rankings-period" id="rankingsPeriod"></p>
+          <p class="rankings-status" id="rankingsStatus" role="status" aria-live="polite"></p>
+          <div class="rankings-grid" id="rankingsGrid"></div>
+          <p class="rankings-footnote">前四项取时段内有效采样的平均值，流量累计上传与下载，不含手动补录或校正；离线节点凭时段内已有记录参与，缺少对应记录的节点不参与排名。</p>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <p class="admin-status" id="adminStatus" role="status" aria-live="polite" hidden></p>
+
+  <script src="/admin-core.js"></script>
+  <script src="/admin-rankings.js"></script>
+</body>
+</html>
