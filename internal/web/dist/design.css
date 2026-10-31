@@ -123,7 +123,8 @@ body .hex-card .metric-button:focus-visible .metric-name { color: var(--primary)
 .node-network-identity { gap: 4px 12px; }
 .node-google-region { gap: 5px; }
 .node-google-region img { flex-basis: 1em; width: 1em; height: 1em; }
-.hex-status { padding: 3px 6px; border-radius: 5px; background: var(--card-data-bg); }
+/* The status chip is a dot in this theme: the halo shrinks with the card. */
+.hex-status { width: 13px; height: 13px; }
 .hex-status.is-online { background: color-mix(in srgb, var(--success) 12%, transparent); }
 .hex-resources { grid-area: resources; gap: 6px 12px; }
 .hex-metric { gap: 3px; }

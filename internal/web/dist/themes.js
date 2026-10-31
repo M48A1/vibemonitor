@@ -158,7 +158,7 @@ window.VibeHex = (() => {
     const limit = number(node.traffic_limit);
     const traffic = limit > 0 ? percent(used, limit) : null;
     return `<article class="node-card hex-card ${node.online ? '' : 'offline'}" data-node-id="${escapeHtml(node.uuid)}">
-      <div class="hex-node-header"><div class="hex-node-identity"><span class="hex-region">${getRegionBadge(node.region)}</span><h2>${escapeHtml(node.name)}</h2><span class="hex-system">${systemIcon(info.os)}<span>${escapeHtml(info.os || '等待上报')} ${info.arch ? '· ' + escapeHtml(info.arch) : ''}</span></span>${networkIdentityLine(info)}</div><span class="hex-status ${node.online ? 'is-online' : ''}"><i></i>${node.online ? '在线' : '离线'}</span></div>
+      <div class="hex-node-header"><div class="hex-node-identity"><span class="hex-region">${getRegionBadge(node.region)}</span><h2>${escapeHtml(node.name)}</h2><span class="hex-system">${systemIcon(info.os)}<span>${escapeHtml(info.os || '等待上报')} ${info.arch ? '· ' + escapeHtml(info.arch) : ''}</span></span>${networkIdentityLine(info)}</div><span class="hex-status ${node.online ? 'is-online' : 'is-offline'}" role="img" title="${node.online ? '在线' : '离线'}" aria-label="${node.online ? '在线' : '离线'}"><i></i></span></div>
       <div class="hex-resources">
         ${metric('CPU', live ? number(cpu.usage) : null, `${info.cpu_cores || cpu.cores || '—'} 核`, node.uuid, 'cpu')}
         ${metric('内存', live ? percent(ram.used, ram.total) : null, capacity(ram), node.uuid, 'memory')}
