@@ -4,6 +4,9 @@ on:
   push:
     tags:
       - 'v*'
+  # Re-run a release for a tag that already exists (Actions → Run workflow →
+  # choose the tag), e.g. after a failed validation step. Nothing new is tagged.
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -18,14 +21,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Resolve release version
         id: version
         run: |
           VERSION="$GITHUB_REF_NAME"
-          [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+          # The tag is stamped into the binary and names the release, so it has to
+          # be numeric: v1.2 or v1.2.3. A tag like "v1" or "v1.2.3-rc1" fails here
+          # instead of producing an unlabelled build.
+          if [[ ! "$VERSION" =~ ^v[0-9]+(\.[0-9]+){1,2}$ ]]; then
+            echo "::error::tag '$VERSION' is not a release version; use v<major>.<minor> or v<major>.<minor>.<patch>"
+            exit 1
+          fi
           echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing $VERSION from $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -37,7 +47,7 @@ jobs:
         run: |
           go vet ./...
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
       - run: for file in internal/web/dist/*.js; do node --check "$file"; done

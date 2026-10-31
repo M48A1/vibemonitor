@@ -135,7 +135,7 @@ make release-all
 
 测试源码、测试脚本、测试专用依赖和测试工作流仅在本地保留，由 `.gitignore` 排除，不再随仓库或发布源码分发。已有本地测试文件时仍可运行 `go test -race ./...`；全新的检出不包含这些测试。
 
-发布时更新 `RELEASE_VERSION` 和 `RELEASE_NOTES.md`，推送对应的 `vX.Y.Z` tag。发布工作流由 tag 触发，生成 GitHub Release 及附件。
+发布由 tag 触发：推 `vX.Y` 或 `vX.Y.Z` 形式的 tag（如 `v1.1.11`），`Release and Build Binaries` 工作流会先跑 `go vet`、前端 JavaScript 语法检查和安装脚本检查，再构建 amd64/arm64 两个产物并创建 GitHub Release。版本号直接取自 tag 名并写入二进制，仓库里没有需要手动修改的版本文件；不符合 `v<major>.<minor>[.<patch>]` 的 tag 会在第一步就带着明确报错退出（例如 `v1`、`v1.2.3-rc1`）。发布失败时先看失败的是哪一步：环境或网络抖动可以在 Actions 里对该 tag 重新运行工作流（tag 上已有正确的代码和工作流）；代码或工作流本身有问题时，修复推送到 `main` 后需要把 tag 删掉重打到修复后的提交，因为触发和重跑使用的都是该 tag 上的工作流文件。
 
 后端 `internal/server/app.go` 负责服务生命周期和路由组装，认证、节点、历史、设置与 Telegram 路由分别位于 `*_routes.go`，压缩中间件在 `compression.go`。
 
