@@ -177,16 +177,6 @@ window.VibeHex = (() => {
     const live = nodes.filter(n => n.online && n.last_report);
     const online = nodes.filter(n => n.online).length;
     const total = field => live.reduce((sum, n) => sum + (number((n.last_report.network || {})[field]) || 0), 0);
-    const memoryUsages = live.map(n => {
-      const ram = n.last_report.ram || {};
-      return percent(ram.used, ram.total);
-    }).filter(usage => usage != null);
-    const memoryBusy = memoryUsages.filter(usage => usage >= 85).length;
-    const busy = live.filter(n => {
-      const threshold = number((n.profile || {}).cpu_threshold);
-      const usage = number((n.last_report.cpu || {}).usage);
-      return threshold != null && usage != null && usage >= threshold;
-    }).length;
     const cycleUsages = nodes.map(n => number(n.cycle_total_used))
       .filter(used => used != null && used >= 0);
     const cycleTraffic = cycleUsages.reduce((sum, used) => sum + used, 0);
@@ -202,8 +192,8 @@ window.VibeHex = (() => {
       const match = /^([\d.,]+)\s*(.+)$/.exec(raw);
       return match ? { value: match[1], unit: match[2] } : { value: raw, unit: '' };
     };
-    const offline = nodes.length - online;
-    const speed = splitUnit(formatSpeed(up + down));
+    const upload = splitUnit(formatSpeed(up));
+    const download = splitUnit(formatSpeed(down));
     const traffic = cycleUsages.length ? splitUnit(formatBytes(cycleTraffic)) : { value: '—', unit: '' };
     const rateText = connectionRates.length
       ? (connectionRate >= 10
@@ -213,12 +203,10 @@ window.VibeHex = (() => {
     const values = {
       online: String(online),
       count: `/ ${nodes.length}`,
-      onlineNote: !nodes.length ? '暂无节点' : offline > 0 ? `${offline} 台离线` : '全部在线',
-      busy: String(busy),
-      memoryBusy: String(memoryBusy),
-      speed: speed.value,
-      speedUnit: speed.unit,
-      speedNote: `↑ ${formatSpeed(up)} · ↓ ${formatSpeed(down)}`,
+      upload: upload.value,
+      uploadUnit: upload.unit,
+      download: download.value,
+      downloadUnit: download.unit,
       cycleTraffic: traffic.value,
       cycleTrafficUnit: traffic.unit,
       connectionRate: rateText,
@@ -227,12 +215,10 @@ window.VibeHex = (() => {
     const banner = document.getElementById('statsBanner');
     if (!overviewFields) {
       banner.innerHTML = `
-        <div class="hex-stat" title="在线节点数 / 节点总数"><dt>在线节点</dt><dd><strong><span data-stat="online">${values.online}</span><span class="unit" data-stat="count">${values.count}</span></strong><small data-stat="onlineNote">${values.onlineNote}</small></dd></div>
-        <div class="hex-stat" title="CPU 使用率达到各节点设定阈值的在线节点数"><dt>高负载</dt><dd><strong><span data-stat="busy">${values.busy}</span><span class="unit">台</span></strong><small>按各节点 CPU 阈值</small></dd></div>
-        <div class="hex-stat" title="内存使用率达到 85% 的在线节点数"><dt>内存紧张</dt><dd><strong><span data-stat="memoryBusy">${values.memoryBusy}</span><span class="unit">台</span></strong><small>内存使用率 ≥ 85%</small></dd></div>
-        <div class="hex-stat" title="在线节点上传与下载速率之和"><dt>实时网速</dt><dd><strong><span data-stat="speed">${values.speed}</span><span class="unit" data-stat="speedUnit">${values.speedUnit}</span></strong><small data-stat="speedNote">${values.speedNote}</small></dd></div>
-        <div class="hex-stat" title="各节点本计费周期已用流量之和（上传 + 下载）"><dt>周期流量</dt><dd><strong><span data-stat="cycleTraffic">${values.cycleTraffic}</span><span class="unit" data-stat="cycleTrafficUnit">${values.cycleTrafficUnit}</span></strong><small>各节点本周期合计</small></dd></div>
-        <div class="hex-stat" title="在线节点 TCP 新建连接数每秒之和"><dt>连接速率</dt><dd><strong><span data-stat="connectionRate">${values.connectionRate}</span><span class="unit" data-stat="connectionRateUnit">${values.connectionRateUnit}</span></strong><small>TCP 新建连接/秒</small></dd></div>`;
+        <div class="hex-stat" title="在线节点数 / 节点总数"><dt>在线节点</dt><dd><strong><span data-stat="online">${values.online}</span><span class="unit" data-stat="count">${values.count}</span></strong></dd></div>
+        <div class="hex-stat" title="在线节点上行与下行网速"><dt>实时网速</dt><dd class="hex-stat-speeds"><strong aria-label="上行"><span class="speed-direction">↑</span><span data-stat="upload">${values.upload}</span><span class="unit" data-stat="uploadUnit">${values.uploadUnit}</span></strong><strong aria-label="下行"><span class="speed-direction">↓</span><span data-stat="download">${values.download}</span><span class="unit" data-stat="downloadUnit">${values.downloadUnit}</span></strong></dd></div>
+        <div class="hex-stat" title="各节点本计费周期已用流量之和（上传 + 下载）"><dt>周期流量</dt><dd><strong><span data-stat="cycleTraffic">${values.cycleTraffic}</span><span class="unit" data-stat="cycleTrafficUnit">${values.cycleTrafficUnit}</span></strong></dd></div>
+        <div class="hex-stat" title="在线节点 TCP 新建连接数每秒之和"><dt>连接速率</dt><dd><strong><span data-stat="connectionRate">${values.connectionRate}</span><span class="unit" data-stat="connectionRateUnit">${values.connectionRateUnit}</span></strong></dd></div>`;
       if (banner.querySelectorAll) {
         overviewFields = Object.fromEntries(Array.from(banner.querySelectorAll('[data-stat]')).map(element => [element.dataset.stat, element]));
       }
@@ -241,18 +227,6 @@ window.VibeHex = (() => {
         const field = overviewFields[name];
         if (field && field.textContent !== value) field.textContent = value;
       }
-    }
-    // overviewFields caches the first render, so severity classes must be
-    // re-applied on every update instead of only while building the markup.
-    const markSeverity = (field, alert) => {
-      const cell = field && field.closest('.hex-stat');
-      if (!cell) return;
-      cell.classList.toggle('is-alert', alert);
-      cell.classList.toggle('is-idle', !alert);
-    };
-    if (overviewFields) {
-      markSeverity(overviewFields.busy, busy > 0);
-      markSeverity(overviewFields.memoryBusy, memoryBusy > 0);
     }
     if (window.VibeGlobe) window.VibeGlobe.setNodes(nodes);
   }
