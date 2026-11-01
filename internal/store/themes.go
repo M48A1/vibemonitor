@@ -111,10 +111,6 @@ func ParseThemePackage(data []byte) (Theme, error) {
 	return t, nil
 }
 
-func (s *Store) Themes() ([]Theme, error) {
-	return s.ThemesContext(context.Background())
-}
-
 // ThemesContext reads the installed themes on the read pool, so a caller that
 // goes away takes its own query with it.
 func (s *Store) ThemesContext(ctx context.Context) ([]Theme, error) {
@@ -136,19 +132,12 @@ func (s *Store) ThemesContext(ctx context.Context) ([]Theme, error) {
 	return list, rows.Err()
 }
 
-// ThemeCSS is served on every theme switch and page load, so it must not wait
-// behind a writer transaction.
-func (s *Store) ThemeCSS(id string) (string, error) {
-	return s.ThemeCSSContext(context.Background(), id)
-}
-
+// ThemeCSSContext is served on every theme switch and page load, so it must not
+// wait behind a writer transaction.
 func (s *Store) ThemeCSSContext(ctx context.Context, id string) (string, error) {
 	var css string
 	err := s.sdb.reader().QueryRowContext(ctx, "SELECT css FROM site_themes WHERE id=?", id).Scan(&css)
 	return css, err
-}
-func (s *Store) ImportTheme(data []byte) (Theme, error) {
-	return s.ImportThemeContext(context.Background(), data)
 }
 
 func (s *Store) ImportThemeContext(ctx context.Context, data []byte) (Theme, error) {
@@ -168,10 +157,6 @@ func (s *Store) ImportThemeContext(ctx context.Context, data []byte) (Theme, err
 	_, err = s.sdb.db.ExecContext(ctx, "INSERT INTO site_themes(id,name,version,description,css) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,version=excluded.version,description=excluded.description", t.ID, t.Name, t.Version, t.Description, t.CSS)
 	return t, err
 }
-func (s *Store) SelectTheme(id string) error {
-	return s.SelectThemeContext(context.Background(), id)
-}
-
 func (s *Store) SelectThemeContext(ctx context.Context, id string) error {
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
@@ -190,10 +175,6 @@ func (s *Store) SelectThemeContext(ctx context.Context, id string) error {
 	next.SiteTheme = id
 	return s.commitConfigLockedContext(ctx, next)
 }
-func (s *Store) DeleteTheme(id string) error {
-	return s.DeleteThemeContext(context.Background(), id)
-}
-
 func (s *Store) DeleteThemeContext(ctx context.Context, id string) error {
 	if isBuiltinTheme(id) {
 		return errors.New("内置主题不能删除")

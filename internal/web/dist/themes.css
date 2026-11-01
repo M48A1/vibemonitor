@@ -91,7 +91,6 @@ body::before {
 .hex-stat dd strong { font-size: 25px; letter-spacing: -.8px; font-variant-numeric: tabular-nums; transition: color .25s ease; }
 .hex-stat .unit { font-style: normal; font-size: .62em; font-weight: 500; letter-spacing: 0; color: var(--muted-foreground); margin-left: .22em; }
 .hex-stat small { font-size: 11px; color: var(--muted-foreground); }
-.hex-stat.is-idle dd strong { color: var(--muted-foreground); }
 .hex-globe-panel { position: relative; min-width: 0; height: 340px; background: radial-gradient(circle at 54% 48%, rgba(255, 255, 255, .2), transparent 68%); }
 .hex-globe-canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
 .hex-globe-canvas:active { cursor: grabbing; }
@@ -154,6 +153,27 @@ body::before {
 .hex-facts span, .hex-billing span { font-size: 11px; color: var(--muted-foreground); }
 .hex-facts strong { font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .hex-probes { border-top: 1px solid var(--border); padding-top: 14px; }
+/* Offline age sits above the probe panels so the last samples are not mistaken
+   for live latency and loss readings. */
+.ping-offline-notice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto 10px;
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card-data-bg);
+  color: var(--destructive);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+.ping-offline-notice svg { flex: none; width: 13px; height: 13px; }
+.ping-offline-notice span { overflow-wrap: anywhere; }
 .ping-panel { background: transparent; padding: 0; border-radius: 0; }
 .panel-label { font-size: 11px; }
 .ping-row-heading { font-size: 10px; }
@@ -190,11 +210,6 @@ body .hex-network > div:first-child span,
 body .hex-facts > div:nth-child(1) > span,
 body .hex-billing > div:nth-child(1) > span,
 body .hex-card-footer::before { color: var(--label-orange); }
-/* Alert states carry meaning, so they win over the positional caption colors. */
-body .hex-stat.is-alert dt,
-body .hex-stat.is-alert dd strong,
-body .hex-stat.is-alert dd strong .unit { color: var(--destructive); }
-body .hex-stat.is-alert { background: color-mix(in srgb, var(--destructive) 10%, var(--card-data-bg)); }
 .hex-card-footer::before { content: "费用金额"; }
 .modal { border-radius: 14px; }
 @media (max-width: 1120px) {

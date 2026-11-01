@@ -340,36 +340,6 @@ func (s *sqliteDB) hasResourceColumn(name string) (bool, error) {
 	return count > 0, err
 }
 
-func (s *sqliteDB) pruneNodePingContext(ctx context.Context, nodeUUID string, allowedTargets []protocol.PingTarget) error {
-	targets, err := json.Marshal(allowedTargets)
-	if err != nil {
-		return err
-	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	for _, table := range []string{"ping_history", "ping_observations", "history_rollups"} {
-		condition := ""
-		if table == "history_rollups" {
-			condition = " AND kind='ping'"
-		}
-		query := "DELETE FROM " + table + " WHERE node_uuid=?" + condition + ` AND NOT EXISTS
-			(SELECT 1 FROM json_each(?) WHERE json_extract(value,'$.name')=` + table + `.target_name
-			 AND json_extract(value,'$.host')=` + table + `.host)`
-		if _, err := tx.ExecContext(ctx, query, nodeUUID, string(targets)); err != nil {
-			return err
-		}
-	}
-	if len(allowedTargets) == 0 {
-		if _, err := tx.ExecContext(ctx, "DELETE FROM history_rollup_dirty WHERE node_uuid=? AND kind='ping'", nodeUUID); err != nil {
-			return err
-		}
-	}
-	return tx.Commit()
-}
-
 func (s *sqliteDB) loadConfig() (*Config, error) {
 	fields := []string{"admin_username", "admin_password", "site_title", "site_icon", "auto_discovery_key", "ping_targets_json"}
 	for _, field := range []struct{ name, fallback string }{

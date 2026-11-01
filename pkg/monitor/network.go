@@ -23,11 +23,6 @@ func defaultTrafficInterface(name string) bool {
 	return true
 }
 
-func parseNetworkCounters(data []byte, include func(string) bool) (down, up int64, source string, err error) {
-	down, up, source, _, err = parseNetworkCountersDetailed(data, include)
-	return
-}
-
 func parseNetworkCountersDetailed(data []byte, include func(string) bool) (down, up int64, source string, counters map[string]protocol.InterfaceCounters, err error) {
 	var names []string
 	counters = make(map[string]protocol.InterfaceCounters)

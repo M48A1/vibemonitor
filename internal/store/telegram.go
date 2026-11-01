@@ -124,16 +124,7 @@ type TelegramOptions struct {
 	Templates           *TelegramTemplates
 }
 
-// UpdateTelegramConfig retains the original API for callers that do not change alert policy.
-func (s *Store) UpdateTelegramConfig(token, chatID string, enabled, clear bool) error {
-	return s.UpdateTelegramOptionsContext(context.Background(), TelegramOptions{BotToken: token, ChatID: chatID, Enabled: enabled, Clear: clear})
-}
-
-// UpdateTelegramOptions keeps an omitted bot token and validates all alert settings.
-func (s *Store) UpdateTelegramOptions(opts TelegramOptions) error {
-	return s.UpdateTelegramOptionsContext(context.Background(), opts)
-}
-
+// UpdateTelegramOptionsContext keeps an omitted bot token and validates all alert settings.
 func (s *Store) UpdateTelegramOptionsContext(ctx context.Context, opts TelegramOptions) error {
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()

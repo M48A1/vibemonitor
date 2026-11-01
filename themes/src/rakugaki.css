@@ -116,8 +116,7 @@ body::before { display: none; }
 .btn-danger { background: #b84a32; color: #fff; }
 .btn-danger:hover { background: #9b3925; color: #fff; }
 .form-input, .form-select, .form-textarea { border: 1px solid var(--border); border-radius: 7px 12px 6px 10px; background: #fff; }
-.site-menu-panel, .modal { background: #fff; border: 2px solid var(--ink); border-radius: var(--r-card); box-shadow: var(--shadow-lg); backdrop-filter: none; -webkit-backdrop-filter: none; }
-.site-menu-item:hover { background: var(--paper-warm); }
+.modal { background: #fff; border: 2px solid var(--ink); border-radius: var(--r-card); box-shadow: var(--shadow-lg); backdrop-filter: none; -webkit-backdrop-filter: none; }
 .modal-title { font-family: var(--rak-display); }
 .theme-row { border: 1px dashed var(--border); border-radius: var(--r-chip); background: var(--paper); }
 .powered-by-pill { background: var(--paper); border: 1.5px solid var(--ink); border-radius: var(--r-chip); box-shadow: 3px 3px 0 var(--fill-oat); backdrop-filter: none; -webkit-backdrop-filter: none; }

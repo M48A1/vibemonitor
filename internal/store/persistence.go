@@ -71,10 +71,6 @@ func writeHistorySamplesContext(ctx context.Context, tx *sql.Tx, samples []histo
 	return nil
 }
 
-func (s *Store) flushHistory() error {
-	return s.flushHistoryContext(context.Background())
-}
-
 func (s *Store) flushHistoryContext(ctx context.Context) error {
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()

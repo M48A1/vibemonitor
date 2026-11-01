@@ -127,6 +127,15 @@ window.VibeHex = (() => {
     </article>`;
   }
 
+  // An offline card keeps its last report, so its displayed age only changes
+  // once a minute. Bucket it here to avoid a full repaint on every snapshot.
+  function offlineAgeBucket(lastSeen) {
+    // Trim sub-millisecond digits: some engines reject RFC3339Nano fractions.
+    const seen = Date.parse(String(lastSeen || '').replace(/(\.\d{3})\d+/, '$1'));
+    if (!Number.isFinite(seen) || seen <= 0 || new Date(seen).getFullYear() <= 2000) return null;
+    return Math.max(0, Math.floor((Date.now() - seen) / 60000));
+  }
+
   // Only fields that influence the card. Report timestamps, history arrays and
   // per-interface accounting counters do not invalidate its rendered markup.
   function renderKey(node) {
@@ -140,6 +149,7 @@ window.VibeHex = (() => {
       r.cpu, r.ram, r.disk, r.ping_results, Math.floor((r.uptime || 0) / 60),
       net.up, net.down, net.totalUp, net.totalDown,
       siteTheme, siteLayout, siteLayout === 'serverstatus' ? [r.swap, r.load, r.connections, r.process] : null,
+      node.online ? null : offlineAgeBucket(node.last_seen),
       new Date().toDateString()
     ]);
   }

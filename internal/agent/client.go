@@ -81,10 +81,6 @@ func New(opts Options) *Client {
 	}
 }
 
-func (c *Client) postRPC(method string, params any) (*protocol.Response, error) {
-	return c.postRPCContext(context.Background(), method, params)
-}
-
 func (c *Client) postRPCContext(ctx context.Context, method string, params any) (*protocol.Response, error) {
 	paramsRaw, err := json.Marshal(params)
 	if err != nil {

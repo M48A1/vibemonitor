@@ -14,20 +14,7 @@ import (
 
 var ErrInvalidSettings = errors.New("invalid settings")
 
-// UpdateSettings commits the complete settings change or leaves memory unchanged.
-func (s *Store) UpdateSettings(title string, targets []protocol.PingTarget, password string) error {
-	return s.UpdateSettingsContext(context.Background(), title, targets, password)
-}
-
-func (s *Store) UpdateSettingsContext(ctx context.Context, title string, targets []protocol.PingTarget, password string) error {
-	return s.UpdateSettingsWithIconContext(ctx, title, targets, password, nil)
-}
-
-// UpdateSettingsWithIcon validates and commits all submitted settings atomically.
-func (s *Store) UpdateSettingsWithIcon(title string, targets []protocol.PingTarget, password string, icon *string) error {
-	return s.UpdateSettingsWithIconContext(context.Background(), title, targets, password, icon)
-}
-
+// UpdateSettingsWithIconContext validates and commits all submitted settings atomically.
 func (s *Store) UpdateSettingsWithIconContext(ctx context.Context, title string, targets []protocol.PingTarget, password string, icon *string) error {
 	if err := validatePingTargets(targets); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidSettings, err)
@@ -65,24 +52,6 @@ func (s *Store) UpdateSettingsWithIconContext(ctx context.Context, title string,
 		next.AdminPassword = hashed
 	}
 
-	return s.commitConfigLockedContext(ctx, next)
-}
-
-// UpdateSiteIcon updates the favicon URL independently of the other settings.
-func (s *Store) UpdateSiteIcon(icon string) error {
-	return s.UpdateSiteIconContext(context.Background(), icon)
-}
-
-func (s *Store) UpdateSiteIconContext(ctx context.Context, icon string) error {
-	if err := validateSiteIcon(icon); err != nil {
-		return err
-	}
-	s.persistMu.Lock()
-	defer s.persistMu.Unlock()
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	next := s.config
-	next.SiteIcon = strings.TrimSpace(icon)
 	return s.commitConfigLockedContext(ctx, next)
 }
 

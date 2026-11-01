@@ -94,10 +94,6 @@ func (s *Store) recordPingObservationLocked(n *Node, name, host, method string, 
 	n.pingWindows[name].Method = method
 }
 
-func (s *Store) GetPingHistory(uuid, targetName, timeRange string) (*PingHistoryResponse, error) {
-	return s.GetPingHistoryContext(context.Background(), uuid, targetName, timeRange)
-}
-
 // GetPingHistoryContext cancels SQLite work when the HTTP request goes away.
 func (s *Store) GetPingHistoryContext(ctx context.Context, uuid, targetName, timeRange string) (*PingHistoryResponse, error) {
 	if err := ctx.Err(); err != nil {

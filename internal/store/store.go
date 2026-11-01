@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log"
 	"math"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -212,16 +211,6 @@ func New(dbPath string, defaultAdminPassword string, usernames ...string) (*Stor
 	return s, nil
 }
 
-// DataDir returns the directory containing the database and local data files.
-func (s *Store) DataDir() string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.dbPath != "" {
-		return filepath.Dir(s.dbPath)
-	}
-	return "."
-}
-
 func (s *Store) periodicFlusher() {
 	ticker := time.NewTicker(15 * time.Second)
 	historyTicker := time.NewTicker(time.Second)
@@ -290,10 +279,6 @@ func (s *Store) periodicFlusher() {
 			s.persistMu.Unlock()
 		}
 	}
-}
-
-func (s *Store) Save() error {
-	return s.SaveContext(context.Background())
 }
 
 // SaveContext flushes pending state. The transaction obeys the context, so a
@@ -611,13 +596,6 @@ func (s *Store) saveLocked(ctx context.Context) error {
 	return nil
 }
 
-func (s *Store) VerifyAdminPassword(pwd string) bool {
-	s.mu.RLock()
-	hash := s.config.AdminPassword
-	s.mu.RUnlock()
-	return verifyAdminPasswordHash(hash, pwd)
-}
-
 func hashAdminPassword(password string) (string, error) {
 	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	return string(hashed), err
@@ -631,48 +609,10 @@ func verifyAdminPasswordHash(hash, pwd string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(pwd)) == nil
 }
 
-func (s *Store) SetAdminPassword(newPwd string) error {
-	if newPwd == "" {
-		return errors.New("admin password cannot be empty")
-	}
-	hashed, err := hashAdminPassword(newPwd)
-	if err != nil {
-		return err
-	}
-	s.persistMu.Lock()
-	defer s.persistMu.Unlock()
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	next := s.config
-	next.AdminPassword = hashed
-	return s.commitConfigLocked(next)
-}
-
 func (s *Store) GetConfig() Config {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.config
-}
-
-func (s *Store) UpdateConfig(title, autoKey string, pingTargets []protocol.PingTarget) error {
-	if err := validatePingTargets(pingTargets); err != nil {
-		return err
-	}
-	s.persistMu.Lock()
-	defer s.persistMu.Unlock()
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	next := s.config
-	if title != "" {
-		next.SiteTitle = title
-	}
-	if autoKey != "" {
-		next.AutoDiscoveryKey = autoKey
-	}
-	if pingTargets != nil {
-		next.PingTargets = pingTargets
-	}
-	return s.commitConfigLocked(next)
 }
 
 // GetBillingCycleRange returns the start and end time of the billing cycle.
@@ -876,7 +816,6 @@ type NodeOptions struct {
 	Name           string
 	Group          string
 	Region         string
-	Weight         int // Deprecated: ordering is managed exclusively by ReorderNodes.
 	TrafficLimitGB float64
 	ResetDay       int
 	InitialUsedGB  float64
@@ -903,10 +842,7 @@ func (s *Store) CreateNodeContext(ctx context.Context, name, group, region strin
 	})
 }
 
-func (s *Store) CreateNodeWithOptions(opts NodeOptions) (*Node, error) {
-	return s.CreateNodeWithOptionsContext(context.Background(), opts)
-}
-
+// CreateNodeWithOptionsContext creates a node with the provided options.
 func (s *Store) CreateNodeWithOptionsContext(ctx context.Context, opts NodeOptions) (*Node, error) {
 	return s.createNodeContext(ctx, opts, false)
 }
@@ -1013,26 +949,6 @@ func (s *Store) createNodeContext(ctx context.Context, opts NodeOptions, uniqueN
 	return &copy, nil
 }
 
-func (s *Store) UpdateNode(uuid, name, group, region string, weight int) error {
-	return s.UpdateNodeContext(context.Background(), uuid, name, group, region, weight)
-}
-
-func (s *Store) UpdateNodeContext(ctx context.Context, uuid, name, group, region string, weight int) error {
-	return s.UpdateNodeWithOptionsContext(ctx, uuid, NodeOptions{
-		Name:           name,
-		Group:          group,
-		Region:         region,
-		Weight:         weight,
-		ResetDay:       -1,
-		TrafficLimitGB: -1,
-		InitialUsedGB:  -1,
-	})
-}
-
-func (s *Store) UpdateNodeWithOptions(uuid string, opts NodeOptions) error {
-	return s.UpdateNodeWithOptionsContext(context.Background(), uuid, opts)
-}
-
 func (s *Store) UpdateNodeWithOptionsContext(ctx context.Context, uuid string, opts NodeOptions) error {
 	if err := validateTrafficOptions(opts, true); err != nil {
 		return err
@@ -1087,13 +1003,9 @@ func (s *Store) UpdateNodeWithOptionsContext(ctx context.Context, uuid string, o
 	return nil
 }
 
-// ReorderNodes batch-updates the display weight of every node whose UUID
+// ReorderNodesContext batch-updates the display weight of every node whose UUID
 // appears in the order map.  Keys are node UUIDs, values are non-negative
 // weights.  Unknown UUIDs are silently skipped.
-func (s *Store) ReorderNodes(order map[string]int) error {
-	return s.ReorderNodesContext(context.Background(), order)
-}
-
 func (s *Store) ReorderNodesContext(ctx context.Context, order map[string]int) error {
 	for _, w := range order {
 		if w < 0 {
@@ -1169,10 +1081,6 @@ func (s *Store) applyNodeOptionsLocked(n *Node, opts NodeOptions, cycleUsedBytes
 		n.TrafficManualAt = &correctedAt
 	}
 
-}
-
-func (s *Store) DeleteNode(uuid string) error {
-	return s.DeleteNodeContext(context.Background(), uuid)
 }
 
 func (s *Store) DeleteNodeContext(ctx context.Context, uuid string) error {

@@ -155,6 +155,8 @@ body .hex-card .metric-button:focus-visible .metric-name { color: var(--primary)
 .hex-card-footer strong { color: var(--foreground); font-size: 11px; }
 .hex-probes .ping-sample-row { padding-top: 3px; }
 .hex-probes .ping-row-heading { margin-bottom: 3px; }
+/* The offline reminder reads as a small floating pill on the design sheet. */
+.hex-probes .ping-offline-notice { margin-bottom: 8px; padding: 3px 10px; background: var(--card-bg); box-shadow: var(--shadow-sm); font-size: 10px; }
 .sample-bar { height: 6px; border-radius: 2px; }
 .sample-bar.fast { background: var(--success); opacity: .8; }
 .btn { border-radius: 7px; background: var(--control-bg); box-shadow: var(--shadow-sm); }
@@ -163,7 +165,7 @@ body .hex-card .metric-button:focus-visible .metric-name { color: var(--primary)
 .btn-primary:hover { background: color-mix(in srgb, var(--primary) 86%, #000); }
 .btn-danger { background: var(--destructive); color: #fff; }
 .btn-danger:hover { background: color-mix(in srgb, var(--destructive) 86%, #000); }
-.site-menu-panel, .modal { background: rgba(253, 252, 249, .98); border: 1px solid var(--border); box-shadow: var(--shadow-lg); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+.modal { background: rgba(253, 252, 249, .98); border: 1px solid var(--border); box-shadow: var(--shadow-lg); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
 .modal { border-radius: 12px; }
 .modal-title { font-size: 17px; }
 .modal-overlay { background: rgba(54, 53, 47, .28); }

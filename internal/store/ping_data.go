@@ -110,10 +110,6 @@ func (s *Store) pruneNodePingLocked(node *Node) {
 // Config and the corresponding removal of stale history are one transaction.
 // Caller holds persistMu and mu. Only the private snapshot is changed until
 // commit. Reports arriving during disk I/O remain in the live store.
-func (s *Store) commitConfigLocked(next Config) error {
-	return s.commitConfigLockedContext(context.Background(), next)
-}
-
 func (s *Store) commitConfigLockedContext(ctx context.Context, next Config) error {
 	staged := &Store{config: next, nodes: cloneNodesForSave(s.nodes)}
 	staged.prunePingDataLocked()

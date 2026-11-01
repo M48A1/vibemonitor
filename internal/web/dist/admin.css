@@ -160,7 +160,6 @@
   font-size: 11px;
   font-weight: 600;
 }
-.admin-hint { color: var(--muted-foreground); font-size: 12.5px; line-height: 1.6; }
 .admin-note { margin-top: 8px; color: var(--muted-foreground); font-size: 12px; line-height: 1.6; }
 .admin-empty { padding: 18px 0; color: var(--muted-foreground); font-size: 13px; text-align: center; }
 
@@ -227,7 +226,6 @@
 }
 .admin-bar[data-level="warn"] > span { background: var(--warning); }
 .admin-bar[data-level="critical"] > span { background: var(--destructive); }
-.admin-bar-label { display: block; margin-bottom: 4px; color: var(--muted-foreground); font-size: 11.5px; }
 
 /* Panel and probe versions side by side: one glance says whether the agent
    reporting this node is the same build as the panel it reports to. */
@@ -316,9 +314,6 @@
 }
 
 .admin-code-list { display: flex; flex-direction: column; gap: 12px; }
-.admin-kv { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 14px; font-size: 12.5px; }
-.admin-kv dt { color: var(--muted-foreground); }
-.admin-kv dd { color: var(--foreground); word-break: break-all; }
 
 @media (max-width: 900px) {
   .admin-shell {

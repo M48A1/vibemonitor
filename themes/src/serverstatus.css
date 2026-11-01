@@ -51,7 +51,7 @@ body::before { display: none; }
 }
 .brand-title { font-size: 19px; font-weight: 600; }
 .brand-icon { background: var(--card-bg); }
-.site-menu-panel, .modal {
+.modal {
   background: var(--card-bg);
   border-color: var(--border);
   box-shadow: var(--shadow-lg);
@@ -59,7 +59,6 @@ body::before { display: none; }
   -webkit-backdrop-filter: none;
 }
 .modal { border-radius: 5px; }
-.site-menu-item:hover { background: var(--card-hover); }
 .form-input, .form-select, .form-textarea { background: var(--control-bg); border-radius: 4px; }
 .btn { border-radius: 4px; font-weight: 500; }
 .btn:hover { background: var(--card-hover); }

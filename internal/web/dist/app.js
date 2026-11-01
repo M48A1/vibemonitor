@@ -31,7 +31,6 @@ function acceptNodeSnapshot(data) {
   updateConnectionStatus();
   scheduleDashboard();
 }
-let pollTimer = null;
 let lastNodeMarkup = '';
 const nodeCardCache = new Map();
 let dashboardFrame = 0;
@@ -60,6 +59,36 @@ function formatUptime(seconds) {
   return `${m}分`;
 }
 
+// The probe panels keep their last samples while a node is offline, so spell
+// out how old that data is instead of letting latency and loss look live.
+function offlineAgeLabel(milliseconds) {
+  const minutes = Math.max(0, Math.floor(milliseconds / 60000));
+  if (minutes < 1) return '刚刚离线';
+  if (minutes < 60) return `${minutes}分钟前离线`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    const rest = minutes % 60;
+    return rest ? `${hours}小时${rest}分钟前离线` : `${hours}小时前离线`;
+  }
+  const days = Math.floor(hours / 24);
+  const rest = hours % 24;
+  return rest ? `${days}天${rest}小时前离线` : `${days}天前离线`;
+}
+
+function offlineNotice(node) {
+  if (node.online) return '';
+  // Trim sub-millisecond digits: some engines reject RFC3339Nano fractions.
+  const seen = Date.parse(String(node.last_seen || '').replace(/(\.\d{3})\d+/, '$1'));
+  // Legacy nodes may serialize the zero time as year 1; treat that as unseen.
+  const valid = Number.isFinite(seen) && seen > 0 && new Date(seen).getFullYear() > 2000;
+  const age = valid ? Math.max(0, Date.now() - seen) : null;
+  const label = age == null ? '尚未上报' : offlineAgeLabel(age);
+  const title = valid
+    ? `最后上报：${new Date(seen).toLocaleString('zh-CN', { hour12: false })}`
+    : '该节点还没有成功上报过数据';
+  return `<div class="ping-offline-notice" role="note" title="${escapeHtml(title)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/></svg><span>${label}</span></div>`;
+}
+
 function getRegionBadge(code) {
   if (!code) return '🌐 GLOBAL';
   code = code.toUpperCase();
@@ -69,24 +98,6 @@ function getRegionBadge(code) {
     GB: '🇬🇧 UK', FR: '🇫🇷 FR', CA: '🇨🇦 CA', RU: '🇷🇺 RU',
   };
   return flags[code] || `🌐 ${escapeHtml(code)}`;
-}
-
-function generateSparkline(history, field, width = 280, height = 28) {
-  if (!history || history.length < 2) {
-    return `<svg class="sparkline-box" viewBox="0 0 ${width} ${height}"><line x1="0" y1="${height/2}" x2="${width}" y2="${height/2}" stroke="rgba(255,255,255,0.1)" stroke-dasharray="3,3"/></svg>`;
-  }
-  const values = history.map(h => h[field] || 0);
-  const max = Math.max(...values, 10);
-  const min = 0;
-  const pts = values.map((val, i) => {
-    const x = (i / (values.length - 1)) * width;
-    const y = height - ((val - min) / (max - min)) * (height - 4) - 2;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(' ');
-
-  return `<svg class="sparkline-box" viewBox="0 0 ${width} ${height}">
-    <polyline fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="${pts}" />
-  </svg>`;
 }
 
 // Modal handling
@@ -296,8 +307,9 @@ function billingDisplay(profile) {
 function renderPingPanels(node) {
   const reports = (node.last_report || {}).ping_results || [];
   const previews = node.ping_preview || reports.map(p => ({name:p.name,host:p.host,samples:[],loss:null}));
-  if (!previews.length) return '<div class="ping-empty">尚未配置 TCP 测试目标</div>';
-  return '<div class="ping-panels">'+['延迟','丢包'].map((heading,column) => `<div class="ping-panel"><div class="panel-label">${heading}</div>${previews.map((p,i) => {
+  const notice = offlineNotice(node);
+  if (!previews.length) return notice + '<div class="ping-empty">尚未配置 TCP 测试目标</div>';
+  return notice + '<div class="ping-panels">'+['延迟','丢包'].map((heading,column) => `<div class="ping-panel"><div class="panel-label">${heading}</div>${previews.map((p,i) => {
     const report = reports.find(r => r.name===p.name);
     const value = column ? (p.loss == null ? '待采样' : Number(p.loss).toFixed(1)+'%') : (!node.online || !report ? '待上报' : report.latency<0 ? '超时' : report.latency+' ms');
     const samples = p.samples || [];

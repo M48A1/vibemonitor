@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
 )
 
 // TelegramAlertState records transitions that have already been observed or delivered.
@@ -28,35 +27,6 @@ type TelegramAlertState struct {
 	ReminderFor         string  `json:"reminder_for,omitempty"`
 }
 
-func (s *Store) LoadTelegramAlertStates(epoch string) (map[string]TelegramAlertState, error) {
-	return s.LoadTelegramAlertStatesContext(context.Background(), epoch)
-}
-
-func (s *Store) LoadTelegramAlertStatesContext(ctx context.Context, epoch string) (map[string]TelegramAlertState, error) {
-	rows, err := s.sdb.reader().QueryContext(ctx, "SELECT node_uuid, state_json FROM telegram_alert_state WHERE config_epoch = ?", epoch)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	states := make(map[string]TelegramAlertState)
-	for rows.Next() {
-		var id, raw string
-		if err := rows.Scan(&id, &raw); err != nil {
-			return nil, err
-		}
-		var state TelegramAlertState
-		if err := json.Unmarshal([]byte(raw), &state); err != nil {
-			return nil, fmt.Errorf("invalid Telegram alert state for %s: %w", id, err)
-		}
-		states[id] = state
-	}
-	return states, rows.Err()
-}
-
-func (s *Store) SaveTelegramAlertState(epoch, id string, state TelegramAlertState) error {
-	return s.SaveTelegramAlertStateContext(context.Background(), epoch, id, state)
-}
-
 func (s *Store) SaveTelegramAlertStateContext(ctx context.Context, epoch, id string, state TelegramAlertState) error {
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
@@ -76,10 +46,6 @@ func (s *Store) SaveTelegramAlertStateContext(ctx context.Context, epoch, id str
 	return err
 }
 
-func (s *Store) DeleteTelegramAlertState(id string) error {
-	return s.DeleteTelegramAlertStateContext(context.Background(), id)
-}
-
 func (s *Store) DeleteTelegramAlertStateContext(ctx context.Context, id string) error {
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
@@ -88,10 +54,6 @@ func (s *Store) DeleteTelegramAlertStateContext(ctx context.Context, id string) 
 }
 
 // A queue worker loads only its node, not every node's alert state.
-func (s *Store) LoadTelegramAlertState(epoch, id string) (map[string]TelegramAlertState, error) {
-	return s.LoadTelegramAlertStateContext(context.Background(), epoch, id)
-}
-
 func (s *Store) LoadTelegramAlertStateContext(ctx context.Context, epoch, id string) (map[string]TelegramAlertState, error) {
 	states := make(map[string]TelegramAlertState)
 	var raw string
