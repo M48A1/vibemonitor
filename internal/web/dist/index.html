@@ -16,29 +16,9 @@
     <!-- Navbar -->
     <header class="navbar">
       <div class="brand">
-        <details class="site-menu" id="siteMenu">
-          <summary class="site-menu-trigger" id="siteMenuTrigger" title="点击网站标题打开管理菜单">
-            <h1 class="brand-title" id="siteTitle">VibeMonitor</h1>
-          </summary>
-          <div class="site-menu-panel">
-            <a class="site-menu-item site-menu-level-1" href="/admin/rankings">排行榜</a>
-            <a class="site-menu-item site-menu-level-1" href="/admin/settings">基本设置</a>
-            <a class="site-menu-item site-menu-level-1" href="/admin/theme">主题管理</a>
-            <details class="node-management" id="nodeManagementMenu">
-              <summary class="site-menu-item site-menu-level-1">节点管理</summary>
-              <div class="node-management-menu">
-                <a class="site-menu-item site-menu-level-2" href="/admin/nodes">节点列表</a>
-                <a class="site-menu-item site-menu-level-2" href="/admin/nodes?new=1">新建节点</a>
-                <a class="site-menu-item site-menu-level-2" href="/admin/nodes?register=1">临时注册</a>
-                <a class="site-menu-item site-menu-level-2" href="/admin/nodes?sort=1">节点排序</a>
-              </div>
-            </details>
-            <a class="site-menu-item site-menu-level-1" href="/admin/telegram">外部通信设置</a>
-            <div id="adminQuickActions" hidden>
-              <button type="button" class="site-menu-item site-menu-logout" id="logoutBtn">退出登录</button>
-            </div>
-          </div>
-        </details>
+        <a class="site-menu-trigger" id="siteMenuTrigger" href="/admin" title="进入管理面板">
+          <h1 class="brand-title" id="siteTitle">VibeMonitor</h1>
+        </a>
       </div>
     </header>
     <!-- Stats Bar -->

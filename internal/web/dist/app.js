@@ -111,7 +111,7 @@ window.openModal = function(id) {
 };
 
 // Return keyboard focus to the control that opened the dialog once it closes.
-// Menu entries are hidden after a click, so fall back to the site-menu trigger.
+// Fall back to the site title if the original control is no longer visible.
 function restoreDialogFocus() {
   const target = returnFocusTo;
   returnFocusTo = null;
@@ -376,7 +376,7 @@ function renderNodes() {
   const grid = document.getElementById('nodeGrid');
   const sorted = [...nodes].sort(compareNodes);
   if (!sorted.length) {
-    const markup = '<div class="empty-state"><strong>暂无监控节点</strong><span>点击左上角网站标题打开菜单，登录后通过「节点管理 → 新建节点」开始监控。</span></div>';
+    const markup = '<div class="empty-state"><strong>暂无监控节点</strong><span>点击左上角网站标题进入管理面板，登录后新建节点开始监控。</span></div>';
     if (lastNodeMarkup !== markup) { grid.innerHTML = markup; lastNodeMarkup = markup; }
     nodeCardCache.clear();
     return;
@@ -514,38 +514,4 @@ function connectWebSocket() {
     setTimeout(connectWebSocket, 3000);
   };
 }
-
-// Site menu: the title opens the management menu, whose entries are plain links
-// to the /admin pages, so only the open/close behaviour lives here.
-const siteMenu = document.getElementById('siteMenu');
-const siteMenuTrigger = document.getElementById('siteMenuTrigger');
-const nodeManagementMenu = document.getElementById('nodeManagementMenu');
-
-function closeSiteMenu() {
-  siteMenu.open = false;
-  nodeManagementMenu.open = false;
-}
-
-siteMenu.addEventListener('toggle', () => {
-  if (!siteMenu.open) nodeManagementMenu.open = false;
-});
-siteMenu.addEventListener('click', (event) => {
-  if (event.target.closest('button')) {
-    closeSiteMenu();
-    siteMenuTrigger.focus();
-  }
-});
-siteMenu.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') {
-    closeSiteMenu();
-    siteMenuTrigger.focus();
-  }
-});
-siteMenu.addEventListener('focusout', (event) => {
-  // Safari can leave relatedTarget null until a menu button's click runs.
-  if (event.relatedTarget && !siteMenu.contains(event.relatedTarget)) closeSiteMenu();
-});
-document.addEventListener('click', (event) => {
-  if (!siteMenu.contains(event.target)) closeSiteMenu();
-});
 

@@ -4,12 +4,12 @@
 .powered-by-link:hover,
 .powered-by-link:focus-visible { text-decoration: underline; }
 
-/* The site title opens the management menu, including on small screens. */
+/* The site title is the explicit entry point to the management panel. */
 .site-menu { position: relative; flex-shrink: 0; }
 .site-menu-trigger, .node-management > summary { list-style: none; cursor: pointer; }
 .site-menu-trigger::-webkit-details-marker,
 .node-management > summary::-webkit-details-marker { display: none; }
-.site-menu-trigger { display: block; border-radius: 8px; }
+.site-menu-trigger { display: block; border-radius: 8px; text-decoration: none; }
 .site-menu-trigger:hover .brand-title,
 .site-menu[open] > .site-menu-trigger .brand-title { color: var(--primary); }
 .site-menu-trigger:focus-visible, .site-menu-item:focus-visible {

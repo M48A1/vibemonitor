@@ -4,7 +4,6 @@ setInterval(updateConnectionStatus, 1000);
 resetLoginPasswordFields();
 fetchNodes();
 connectWebSocket();
-checkAdminAuth();
 fetchPublicSettings();
 // Periodic fallback polling every 5s
 setInterval(fetchNodes, 5000);
