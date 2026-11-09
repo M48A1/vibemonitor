@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"maps"
 )
 
 // Bound retry memory if the disk remains unavailable. A rejected sample does not
@@ -119,6 +120,8 @@ func (s *Store) ackHistoryLocked(count int) {
 // Reports, basic info and profiles are replaced as whole values by the store.
 func cloneNodeForSave(n *Node) *Node {
 	c := *n
+	c.DailyUpload = maps.Clone(n.DailyUpload)
+	c.DailyDownload = maps.Clone(n.DailyDownload)
 	c.DailyTraffic = make(map[string]int64, len(n.DailyTraffic))
 	for day, value := range n.DailyTraffic {
 		c.DailyTraffic[day] = value

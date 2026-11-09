@@ -45,11 +45,17 @@ func (n *Node) changeResetDay(resetDay int, now time.Time) {
 	n.InitialUsed = 0
 	n.TrafficManualAt = nil
 	first, last := start.Format("2006-01-02"), now.In(trafficLocation).Format("2006-01-02")
-	for day, measured := range n.DailyTraffic {
+	n.CurrentCycleUsed = sumDailyTraffic(n.DailyTraffic, first, last)
+}
+
+func sumDailyTraffic(daily map[string]int64, first, last string) int64 {
+	var total int64
+	for day, measured := range daily {
 		if day >= first && day <= last {
-			n.CurrentCycleUsed += measured
+			total += measured
 		}
 	}
+	return total
 }
 
 func trafficGBToBytes(gb float64) (int64, error) {

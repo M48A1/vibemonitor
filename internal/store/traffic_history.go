@@ -13,19 +13,23 @@ var trafficLocation = time.FixedZone("UTC+8", 8*3600)
 // Daily totals travel with the node snapshot and counter baseline, so a retry,
 // restart cannot apply a delta twice.
 func (n *Node) recordDailyTraffic(delta int64, previous, current time.Time) {
+	recordDailyTraffic(&n.DailyTraffic, delta, previous, current)
+}
+
+func recordDailyTraffic(daily *map[string]int64, delta int64, previous, current time.Time) {
 	location := trafficLocation
 	if delta < 0 || previous.IsZero() || !current.After(previous) {
 		return
 	}
-	if n.DailyTraffic == nil {
-		n.DailyTraffic = make(map[string]int64)
+	if *daily == nil {
+		*daily = make(map[string]int64)
 	}
 	local := current.In(location)
 	cutoff := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, location).AddDate(0, 0, -trafficDailyRetentionDays)
 	cutoffKey := cutoff.Format("2006-01-02")
-	for date := range n.DailyTraffic {
+	for date := range *daily {
 		if date < cutoffKey {
-			delete(n.DailyTraffic, date)
+			delete(*daily, date)
 		}
 	}
 	start := previous.In(location)
@@ -46,7 +50,7 @@ func (n *Node) recordDailyTraffic(delta int64, previous, current time.Time) {
 		if end.After(current) {
 			end = current.In(location)
 		}
-		n.DailyTraffic[day.Format("2006-01-02")] += portion(end) - portion(start)
+		(*daily)[day.Format("2006-01-02")] += portion(end) - portion(start)
 		start = end
 	}
 }

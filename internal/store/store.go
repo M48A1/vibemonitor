@@ -102,11 +102,15 @@ type Node struct {
 
 	// Daily measured traffic, persisted with the counter baseline.
 	DailyTraffic       map[string]int64 `json:"daily_traffic,omitempty"`
+	DailyUpload        map[string]int64 `json:"daily_upload,omitempty"`
+	DailyDownload      map[string]int64 `json:"daily_download,omitempty"`
 	DailyOnline        map[string]int64 `json:"daily_online_ns,omitempty"`
 	OnlineHistorySince time.Time        `json:"online_history_since,omitempty"`
 	DailyOnlineUntil   time.Time        `json:"daily_online_until,omitempty"`
 
 	// Computed dynamic fields
+	CycleUpload    int64   `json:"cycle_upload"`
+	CycleDownload  int64   `json:"cycle_download"`
 	CycleTotalUsed int64   `json:"cycle_total_used"` // InitialUsed + CurrentCycleUsed
 	CycleRemaining int64   `json:"cycle_remaining"`  // TrafficLimit - CycleTotalUsed
 	CyclePercent   float64 `json:"cycle_percent"`    // Percentage used (0-100+)
@@ -760,6 +764,16 @@ func (s *Store) getNodes(compact bool) []*Node {
 			nodeCopy.LastReport = &report
 		}
 		nodeCopy.calculateDynamicFields(now)
+		nodeCopy.CycleUpload = 0
+		nodeCopy.CycleDownload = 0
+		if nodeCopy.ResetDay > 0 {
+			first := nodeCopy.CycleStart.In(trafficLocation).Format("2006-01-02")
+			last := now.In(trafficLocation).Format("2006-01-02")
+			nodeCopy.CycleUpload = sumDailyTraffic(n.DailyUpload, first, last)
+			nodeCopy.CycleDownload = sumDailyTraffic(n.DailyDownload, first, last)
+		}
+		nodeCopy.DailyUpload = nil
+		nodeCopy.DailyDownload = nil
 		list = append(list, &nodeCopy)
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].UUID < list[j].UUID })
@@ -1216,22 +1230,26 @@ func (s *Store) ingestReportAt(token string, report protocol.Report, now time.Ti
 
 		curUp := report.Network.TotalUp
 		curDown := report.Network.TotalDown
-		var delta int64
+		var upload, download int64
 		if node.TrafficBaselineSet {
 			if len(report.Network.Interfaces) > 0 {
 				for name, current := range report.Network.Interfaces {
 					previous, ok := previousReport.Network.Interfaces[name]
 					if ok {
-						delta += networkCounterDelta(current.Up, previous.Up)
-						delta += networkCounterDelta(current.Down, previous.Down)
+						upload += networkCounterDelta(current.Up, previous.Up)
+						download += networkCounterDelta(current.Down, previous.Down)
 					}
 				}
 			} else {
 				// Compatibility with probes that only send aggregate counters.
-				delta = networkCounterDelta(curUp, node.LastTotalUp) + networkCounterDelta(curDown, node.LastTotalDown)
+				upload = networkCounterDelta(curUp, node.LastTotalUp)
+				download = networkCounterDelta(curDown, node.LastTotalDown)
 			}
 		}
+		delta := upload + download
 		if node.TrafficBaselineSet {
+			recordDailyTraffic(&node.DailyUpload, upload, previousAt, currentAt)
+			recordDailyTraffic(&node.DailyDownload, download, previousAt, currentAt)
 			node.recordDailyTraffic(delta, previousAt, currentAt)
 		}
 		if delta > 0 {

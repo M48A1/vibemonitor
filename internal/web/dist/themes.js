@@ -107,7 +107,7 @@ window.VibeHex = (() => {
             ${detail('进程 / 连接', live ? `${number(r.process) ?? '—'} · TCP ${number(connections.tcp) ?? '—'} · UDP ${number(connections.udp) ?? '—'}` : '—')}
             ${detail('TCP 建连速率', live && rate != null ? `${rate.toFixed(1)} 次/s` : '—')}
             ${detail('网速', `↓ ${speed(net.down)} · ↑ ${speed(net.up)}`)}
-            ${detail('累计流量', live ? `↓ ${formatBytes(net.totalDown || 0)} · ↑ ${formatBytes(net.totalUp || 0)}` : '—')}
+            ${detail('本周期累计流量', node.reset_day > 0 ? `↓ ${formatBytes(node.cycle_download || 0)} · ↑ ${formatBytes(node.cycle_upload || 0)}` : '—')}
             ${detail('周期流量', limit > 0 ? `${formatBytes(used || 0)} / ${formatBytes(limit)}` : '未设置配额')}
             ${detail('在线时长', live ? formatUptime(r.uptime) : '—')}
             ${detail('到期时间', bill.date)}
@@ -147,7 +147,7 @@ window.VibeHex = (() => {
       node.ping_preview, node.traffic_limit, node.cycle_total_used,
       node.reset_day, !!node.last_report,
       r.cpu, r.ram, r.disk, r.ping_results, Math.floor((r.uptime || 0) / 60),
-      net.up, net.down, net.totalUp, net.totalDown,
+      net.up, net.down, node.cycle_upload, node.cycle_download,
       siteTheme, siteLayout, siteLayout === 'serverstatus' ? [r.swap, r.load, r.connections, r.process] : null,
       node.online ? null : offlineAgeBucket(node.last_seen),
       new Date().toDateString()
@@ -176,7 +176,7 @@ window.VibeHex = (() => {
         ${metric('周期流量', traffic, limit > 0 ? `${formatBytes(used)} / ${formatBytes(limit)}` : '未设置流量配额', node.uuid, 'traffic')}
       </div>
       <div class="hex-network"><div><span>↑ 上行</span><strong>${speed(net.up)}</strong></div><button class="hex-network-total" type="button" data-action="resource" data-uuid="${escapeHtml(node.uuid)}" data-metric="network" title="查看实时速率历史曲线" aria-label="查看实时速率历史曲线"><span>实时速率${historyIcon()}</span><strong>${speed(totalRate)}</strong></button><div><span>↓ 下行</span><strong>${speed(net.down)}</strong></div></div>
-      <div class="hex-facts"><div><span>累计上传</span><strong>${number(net.totalUp) == null ? '—' : formatBytes(net.totalUp)}</strong></div><div><span>累计下载</span><strong>${number(net.totalDown) == null ? '—' : formatBytes(net.totalDown)}</strong></div><div><span>在线时长</span><strong>${live && number(r.uptime) != null ? formatUptime(r.uptime) : '—'}</strong></div></div>
+      <div class="hex-facts"><div><span>本周期累计上传</span><strong>${node.reset_day > 0 ? formatBytes(node.cycle_upload || 0) : '—'}</strong></div><div><span>本周期累计下载</span><strong>${node.reset_day > 0 ? formatBytes(node.cycle_download || 0) : '—'}</strong></div><div><span>在线时长</span><strong>${live && number(r.uptime) != null ? formatUptime(r.uptime) : '—'}</strong></div></div>
       <div class="hex-probes">${renderPingPanels(node)}</div>
       <div class="hex-billing"><div><span>到期时间</span><strong>${bill.date}</strong></div><div><span>流量重置</span><strong>${node.reset_day > 0 ? '每月 ' + node.reset_day + ' 日' : '未设置'}</strong></div></div>
       <footer class="hex-card-footer"><strong>${bill.price}</strong></footer>
