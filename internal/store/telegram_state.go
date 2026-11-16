@@ -22,6 +22,7 @@ type TelegramAlertState struct {
 	CPU                 bool    `json:"cpu"`
 	Memory              bool    `json:"memory"`
 	Traffic             bool    `json:"traffic"`
+	TrafficCycle        string  `json:"traffic_cycle,omitempty"`
 	TrafficWarningCycle string  `json:"traffic_warning_cycle,omitempty"`
 	ReminderDate        string  `json:"reminder_date,omitempty"`
 	ReminderFor         string  `json:"reminder_for,omitempty"`

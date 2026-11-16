@@ -44,13 +44,14 @@ func (s *Server) registerNodeRoutes(mux *http.ServeMux) {
 			return
 		}
 		var req struct {
-			Profile        *store.NodeProfile `json:"profile"`
-			Name           string             `json:"name"`
-			Group          string             `json:"group"`
-			Region         string             `json:"region"`
-			TrafficLimitGB float64            `json:"traffic_limit_gb"`
-			ResetDay       int                `json:"reset_day"`
-			InitialUsedGB  float64            `json:"initial_used_gb"`
+			Profile         *store.NodeProfile `json:"profile"`
+			Name            string             `json:"name"`
+			Group           string             `json:"group"`
+			Region          string             `json:"region"`
+			TrafficLimitGB  float64            `json:"traffic_limit_gb"`
+			ResetDay        int                `json:"reset_day"`
+			BillingTimezone *string            `json:"billing_timezone"`
+			InitialUsedGB   float64            `json:"initial_used_gb"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSON(w, jsonErrorStatus(err), map[string]any{"error": "invalid or oversized json"})
@@ -58,13 +59,14 @@ func (s *Server) registerNodeRoutes(mux *http.ServeMux) {
 		}
 
 		node, err := s.store.CreateNodeWithOptionsContext(r.Context(), store.NodeOptions{
-			Profile:        req.Profile,
-			Name:           req.Name,
-			Group:          req.Group,
-			Region:         req.Region,
-			TrafficLimitGB: req.TrafficLimitGB,
-			ResetDay:       req.ResetDay,
-			InitialUsedGB:  req.InitialUsedGB,
+			Profile:         req.Profile,
+			Name:            req.Name,
+			Group:           req.Group,
+			Region:          req.Region,
+			TrafficLimitGB:  req.TrafficLimitGB,
+			ResetDay:        req.ResetDay,
+			BillingTimezone: req.BillingTimezone,
+			InitialUsedGB:   req.InitialUsedGB,
 		})
 		if err != nil {
 			status := http.StatusInternalServerError
@@ -84,14 +86,15 @@ func (s *Server) registerNodeRoutes(mux *http.ServeMux) {
 		}
 		uuid := r.PathValue("uuid")
 		var req struct {
-			Profile        *store.NodeProfile `json:"profile"`
-			Name           string             `json:"name"`
-			Group          string             `json:"group"`
-			Region         string             `json:"region"`
-			TrafficLimitGB *float64           `json:"traffic_limit_gb"`
-			ResetDay       *int               `json:"reset_day"`
-			InitialUsedGB  *float64           `json:"initial_used_gb"`
-			CycleUsedGB    *float64           `json:"cycle_used_gb"`
+			Profile         *store.NodeProfile `json:"profile"`
+			Name            string             `json:"name"`
+			Group           string             `json:"group"`
+			Region          string             `json:"region"`
+			TrafficLimitGB  *float64           `json:"traffic_limit_gb"`
+			ResetDay        *int               `json:"reset_day"`
+			BillingTimezone *string            `json:"billing_timezone"`
+			InitialUsedGB   *float64           `json:"initial_used_gb"`
+			CycleUsedGB     *float64           `json:"cycle_used_gb"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSON(w, jsonErrorStatus(err), map[string]any{"error": "invalid or oversized json"})
@@ -115,14 +118,15 @@ func (s *Server) registerNodeRoutes(mux *http.ServeMux) {
 			resetDay = *req.ResetDay
 		}
 		if err := s.store.UpdateNodeWithOptionsContext(r.Context(), uuid, store.NodeOptions{
-			Profile:        req.Profile,
-			Name:           req.Name,
-			Group:          req.Group,
-			Region:         req.Region,
-			TrafficLimitGB: trafficLimitGB,
-			ResetDay:       resetDay,
-			InitialUsedGB:  initialUsedGB,
-			CycleUsedGB:    req.CycleUsedGB,
+			Profile:         req.Profile,
+			Name:            req.Name,
+			Group:           req.Group,
+			Region:          req.Region,
+			TrafficLimitGB:  trafficLimitGB,
+			ResetDay:        resetDay,
+			BillingTimezone: req.BillingTimezone,
+			InitialUsedGB:   initialUsedGB,
+			CycleUsedGB:     req.CycleUsedGB,
 		}); err != nil {
 			status := http.StatusInternalServerError
 			if errors.Is(err, store.ErrInvalidCycleUsage) || errors.Is(err, store.ErrInvalidNodeOptions) || errors.Is(err, store.ErrInvalidNodeOrder) || errors.Is(err, store.ErrInvalidTrafficWarning) {

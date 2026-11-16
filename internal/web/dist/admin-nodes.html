@@ -104,6 +104,20 @@
                 <label class="form-label" for="nodeFormResetDay">每月重置日 (1-31，留空为 1 日)</label>
                 <input type="number" class="form-input" id="nodeFormResetDay" min="1" max="31" placeholder="默认 1 日">
               </div>
+              <div class="form-group">
+                <label class="form-label" for="nodeFormBillingTimezone">账单重置时区</label>
+                <input type="text" class="form-input" id="nodeFormBillingTimezone" list="billingTimezoneOptions" placeholder="留空为 UTC+8" spellcheck="false" autocapitalize="none">
+                <datalist id="billingTimezoneOptions">
+                  <option value="UTC+8"></option>
+                  <option value="UTC"></option>
+                  <option value="Asia/Shanghai"></option>
+                  <option value="Asia/Singapore"></option>
+                  <option value="Asia/Tokyo"></option>
+                  <option value="America/Los_Angeles"></option>
+                  <option value="America/New_York"></option>
+                  <option value="Europe/London"></option>
+                </datalist>
+              </div>
               <div class="form-group" data-mode="new">
                 <label class="form-label" for="nodeFormInitialUsed">当前周期已用流量 (GB, 选填)</label>
                 <input type="number" class="form-input" id="nodeFormInitialUsed" min="0" step="any" placeholder="仅本周期叠加，下周期自动清零">

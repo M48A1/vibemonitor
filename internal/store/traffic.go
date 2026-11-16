@@ -3,8 +3,12 @@ package store
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"math"
+	"strings"
+	"sync"
 	"time"
+	_ "time/tzdata"
 
 	"vibemonitor/pkg/protocol"
 )
@@ -12,11 +16,59 @@ import (
 var ErrInvalidCycleUsage = errors.New("invalid current cycle usage")
 var ErrInvalidNodeOptions = errors.New("invalid node options")
 
+const defaultBillingTimezone = "UTC+8"
+
+var billingLocations sync.Map
+
+func billingTimezoneName(name string) string {
+	if name = strings.TrimSpace(name); name == "" {
+		return defaultBillingTimezone
+	}
+	return name
+}
+
+func optionBillingTimezone(value *string) string {
+	if value == nil {
+		return defaultBillingTimezone
+	}
+	return billingTimezoneName(*value)
+}
+
+func loadBillingLocation(name string) (*time.Location, error) {
+	if name == defaultBillingTimezone {
+		return trafficLocation, nil
+	}
+	if name == "Local" {
+		return nil, fmt.Errorf("Local depends on the server settings")
+	}
+	if location, ok := billingLocations.Load(name); ok {
+		return location.(*time.Location), nil
+	}
+	location, err := time.LoadLocation(name)
+	if err == nil {
+		billingLocations.Store(name, location)
+	}
+	return location, err
+}
+
+func (n *Node) billingLocation() *time.Location {
+	location, err := loadBillingLocation(billingTimezoneName(n.BillingTimezone))
+	if err != nil {
+		return trafficLocation
+	}
+	return location
+}
+
 // Internal updates use exactly -1 to preserve an existing value. HTTP handlers
 // reject negative inputs before translating omitted fields to this sentinel.
 func validateTrafficOptions(opts NodeOptions, updating bool) error {
 	if !(updating && opts.ResetDay == -1) && (opts.ResetDay < 0 || opts.ResetDay > 31) {
 		return fmt.Errorf("%w: reset day must be between 1 and 31 (0 defaults to 1)", ErrInvalidNodeOptions)
+	}
+	if opts.BillingTimezone != nil {
+		if _, err := loadBillingLocation(optionBillingTimezone(opts.BillingTimezone)); err != nil {
+			return fmt.Errorf("%w: billing timezone must be UTC+8 or an IANA name such as Asia/Shanghai", ErrInvalidNodeOptions)
+		}
 	}
 	for _, field := range []struct {
 		name  string
@@ -32,20 +84,35 @@ func validateTrafficOptions(opts NodeOptions, updating bool) error {
 	return nil
 }
 
-// A different cycle start cannot retain usage or manual offsets belonging to
-// the previous range. Daily history contains measured traffic only.
-func (n *Node) changeResetDay(resetDay int, now time.Time) {
-	start, _ := GetBillingCycleRange(resetDay, now)
+// Recalculate the cycle from measured traffic. Manual offsets apply to
+// the original range, and are cleared when its start changes.
+func (n *Node) changeBillingCycle(resetDay int, timezone string, now time.Time) {
+	oldLocation := n.billingLocation()
 	n.ResetDay = resetDay
+	n.BillingTimezone = timezone
+	location := n.billingLocation()
+	locationChanged := oldLocation != location
+	if locationChanged {
+		if oldLocation == trafficLocation && n.RankingDailyTraffic == nil {
+			n.RankingDailyTraffic = maps.Clone(n.DailyTraffic)
+		}
+		measuredUntil := trafficSampleTime(n.LastReport, n.LastSeen)
+		if measuredUntil.IsZero() {
+			measuredUntil = now
+		}
+		n.DailyTraffic = redistributeDaily(n.DailyTraffic, oldLocation, location, measuredUntil)
+		n.DailyUpload = redistributeDaily(n.DailyUpload, oldLocation, location, measuredUntil)
+		n.DailyDownload = redistributeDaily(n.DailyDownload, oldLocation, location, measuredUntil)
+		n.rezoneDailyOnline(oldLocation, location, now)
+	}
+	start, _ := n.billingCycleRange(now)
 	if n.CycleStart.Equal(start) {
 		return
 	}
-	n.CycleStart = start
-	n.CurrentCycleUsed = 0
 	n.InitialUsed = 0
 	n.TrafficManualAt = nil
-	first, last := start.Format("2006-01-02"), now.In(trafficLocation).Format("2006-01-02")
-	n.CurrentCycleUsed = sumDailyTraffic(n.DailyTraffic, first, last)
+	n.CycleStart = start
+	n.CurrentCycleUsed = sumDailyTraffic(n.DailyTraffic, start.Format("2006-01-02"), now.In(location).Format("2006-01-02"))
 }
 
 func sumDailyTraffic(daily map[string]int64, first, last string) int64 {

@@ -67,7 +67,11 @@ func (s *Store) rankingsAt(ctx context.Context, period string, now time.Time) (*
 	for id, n := range s.nodes {
 		names[id] = n.Name
 		entry := RankingEntry{UUID: id, Name: n.Name}
-		for day, value := range n.DailyTraffic {
+		daily := n.DailyTraffic
+		if n.RankingDailyTraffic != nil || n.billingLocation() != trafficLocation {
+			daily = n.RankingDailyTraffic
+		}
+		for day, value := range daily {
 			if day >= firstDay && day <= lastDay && value >= 0 {
 				entry.Value += float64(value)
 				entry.Samples++
