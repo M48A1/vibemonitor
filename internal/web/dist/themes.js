@@ -56,6 +56,10 @@ window.VibeHex = (() => {
     return `<span class="ss-bar${level}"><i style="width:${pct || 0}%"></i><b>${pct == null ? '—' : pct.toFixed(1) + '%'}</b></span>`;
   }
 
+  function trafficResetLabel(node) {
+    return node.reset_day > 0 ? `每月 ${node.reset_day} 日 · ${escapeHtml(node.billing_timezone || 'UTC+8')}` : '未设置';
+  }
+
   function renderServerStatusNode(node) {
     const r = node.last_report || {};
     const info = node.basic_info || {};
@@ -111,7 +115,7 @@ window.VibeHex = (() => {
             ${detail('周期流量', limit > 0 ? `${formatBytes(used || 0)} / ${formatBytes(limit)}` : '未设置配额')}
             ${detail('在线时长', live ? formatUptime(r.uptime) : '—')}
             ${detail('到期时间', bill.date)}
-            ${detail('流量重置', node.reset_day > 0 ? `每月 ${node.reset_day} 日` : '未设置')}
+            ${detail('流量重置', trafficResetLabel(node))}
             ${detail('费用金额', bill.price)}
           </div>
           <div class="ss-actions">
@@ -145,7 +149,7 @@ window.VibeHex = (() => {
     return JSON.stringify([
       node.uuid, node.name, node.region, node.online, node.basic_info, node.profile,
       node.ping_preview, node.traffic_limit, node.cycle_total_used,
-      node.reset_day, !!node.last_report,
+      node.reset_day, node.billing_timezone, !!node.last_report,
       r.cpu, r.ram, r.disk, r.ping_results, Math.floor((r.uptime || 0) / 60),
       net.up, net.down, node.cycle_upload, node.cycle_download,
       siteTheme, siteLayout, siteLayout === 'serverstatus' ? [r.swap, r.load, r.connections, r.process] : null,
@@ -178,7 +182,7 @@ window.VibeHex = (() => {
       <div class="hex-network"><div><span>↑ 上行</span><strong>${speed(net.up)}</strong></div><button class="hex-network-total" type="button" data-action="resource" data-uuid="${escapeHtml(node.uuid)}" data-metric="network" title="查看实时速率历史曲线" aria-label="查看实时速率历史曲线"><span>实时速率${historyIcon()}</span><strong>${speed(totalRate)}</strong></button><div><span>↓ 下行</span><strong>${speed(net.down)}</strong></div></div>
       <div class="hex-facts"><div><span>累计上传</span><strong>${node.reset_day > 0 ? formatBytes(node.cycle_upload || 0) : '—'}</strong></div><div><span>累计下载</span><strong>${node.reset_day > 0 ? formatBytes(node.cycle_download || 0) : '—'}</strong></div><div><span>在线时长</span><strong>${live && number(r.uptime) != null ? formatUptime(r.uptime) : '—'}</strong></div></div>
       <div class="hex-probes">${renderPingPanels(node)}</div>
-      <div class="hex-billing"><div><span>到期时间</span><strong>${bill.date}</strong></div><div><span>流量重置</span><strong>${node.reset_day > 0 ? '每月 ' + node.reset_day + ' 日' : '未设置'}</strong></div></div>
+      <div class="hex-billing"><div><span>到期时间</span><strong>${bill.date}</strong></div><div><span>流量重置</span><strong>${trafficResetLabel(node)}</strong></div></div>
       <footer class="hex-card-footer"><strong>${bill.price}</strong></footer>
     </article>`;
   }

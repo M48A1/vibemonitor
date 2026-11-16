@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"math"
 	"sort"
 	"strings"
 	"sync"
@@ -90,7 +89,8 @@ type Node struct {
 	pingWindows  map[string]*pingLossWindow
 
 	// Traffic Billing Quota (sum mode: up + down)
-	TrafficLimit       int64      `json:"traffic_limit"`               // Bytes, 0 = no limit
+	TrafficLimit       int64      `json:"traffic_limit"` // Bytes, 0 = no limit
+	BillingTimezone    string     `json:"billing_timezone"`
 	ResetDay           int        `json:"reset_day"`                   // 1-31 (day of month)
 	InitialUsed        int64      `json:"initial_used"`                // Bytes, manual offset for current cycle
 	CurrentCycleUsed   int64      `json:"current_cycle_used"`          // Bytes, accumulated by agent in current cycle
@@ -101,12 +101,13 @@ type Node struct {
 	LastTotalDown      int64      `json:"last_total_down"` // Last reported raw totalDown
 
 	// Daily measured traffic, persisted with the counter baseline.
-	DailyTraffic       map[string]int64 `json:"daily_traffic,omitempty"`
-	DailyUpload        map[string]int64 `json:"daily_upload,omitempty"`
-	DailyDownload      map[string]int64 `json:"daily_download,omitempty"`
-	DailyOnline        map[string]int64 `json:"daily_online_ns,omitempty"`
-	OnlineHistorySince time.Time        `json:"online_history_since,omitempty"`
-	DailyOnlineUntil   time.Time        `json:"daily_online_until,omitempty"`
+	DailyTraffic        map[string]int64 `json:"daily_traffic,omitempty"`
+	DailyUpload         map[string]int64 `json:"daily_upload,omitempty"`
+	DailyDownload       map[string]int64 `json:"daily_download,omitempty"`
+	RankingDailyTraffic map[string]int64 `json:"ranking_daily_traffic,omitempty"` // UTC+8, when billing uses a different zone.
+	DailyOnline         map[string]int64 `json:"daily_online_ns,omitempty"`
+	OnlineHistorySince  time.Time        `json:"online_history_since,omitempty"`
+	DailyOnlineUntil    time.Time        `json:"daily_online_until,omitempty"`
 
 	// Computed dynamic fields
 	CycleUpload    int64   `json:"cycle_upload"`
@@ -487,13 +488,14 @@ func (s *Store) load(defaultPassword, username string) error {
 		if n.OnlineHistorySince.IsZero() {
 			n.OnlineHistorySince = time.Now().UTC()
 		}
-		if !n.CycleStart.IsZero() {
+		if n.BillingTimezone == "" && !n.CycleStart.IsZero() {
 			_, offset := n.CycleStart.Zone()
 			if offset != 8*3600 {
 				year, month, day := n.CycleStart.Date()
 				n.CycleStart = time.Date(year, month, day, 0, 0, 0, 0, trafficLocation)
 			}
 		}
+		n.BillingTimezone = billingTimezoneName(n.BillingTimezone)
 		if n.Profile == nil {
 			targets := append([]protocol.PingTarget{}, s.config.PingTargets...)
 			for i := range targets {
@@ -510,7 +512,7 @@ func (s *Store) load(defaultPassword, username string) error {
 			// Older nodes treated a blank reset day as disabled accounting.
 			// Start tracking from their last reported counters without charging past traffic.
 			n.ResetDay = 1
-			n.CycleStart, _ = GetBillingCycleRange(1, time.Now())
+			n.CycleStart, _ = n.billingCycleRange(time.Now())
 			if n.LastReport != nil {
 				n.LastTotalUp = n.LastReport.Network.TotalUp
 				n.LastTotalDown = n.LastReport.Network.TotalDown
@@ -623,54 +625,33 @@ func (s *Store) GetConfig() Config {
 // For example, if resetDay is 15 and now is Sep 4, cycle is Aug 15 00:00 to Sep 15 00:00.
 // If resetDay is 15 and now is Sep 20, cycle is Sep 15 00:00 to Oct 15 00:00.
 func GetBillingCycleRange(resetDay int, now time.Time) (start, end time.Time) {
-	now = now.In(trafficLocation)
-	if resetDay < 1 {
-		resetDay = 1
-	} else if resetDay > 31 {
-		resetDay = 31
+	return billingCycleRange(resetDay, now, trafficLocation)
+}
+
+func (n *Node) billingCycleRange(now time.Time) (time.Time, time.Time) {
+	return billingCycleRange(n.ResetDay, now, n.billingLocation())
+}
+
+func billingCycleRange(resetDay int, now time.Time, location *time.Location) (start, end time.Time) {
+	resetDay = max(1, min(31, resetDay))
+	year, month, _ := now.In(location).Date()
+	boundary := func(month time.Month) time.Time {
+		daysInMonth := time.Date(year, month+1, 0, 0, 0, 0, 0, time.UTC).Day()
+		date := time.Date(year, month, min(resetDay, daysInMonth), 0, 0, 0, 0, time.UTC)
+		return localDayStart(date, location)
 	}
-
-	year, month, day := now.Date()
-
-	clampDay := func(y int, m time.Month, targetDay int) int {
-		daysInMonth := time.Date(y, m+1, 0, 0, 0, 0, 0, now.Location()).Day()
-		if targetDay > daysInMonth {
-			return daysInMonth
-		}
-		return targetDay
+	thisMonth := boundary(month)
+	if now.Before(thisMonth) {
+		return boundary(month - 1), thisMonth
 	}
-
-	if day >= clampDay(year, month, resetDay) {
-		startDay := clampDay(year, month, resetDay)
-		start = time.Date(year, month, startDay, 0, 0, 0, 0, now.Location())
-
-		nextYear, nextMonth := year, month+1
-		if nextMonth > 12 {
-			nextYear++
-			nextMonth = 1
-		}
-		endDay := clampDay(nextYear, nextMonth, resetDay)
-		end = time.Date(nextYear, nextMonth, endDay, 0, 0, 0, 0, now.Location())
-	} else {
-		prevYear, prevMonth := year, month-1
-		if prevMonth < 1 {
-			prevYear--
-			prevMonth = 12
-		}
-		startDay := clampDay(prevYear, prevMonth, resetDay)
-		start = time.Date(prevYear, prevMonth, startDay, 0, 0, 0, 0, now.Location())
-
-		endDay := clampDay(year, month, resetDay)
-		end = time.Date(year, month, endDay, 0, 0, 0, 0, now.Location())
-	}
-	return start, end
+	return thisMonth, boundary(month + 1)
 }
 
 func (n *Node) checkCycleRollover(now time.Time) {
 	if n.ResetDay <= 0 {
 		return
 	}
-	start, _ := GetBillingCycleRange(n.ResetDay, now)
+	start, _ := n.billingCycleRange(now)
 	if n.CycleStart.IsZero() || n.CycleStart.Before(start) {
 		// New billing cycle arrived!
 		n.CycleStart = start
@@ -702,13 +683,9 @@ func (n *Node) calculateDynamicFields(now time.Time) {
 
 	if n.ResetDay > 0 {
 		n.checkCycleRollover(now)
-		_, cycleEnd := GetBillingCycleRange(n.ResetDay, now)
-		duration := cycleEnd.Sub(now)
-		days := int(math.Ceil(duration.Hours() / 24.0))
-		if days < 0 {
-			days = 0
-		}
-		n.DaysUntilReset = days
+		_, cycleEnd := n.billingCycleRange(now)
+		today := civilDate(now.In(n.billingLocation()))
+		n.DaysUntilReset = max(0, int(civilDate(cycleEnd).Sub(today)/(24*time.Hour)))
 	}
 
 	n.CycleTotalUsed = n.InitialUsed + n.CurrentCycleUsed
@@ -736,6 +713,7 @@ func (s *Store) getNodes(compact bool) []*Node {
 			nodeCopy.History = append([]HistoryPoint(nil), n.History...)
 		}
 		nodeCopy.DailyTraffic = nil
+		nodeCopy.RankingDailyTraffic = nil
 		nodeCopy.DailyOnline = nil
 		nodeCopy.Token = "" // Credentials are only available through authenticated management.
 		if n.Profile != nil {
@@ -767,8 +745,8 @@ func (s *Store) getNodes(compact bool) []*Node {
 		nodeCopy.CycleUpload = 0
 		nodeCopy.CycleDownload = 0
 		if nodeCopy.ResetDay > 0 {
-			first := nodeCopy.CycleStart.In(trafficLocation).Format("2006-01-02")
-			last := now.In(trafficLocation).Format("2006-01-02")
+			first := nodeCopy.CycleStart.In(n.billingLocation()).Format("2006-01-02")
+			last := now.In(n.billingLocation()).Format("2006-01-02")
 			nodeCopy.CycleUpload = sumDailyTraffic(n.DailyUpload, first, last)
 			nodeCopy.CycleDownload = sumDailyTraffic(n.DailyDownload, first, last)
 		}
@@ -790,7 +768,7 @@ func (s *Store) GetAlertNodes() []*Node {
 		copy := &Node{
 			UUID: n.UUID, Name: n.Name, Profile: n.Profile,
 			LastSeen: n.LastSeen, BasicInfo: n.BasicInfo, LastReport: n.LastReport,
-			ResetDay: n.ResetDay, CycleStart: n.CycleStart,
+			ResetDay: n.ResetDay, CycleStart: n.CycleStart, BillingTimezone: n.BillingTimezone,
 			TrafficLimit: n.TrafficLimit, InitialUsed: n.InitialUsed,
 			CurrentCycleUsed: n.CurrentCycleUsed,
 		}
@@ -826,14 +804,15 @@ func (s *Store) FindNodeByToken(token string) *Node {
 }
 
 type NodeOptions struct {
-	Profile        *NodeProfile
-	Name           string
-	Group          string
-	Region         string
-	TrafficLimitGB float64
-	ResetDay       int
-	InitialUsedGB  float64
-	CycleUsedGB    *float64 // Optional replacement for the current cycle's total usage.
+	Profile         *NodeProfile
+	Name            string
+	Group           string
+	Region          string
+	TrafficLimitGB  float64
+	ResetDay        int
+	BillingTimezone *string // nil preserves the current value on update
+	InitialUsedGB   float64
+	CycleUsedGB     *float64 // Optional replacement for the current cycle's total usage.
 }
 
 var (
@@ -922,7 +901,6 @@ func (s *Store) createNodeContext(ctx context.Context, opts NodeOptions, uniqueN
 	initialUsedBytes, _ := trafficGBToBytes(opts.InitialUsedGB)
 
 	now := time.Now()
-	cycleStart, _ := GetBillingCycleRange(opts.ResetDay, now)
 
 	node := &Node{
 		Profile:            opts.Profile,
@@ -936,12 +914,13 @@ func (s *Store) createNodeContext(ctx context.Context, opts NodeOptions, uniqueN
 		ResetDay:           opts.ResetDay,
 		InitialUsed:        initialUsedBytes,
 		CurrentCycleUsed:   0,
-		CycleStart:         cycleStart,
+		BillingTimezone:    optionBillingTimezone(opts.BillingTimezone),
 		CreatedAt:          now.UTC(),
 		OnlineHistorySince: now.UTC(),
 		History:            make([]HistoryPoint, 0, MaxHistoryPoints),
 	}
 
+	node.CycleStart, _ = node.billingCycleRange(now)
 	s.pruneNodePingLocked(node)
 	snapshot := cloneNodesForSave(s.nodes)
 	snapshot[uuid] = node
@@ -1082,8 +1061,15 @@ func (s *Store) applyNodeOptionsLocked(n *Node, opts NodeOptions, cycleUsedBytes
 	if opts.ResetDay == 0 {
 		opts.ResetDay = 1
 	}
-	if opts.ResetDay > 0 && opts.ResetDay <= 31 {
-		n.changeResetDay(opts.ResetDay, changedAt)
+	resetDay, timezone := n.ResetDay, billingTimezoneName(n.BillingTimezone)
+	if opts.ResetDay > 0 {
+		resetDay = opts.ResetDay
+	}
+	if opts.BillingTimezone != nil {
+		timezone = optionBillingTimezone(opts.BillingTimezone)
+	}
+	if resetDay != n.ResetDay || timezone != billingTimezoneName(n.BillingTimezone) {
+		n.changeBillingCycle(resetDay, timezone, changedAt)
 	}
 	if opts.InitialUsedGB >= 0 {
 		n.InitialUsed, _ = trafficGBToBytes(opts.InitialUsedGB)
@@ -1226,7 +1212,7 @@ func (s *Store) ingestReportAt(token string, report protocol.Report, now time.Ti
 
 	// Traffic delta accounting for billing cycle
 	if node.ResetDay > 0 {
-		node.checkCycleRollover(currentAt.In(now.Location()))
+		node.checkCycleRollover(currentAt)
 
 		curUp := report.Network.TotalUp
 		curDown := report.Network.TotalDown
@@ -1248,9 +1234,13 @@ func (s *Store) ingestReportAt(token string, report protocol.Report, now time.Ti
 		}
 		delta := upload + download
 		if node.TrafficBaselineSet {
-			recordDailyTraffic(&node.DailyUpload, upload, previousAt, currentAt)
-			recordDailyTraffic(&node.DailyDownload, download, previousAt, currentAt)
-			node.recordDailyTraffic(delta, previousAt, currentAt)
+			location := node.billingLocation()
+			recordDailyTraffic(&node.DailyUpload, upload, previousAt, currentAt, location)
+			recordDailyTraffic(&node.DailyDownload, download, previousAt, currentAt, location)
+			recordDailyTraffic(&node.DailyTraffic, delta, previousAt, currentAt, location)
+			if location != trafficLocation || node.RankingDailyTraffic != nil {
+				recordDailyTraffic(&node.RankingDailyTraffic, delta, previousAt, currentAt, trafficLocation)
+			}
 		}
 		if delta > 0 {
 			start := node.CycleStart

@@ -247,6 +247,7 @@
     $('nodeFormTrafficLimit').value = '';
     $('nodeFormTrafficLimit').dataset.originalValue = '';
     $('nodeFormResetDay').value = '';
+    $('nodeFormBillingTimezone').value = 'UTC+8';
     $('nodeFormInitialUsed').value = '';
     $('nodeFormCycleUsed').value = '';
     $('nodeFormStatus').textContent = '';
@@ -270,6 +271,7 @@
     quota.value = node.traffic_limit > 0 ? String(node.traffic_limit / GIB) : '';
     quota.dataset.originalValue = quota.value;
     $('nodeFormResetDay').value = node.reset_day > 0 ? node.reset_day : '';
+    $('nodeFormBillingTimezone').value = node.billing_timezone || 'UTC+8';
     const used = Math.max(0, Number(node.cycle_total_used) || 0);
     $('nodeFormCycleUsed').value = '';
     $('nodeFormCycleUsed').placeholder = (used / GIB).toFixed(3);
@@ -312,6 +314,7 @@
     const quotaInput = $('nodeFormTrafficLimit');
     const trafficLimitGB = quotaInput.value.trim() === '' ? 0 : Number(quotaInput.value);
     const quotaChanged = quotaInput.value !== quotaInput.dataset.originalValue;
+    const billingTimezone = $('nodeFormBillingTimezone').value.trim();
     const resetDay = Number($('nodeFormResetDay').value || 0);
     const initialUsedGB = Number($('nodeFormInitialUsed').value || 0);
     const cycleUsedText = $('nodeFormCycleUsed').value.trim();
@@ -336,7 +339,7 @@
     $('nodeFormStatus').textContent = '正在保存…';
     try {
       if (uuid) {
-        const payload = { name, region, group: currentGroup, reset_day: resetDay, profile };
+        const payload = { name, region, group: currentGroup, reset_day: resetDay, billing_timezone: billingTimezone, profile };
         if (quotaChanged) payload.traffic_limit_gb = trafficLimitGB;
         if (cycleUsedGB !== null) payload.cycle_used_gb = cycleUsedGB;
         await request('/api/admin/nodes/' + encodeURIComponent(uuid), {
@@ -357,6 +360,7 @@
             group: '',
             traffic_limit_gb: trafficLimitGB,
             reset_day: resetDay,
+            billing_timezone: billingTimezone,
             initial_used_gb: initialUsedGB,
             profile
           })

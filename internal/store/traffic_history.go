@@ -10,49 +10,94 @@ const trafficDailyRetentionDays = 180
 
 var trafficLocation = time.FixedZone("UTC+8", 8*3600)
 
-// Daily totals travel with the node snapshot and counter baseline, so a retry,
-// restart cannot apply a delta twice.
-func (n *Node) recordDailyTraffic(delta int64, previous, current time.Time) {
-	recordDailyTraffic(&n.DailyTraffic, delta, previous, current)
+// civilDate gives calendar arithmetic a date without DST transitions.
+func civilDate(at time.Time) time.Time {
+	return time.Date(at.Year(), at.Month(), at.Day(), 0, 0, 0, 0, time.UTC)
 }
 
-func recordDailyTraffic(daily *map[string]int64, delta int64, previous, current time.Time) {
-	location := trafficLocation
+// localDayStart returns the first instant of the date, even when a clock
+// transition repeats or skips midnight. A skipped date starts at the next day.
+func localDayStart(date time.Time, location *time.Location) time.Time {
+	for at := date.Add(-26 * time.Hour).In(location); ; {
+		_, offset := at.Zone()
+		candidate := date.Add(-time.Duration(offset) * time.Second).In(location)
+		_, zoneEnd := at.ZoneBounds()
+		if candidate.Before(at) {
+			return at
+		}
+		if zoneEnd.IsZero() || candidate.Before(zoneEnd) {
+			return candidate
+		}
+		at = zoneEnd
+	}
+}
+
+func nextLocalDay(day time.Time) time.Time {
+	return localDayStart(civilDate(day).AddDate(0, 0, 1), day.Location())
+}
+
+// Split cumulative counters by elapsed time. Differences of cumulative
+// allocations preserve every byte even across midnight and short months.
+func distributeDaily(daily map[string]int64, value int64, previous, current, start time.Time, location *time.Location) {
+	total := uint64(current.Sub(previous))
+	portion := func(at time.Time) int64 {
+		hi, lo := bits.Mul64(uint64(value), uint64(at.Sub(previous)))
+		q, _ := bits.Div64(hi, lo, total)
+		return int64(q)
+	}
+	for start = start.In(location); start.Before(current); {
+		end := nextLocalDay(start)
+		if end.After(current) {
+			end = current.In(location)
+		}
+		daily[start.Format("2006-01-02")] += portion(end) - portion(start)
+		start = end
+	}
+}
+
+// Reports persist these totals with the associated counter baseline.
+func recordDailyTraffic(daily *map[string]int64, delta int64, previous, current time.Time, location *time.Location) {
 	if delta < 0 || previous.IsZero() || !current.After(previous) {
 		return
 	}
 	if *daily == nil {
 		*daily = make(map[string]int64)
 	}
-	local := current.In(location)
-	cutoff := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, location).AddDate(0, 0, -trafficDailyRetentionDays)
+	date := civilDate(current.In(location)).AddDate(0, 0, -trafficDailyRetentionDays)
+	cutoff := localDayStart(date, location)
 	cutoffKey := cutoff.Format("2006-01-02")
-	for date := range *daily {
-		if date < cutoffKey {
-			delete(*daily, date)
+	for day := range *daily {
+		if day < cutoffKey {
+			delete(*daily, day)
 		}
 	}
-	start := previous.In(location)
+	start := previous
 	if start.Before(cutoff) {
 		start = cutoff
 	}
-	total := uint64(current.Sub(previous))
-	portion := func(at time.Time) int64 {
-		hi, lo := bits.Mul64(uint64(delta), uint64(at.Sub(previous)))
-		q, _ := bits.Div64(hi, lo, total)
-		return int64(q)
+	distributeDaily(*daily, delta, previous, current, start, location)
+}
+
+// Old history contains day totals only, so split each day's bytes across the
+// overlapping new dates in proportion to elapsed time.
+func redistributeDaily(daily map[string]int64, from, to *time.Location, through time.Time) map[string]int64 {
+	if len(daily) == 0 {
+		return nil
 	}
-	// Split cumulative counters by elapsed time; differences of cumulative
-	// allocations preserve every byte even across midnight and short months.
-	for start.Before(current) {
-		day := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, location)
-		end := day.AddDate(0, 0, 1)
-		if end.After(current) {
-			end = current.In(location)
+	result := make(map[string]int64, len(daily)+1)
+	for key, value := range daily {
+		date, err := time.Parse("2006-01-02", key)
+		if err != nil || value < 0 {
+			continue
 		}
-		(*daily)[day.Format("2006-01-02")] += portion(end) - portion(start)
-		start = end
+		start := localDayStart(date, from)
+		end := nextLocalDay(start)
+		if end.After(through) && through.After(start) {
+			end = through
+		}
+		distributeDaily(result, value, start, end, start, to)
 	}
+	return result
 }
 
 type DailyTrafficPoint struct {
@@ -73,17 +118,16 @@ type TrafficHistoryResponse struct {
 	Days      []DailyTrafficPoint `json:"days"`
 }
 
-func trafficHistoryRange(resetDay int, name string, now time.Time) (time.Time, time.Time, error) {
-	now = now.In(trafficLocation)
-	start, end := GetBillingCycleRange(resetDay, now)
+func trafficHistoryRange(resetDay int, name string, now time.Time, location *time.Location) (time.Time, time.Time, error) {
+	start, end := billingCycleRange(resetDay, now, location)
 	switch name {
 	case "current":
 	case "previous":
 		end = start
-		start, _ = GetBillingCycleRange(resetDay, start.Add(-time.Nanosecond))
+		start, _ = billingCycleRange(resetDay, start.Add(-time.Nanosecond), location)
 	case "three":
 		for i := 0; i < 2; i++ {
-			start, _ = GetBillingCycleRange(resetDay, start.Add(-time.Nanosecond))
+			start, _ = billingCycleRange(resetDay, start.Add(-time.Nanosecond), location)
 		}
 	default:
 		return time.Time{}, time.Time{}, errors.New("invalid traffic range")
@@ -95,20 +139,19 @@ func (s *Store) GetTrafficHistory(uuid, name string) (*TrafficHistoryResponse, e
 	return s.trafficHistoryAt(uuid, name, time.Now())
 }
 func (s *Store) trafficHistoryAt(uuid, name string, now time.Time) (*TrafficHistoryResponse, error) {
-	now = now.In(trafficLocation)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	n := s.nodes[uuid]
 	if n == nil {
 		return nil, ErrNodeNotFound
 	}
-	start, end, err := trafficHistoryRange(n.ResetDay, name, now)
+	start, end, err := trafficHistoryRange(n.ResetDay, name, now, n.billingLocation())
 	if err != nil {
 		return nil, err
 	}
-	response := &TrafficHistoryResponse{UUID: uuid, Range: name, StartDate: start.Format("2006-01-02"), EndDate: end.AddDate(0, 0, -1).Format("2006-01-02"), Timezone: now.Format("MST -07:00"), ResetDay: n.ResetDay, Days: []DailyTrafficPoint{}}
-	for day := start; day.Before(end); day = day.AddDate(0, 0, 1) {
-		point := DailyTrafficPoint{Date: day.Format("2006-01-02"), Complete: !day.AddDate(0, 0, 1).After(now)}
+	response := &TrafficHistoryResponse{UUID: uuid, Range: name, StartDate: start.Format("2006-01-02"), EndDate: end.Add(-time.Nanosecond).Format("2006-01-02"), Timezone: billingTimezoneName(n.BillingTimezone), ResetDay: n.ResetDay, Days: []DailyTrafficPoint{}}
+	for day := start; day.Before(end); day = nextLocalDay(day) {
+		point := DailyTrafficPoint{Date: day.Format("2006-01-02"), Complete: !nextLocalDay(day).After(now)}
 		point.Status, point.OnlineSeconds = n.dailyOnlineStatus(day, now)
 		if value, ok := n.DailyTraffic[point.Date]; ok && !day.After(now) {
 			point.Bytes = value
@@ -123,6 +166,7 @@ func (s *Store) trafficHistoryAt(uuid, name string, now time.Time) (*TrafficHist
 // the dashboard. Long reporting gaps do not become "online" just because the
 // cumulative network counters can later recover traffic over that interval.
 func (n *Node) recordDailyOnline(now time.Time) {
+	location := n.billingLocation()
 	if n.DailyOnline == nil {
 		n.DailyOnline = make(map[string]int64)
 	}
@@ -137,17 +181,16 @@ func (n *Node) recordDailyOnline(now time.Time) {
 		return
 	}
 	for start.Before(end) {
-		local := start.In(trafficLocation)
-		day := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, trafficLocation)
-		boundary := day.AddDate(0, 0, 1)
+		local := start.In(location)
+		boundary := nextLocalDay(local)
 		if boundary.After(end) {
 			boundary = end
 		}
-		n.DailyOnline[day.Format("2006-01-02")] += int64(boundary.Sub(start))
+		n.DailyOnline[local.Format("2006-01-02")] += int64(boundary.Sub(start))
 		start = boundary
 	}
 	n.DailyOnlineUntil = end
-	cutoff := now.In(trafficLocation).AddDate(0, 0, -trafficDailyRetentionDays).Format("2006-01-02")
+	cutoff := civilDate(now.In(location)).AddDate(0, 0, -trafficDailyRetentionDays).Format("2006-01-02")
 	for date := range n.DailyOnline {
 		if date < cutoff {
 			delete(n.DailyOnline, date)
@@ -155,11 +198,31 @@ func (n *Node) recordDailyOnline(now time.Time) {
 	}
 }
 
+// Move the known heartbeat tail separately so history can still subtract
+// future grace time from the correct local dates.
+func (n *Node) rezoneDailyOnline(from, to *time.Location, now time.Time) {
+	if len(n.DailyOnline) == 0 {
+		return
+	}
+	until := n.DailyOnlineUntil
+	if until.After(now) {
+		tail := make(map[string]int64)
+		distributeDaily(tail, int64(until.Sub(now)), now, until, now, from)
+		for day, value := range tail {
+			n.DailyOnline[day] = max(0, n.DailyOnline[day]-value)
+		}
+	}
+	n.DailyOnline = redistributeDaily(n.DailyOnline, from, to, now)
+	if until.After(now) {
+		distributeDaily(n.DailyOnline, int64(until.Sub(now)), now, until, now, to)
+	}
+}
+
 func (n *Node) dailyOnlineStatus(day, now time.Time) (string, int64) {
 	if day.After(now) {
 		return "future", 0
 	}
-	end := day.AddDate(0, 0, 1)
+	end := nextLocalDay(day)
 	if end.After(now) {
 		end = now
 	}
@@ -170,8 +233,8 @@ func (n *Node) dailyOnlineStatus(day, now time.Time) (string, int64) {
 		if tailStart.Before(day) {
 			tailStart = day
 		}
-		if tailEnd.After(day.AddDate(0, 0, 1)) {
-			tailEnd = day.AddDate(0, 0, 1)
+		if tailEnd.After(nextLocalDay(day)) {
+			tailEnd = nextLocalDay(day)
 		}
 		if tailEnd.After(tailStart) {
 			online -= tailEnd.Sub(tailStart)
