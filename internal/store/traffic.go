@@ -91,19 +91,10 @@ func (n *Node) changeBillingCycle(resetDay int, timezone string, now time.Time) 
 	n.ResetDay = resetDay
 	n.BillingTimezone = timezone
 	location := n.billingLocation()
-	locationChanged := oldLocation != location
-	if locationChanged {
-		if oldLocation == trafficLocation && n.RankingDailyTraffic == nil {
-			n.RankingDailyTraffic = maps.Clone(n.DailyTraffic)
-		}
-		measuredUntil := trafficSampleTime(n.LastReport, n.LastSeen)
-		if measuredUntil.IsZero() {
-			measuredUntil = now
-		}
-		n.DailyTraffic = redistributeDaily(n.DailyTraffic, oldLocation, location, measuredUntil)
-		n.DailyUpload = redistributeDaily(n.DailyUpload, oldLocation, location, measuredUntil)
-		n.DailyDownload = redistributeDaily(n.DailyDownload, oldLocation, location, measuredUntil)
-		n.rezoneDailyOnline(oldLocation, location, now)
+	// Keep existing daily totals under their original date labels. Only
+	// subsequent reports use the new zone for daily aggregation.
+	if oldLocation == trafficLocation && location != trafficLocation && n.RankingDailyTraffic == nil {
+		n.RankingDailyTraffic = maps.Clone(n.DailyTraffic)
 	}
 	start, _ := n.billingCycleRange(now)
 	if n.CycleStart.Equal(start) {

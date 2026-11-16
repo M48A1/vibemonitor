@@ -78,28 +78,6 @@ func recordDailyTraffic(daily *map[string]int64, delta int64, previous, current 
 	distributeDaily(*daily, delta, previous, current, start, location)
 }
 
-// Old history contains day totals only, so split each day's bytes across the
-// overlapping new dates in proportion to elapsed time.
-func redistributeDaily(daily map[string]int64, from, to *time.Location, through time.Time) map[string]int64 {
-	if len(daily) == 0 {
-		return nil
-	}
-	result := make(map[string]int64, len(daily)+1)
-	for key, value := range daily {
-		date, err := time.Parse("2006-01-02", key)
-		if err != nil || value < 0 {
-			continue
-		}
-		start := localDayStart(date, from)
-		end := nextLocalDay(start)
-		if end.After(through) && through.After(start) {
-			end = through
-		}
-		distributeDaily(result, value, start, end, start, to)
-	}
-	return result
-}
-
 type DailyTrafficPoint struct {
 	Date          string `json:"date"`
 	Bytes         int64  `json:"bytes"`
@@ -195,26 +173,6 @@ func (n *Node) recordDailyOnline(now time.Time) {
 		if date < cutoff {
 			delete(n.DailyOnline, date)
 		}
-	}
-}
-
-// Move the known heartbeat tail separately so history can still subtract
-// future grace time from the correct local dates.
-func (n *Node) rezoneDailyOnline(from, to *time.Location, now time.Time) {
-	if len(n.DailyOnline) == 0 {
-		return
-	}
-	until := n.DailyOnlineUntil
-	if until.After(now) {
-		tail := make(map[string]int64)
-		distributeDaily(tail, int64(until.Sub(now)), now, until, now, from)
-		for day, value := range tail {
-			n.DailyOnline[day] = max(0, n.DailyOnline[day]-value)
-		}
-	}
-	n.DailyOnline = redistributeDaily(n.DailyOnline, from, to, now)
-	if until.After(now) {
-		distributeDaily(n.DailyOnline, int64(until.Sub(now)), now, until, now, to)
 	}
 }
 
