@@ -150,7 +150,8 @@
                   </optgroup>
                   <option value="custom">自定义时区</option>
                 </select>
-                <input type="text" class="form-input" id="nodeFormCustomBillingTimezone" aria-label="自定义账单重置时区" placeholder="例如 Pacific/Auckland" spellcheck="false" autocapitalize="none" hidden disabled>
+                <input type="text" class="form-input" id="nodeFormCustomBillingTimezone" aria-label="自定义账单重置时区" aria-describedby="nodeFormBillingTimezoneHint" placeholder="例如 Pacific/Auckland" spellcheck="false" autocapitalize="none" hidden disabled>
+                <small id="nodeFormBillingTimezoneHint" hidden>输入地区时区（如 Asia/Shanghai、America/New_York），或固定整点偏移（如 UTC、UTC+8、UTC-5）。</small>
               </div>
               <div class="form-group" data-mode="new">
                 <label class="form-label" for="nodeFormInitialUsed">当前周期已用流量 (GB, 选填)</label>

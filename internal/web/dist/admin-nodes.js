@@ -242,6 +242,7 @@
     const custom = $('nodeFormCustomBillingTimezone');
     const isCustom = $('nodeFormBillingTimezone').value === 'custom';
     custom.hidden = !isCustom;
+    $('nodeFormBillingTimezoneHint').hidden = !isCustom;
     custom.disabled = !isCustom;
     custom.required = isCustom;
   }
