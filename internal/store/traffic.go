@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -44,11 +45,22 @@ func loadBillingLocation(name string) (*time.Location, error) {
 	if location, ok := billingLocations.Load(name); ok {
 		return location.(*time.Location), nil
 	}
-	location, err := time.LoadLocation(name)
-	if err == nil {
-		billingLocations.Store(name, location)
+	var location *time.Location
+	if strings.HasPrefix(name, "UTC+") || strings.HasPrefix(name, "UTC-") {
+		hours, err := strconv.Atoi(name[3:])
+		if err != nil || hours == 0 || hours < -12 || hours > 14 || name != fmt.Sprintf("UTC%+d", hours) {
+			return nil, fmt.Errorf("invalid fixed UTC offset")
+		}
+		location = time.FixedZone(name, hours*3600)
+	} else {
+		var err error
+		location, err = time.LoadLocation(name)
+		if err != nil {
+			return nil, err
+		}
 	}
-	return location, err
+	cached, _ := billingLocations.LoadOrStore(name, location)
+	return cached.(*time.Location), nil
 }
 
 func (n *Node) billingLocation() *time.Location {
@@ -67,7 +79,7 @@ func validateTrafficOptions(opts NodeOptions, updating bool) error {
 	}
 	if opts.BillingTimezone != nil {
 		if _, err := loadBillingLocation(optionBillingTimezone(opts.BillingTimezone)); err != nil {
-			return fmt.Errorf("%w: billing timezone must be UTC+8 or an IANA name such as Asia/Shanghai", ErrInvalidNodeOptions)
+			return fmt.Errorf("%w: billing timezone must be UTC, a whole-hour offset from UTC-12 through UTC+14, or an IANA name such as Asia/Shanghai", ErrInvalidNodeOptions)
 		}
 	}
 	for _, field := range []struct {

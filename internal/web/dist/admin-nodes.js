@@ -238,6 +238,23 @@
     };
   }
 
+  function updateCustomBillingTimezone() {
+    const custom = $('nodeFormCustomBillingTimezone');
+    const isCustom = $('nodeFormBillingTimezone').value === 'custom';
+    custom.hidden = !isCustom;
+    custom.disabled = !isCustom;
+    custom.required = isCustom;
+  }
+
+  function setBillingTimezone(value) {
+    const select = $('nodeFormBillingTimezone');
+    const timezone = value || 'UTC+8';
+    select.value = timezone;
+    if (!select.value) select.value = 'custom';
+    $('nodeFormCustomBillingTimezone').value = select.value === 'custom' ? timezone : '';
+    updateCustomBillingTimezone();
+  }
+
   function openNewNode() {
     editProfileReady = false;
     currentGroup = '';
@@ -247,7 +264,7 @@
     $('nodeFormTrafficLimit').value = '';
     $('nodeFormTrafficLimit').dataset.originalValue = '';
     $('nodeFormResetDay').value = '';
-    $('nodeFormBillingTimezone').value = 'UTC+8';
+    setBillingTimezone();
     $('nodeFormInitialUsed').value = '';
     $('nodeFormCycleUsed').value = '';
     $('nodeFormStatus').textContent = '';
@@ -271,7 +288,7 @@
     quota.value = node.traffic_limit > 0 ? String(node.traffic_limit / GIB) : '';
     quota.dataset.originalValue = quota.value;
     $('nodeFormResetDay').value = node.reset_day > 0 ? node.reset_day : '';
-    $('nodeFormBillingTimezone').value = node.billing_timezone || 'UTC+8';
+    setBillingTimezone(node.billing_timezone);
     const used = Math.max(0, Number(node.cycle_total_used) || 0);
     $('nodeFormCycleUsed').value = '';
     $('nodeFormCycleUsed').placeholder = (used / GIB).toFixed(3);
@@ -314,7 +331,10 @@
     const quotaInput = $('nodeFormTrafficLimit');
     const trafficLimitGB = quotaInput.value.trim() === '' ? 0 : Number(quotaInput.value);
     const quotaChanged = quotaInput.value !== quotaInput.dataset.originalValue;
-    const billingTimezone = $('nodeFormBillingTimezone').value.trim();
+    const billingTimezoneChoice = $('nodeFormBillingTimezone').value;
+    const billingTimezone = billingTimezoneChoice === 'custom'
+      ? $('nodeFormCustomBillingTimezone').value.trim() : billingTimezoneChoice;
+    if (!billingTimezone) { $('nodeFormStatus').textContent = '请填写账单重置时区。'; return; }
     const resetDay = Number($('nodeFormResetDay').value || 0);
     const initialUsedGB = Number($('nodeFormInitialUsed').value || 0);
     const cycleUsedText = $('nodeFormCycleUsed').value.trim();
@@ -718,6 +738,7 @@
         status(error.message, 'error');
       }
     });
+    $('nodeFormBillingTimezone').addEventListener('change', updateCustomBillingTimezone);
     $('nodeForm').addEventListener('submit', submitForm);
     $('nodeFormCancelBtn').addEventListener('click', closeForm);
     $('closeGuideBtn').addEventListener('click', () => { $('guideCard').hidden = true; });
