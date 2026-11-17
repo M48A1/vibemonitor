@@ -27,12 +27,8 @@ const networkIdentityInterval = 7 * 24 * time.Hour
 // Missing/malformed data stays unknown; never default it to US or a language code.
 var youtubeContentRegion = regexp.MustCompile(`"contentRegion"\s*:\s*"([A-Z]{2})"`)
 
-// Gemini web bootstrap data exposes a three-letter region code. The field
-// is unofficial, so absent or conflicting signals are treated as unknown.
-var geminiBootstrapRegion = regexp.MustCompile(`,2,1,200,"([A-Z]{3})"`)
-
-func parseServiceRegion(body []byte, pattern *regexp.Regexp) string {
-	matches := pattern.FindAllSubmatch(body, -1)
+func parseYouTubeRegion(body []byte) string {
+	matches := youtubeContentRegion.FindAllSubmatch(body, -1)
 	region := ""
 	for _, match := range matches {
 		code := string(match[1])
@@ -146,21 +142,9 @@ func lookupYouTubeRegion(ctx context.Context, client *http.Client) (string, erro
 	if err != nil {
 		return "", err
 	}
-	region := parseServiceRegion(body, youtubeContentRegion)
+	region := parseYouTubeRegion(body)
 	if region == "" {
 		return "", fmt.Errorf("YouTube contentRegion unavailable")
-	}
-	return region, nil
-}
-
-func lookupGeminiRegion(ctx context.Context, client *http.Client) (string, error) {
-	body, err := identityGET(ctx, client, "https://gemini.google.com/app?hl=en", 4<<20)
-	if err != nil {
-		return "", err
-	}
-	region := parseServiceRegion(body, geminiBootstrapRegion)
-	if region == "" {
-		return "", fmt.Errorf("Gemini region unavailable")
 	}
 	return region, nil
 }
@@ -214,24 +198,12 @@ func collectNetworkIdentity(ctx context.Context, ipv4, ipv6 *http.Client) protoc
 	if err != nil && ctx.Err() == nil {
 		log.Printf("[Agent] YouTube IPv6 region unavailable: %v", err)
 	}
-	if identity.IPv4Available == nil || *identity.IPv4Available || identity.ASN != "" || identity.YouTubeRegion != "" {
-		identity.GeminiRegion, err = lookupGeminiRegion(ctx, ipv4)
-		if err != nil && ctx.Err() == nil {
-			log.Printf("[Agent] Gemini IPv4 region unavailable: %v", err)
-		}
-	}
-	if identity.IPv6Available == nil || *identity.IPv6Available || identity.YouTubeRegionIPv6 != "" {
-		identity.GeminiRegionIPv6, err = lookupGeminiRegion(ctx, ipv6)
-		if err != nil && ctx.Err() == nil {
-			log.Printf("[Agent] Gemini IPv6 region unavailable: %v", err)
-		}
-	}
 	// A successful provider response is stronger evidence than the route check.
-	if identity.ASN != "" || identity.YouTubeRegion != "" || identity.GeminiRegion != "" {
+	if identity.ASN != "" || identity.YouTubeRegion != "" {
 		available := true
 		identity.IPv4Available = &available
 	}
-	if identity.YouTubeRegionIPv6 != "" || identity.GeminiRegionIPv6 != "" {
+	if identity.YouTubeRegionIPv6 != "" {
 		available := true
 		identity.IPv6Available = &available
 	}

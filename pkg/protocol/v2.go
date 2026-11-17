@@ -42,8 +42,8 @@ type BasicInfoParams struct {
 }
 
 // NetworkIdentity is a weekly snapshot of the node's direct egress.
-// ASN describes IPv4. Each service region is probed independently per address family.
-// Empty fields mean that no region or ASN could be determined.
+// ASN and youtube_region describe IPv4; youtube_region_ipv6 is independently probed.
+// Empty fields mean that the corresponding provider could not be queried.
 type NetworkIdentity struct {
 	IPv4Available     *bool     `json:"ipv4_available,omitempty"`
 	IPv6Available     *bool     `json:"ipv6_available,omitempty"`
@@ -51,8 +51,6 @@ type NetworkIdentity struct {
 	ASName            string    `json:"as_name"`
 	YouTubeRegion     string    `json:"youtube_region"`
 	YouTubeRegionIPv6 string    `json:"youtube_region_ipv6"`
-	GeminiRegion      string    `json:"gemini_region,omitempty"`
-	GeminiRegionIPv6  string    `json:"gemini_region_ipv6,omitempty"`
 	CheckedAt         time.Time `json:"checked_at"`
 }
 
