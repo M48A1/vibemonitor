@@ -39,15 +39,18 @@ window.VibeHex = (() => {
   function networkIdentityLine(info) {
     const identity = info.network_identity || {};
     const asn = identity.asn ? `${identity.asn} ${identity.as_name || ''}`.trim() : 'Unknown';
-    const regions = [
-      ['IPV4', identity.ipv4_available, identity.youtube_region],
-      ['IPV6', identity.ipv6_available, identity.youtube_region_ipv6],
-    ].filter(([, available, code]) => available !== false || !!code);
-    // Missing availability on legacy agents remains Unknown, not absent.
-    const families = regions.map(([family]) => family).join('/');
-    const countries = regions.map(([, , code]) => englishRegionName(code)).join('/');
-    const google = regions.length ? `<span class="node-google-region" title="Region detected by YouTube Premium · Direct ${families}"><img src="/google-mark.svg" alt="Google" width="14" height="14"><span>${families}：${escapeHtml(countries)}</span></span>` : '';
-    return `<span class="node-network-identity"><span class="node-asn" title="ASN · Direct IPv4">${asnIcon()}<span>ASN：${escapeHtml(asn)}</span></span>${google}</span>`;
+    const families = [
+      ['IPv4', identity.ipv4_available, identity.youtube_region, identity.gemini_region],
+      ['IPv6', identity.ipv6_available, identity.youtube_region_ipv6, identity.gemini_region_ipv6],
+    ].filter(([, available, youtube, gemini]) => available !== false || youtube || gemini);
+    const serviceRegion = (name, source, regionName, index) => {
+      if (!families.length) return '';
+      const values = families.map(family => `${family[0]} ${regionName(family[index])}`).join(' / ');
+      return `<span class="node-google-region" title="${source}"><img src="/google-mark.svg" alt="" width="14" height="14"><span>${name}：${escapeHtml(values)}</span></span>`;
+    };
+    const youtube = serviceRegion('YouTube', 'YouTube Premium · Direct egress', englishRegionName, 2);
+    const gemini = serviceRegion('Gemini', 'Gemini web · Direct egress', code => /^[A-Z]{3}$/.test(code || '') ? code : 'Unknown', 3);
+    return `<span class="node-network-identity"><span class="node-asn" title="ASN · Direct IPv4">${asnIcon()}<span>ASN：${escapeHtml(asn)}</span></span>${youtube}${gemini}</span>`;
   }
 
   function serverStatusBar(value) {
