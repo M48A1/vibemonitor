@@ -776,67 +776,16 @@ write_agent_env() {
     mv -f "$UPDATE_DIR/agent.env" "$AGENT_ENV" || error "无法安装探针环境文件：$AGENT_ENV"
 }
 
-# Creates a node through the panel's temporary registration window. The key is
-# spent on the machine being installed, so the panel never has to keep a
-# standing credential: the window closes on its own, and one address cannot
-# register in a loop.
-AGENT_REGISTERED_NAME=""
-AGENT_REGISTERED_TOKEN=""
-
-register_node() {
-    local server="$1" key="$2" wanted="${3:-}" name reply token code
-    [[ "$key" =~ ^[[:xdigit:]]{32}$ ]] || error "临时注册密钥格式不正确：面板生成的密钥是 32 位十六进制。"
-    if [ -n "$wanted" ]; then
-        name=$(printf '%s' "$wanted" | tr -c 'A-Za-z0-9._-' '-' | cut -c1-64 | sed 's/[-.]*$//')
-        [ -n "$name" ] || error "节点名称只能包含字母、数字、点、下划线和连字符。"
-    else
-        name=$(hostname 2>/dev/null || true)
-        name=$(printf '%s' "$name" | tr -c 'A-Za-z0-9._-' '-' | cut -c1-64 | sed 's/[-.]*$//')
-        [ -n "$name" ] || name=auto-node
-    fi
-    # The status code decides what to say: a name that is already taken is a
-    # conflict on the panel, not a broken server, and the operator can fix it by
-    # choosing another name rather than by retrying blindly.
-    code=$(curl -4 -sS --connect-timeout 10 --max-time 30 -o "$UPDATE_DIR/register.json" \
-        -w '%{http_code}' -H "Authorization: Bearer $key" --data '' \
-        "$server/api/clients/register?name=$name") ||
-        error "注册失败：无法连接主控 ${server}，请确认本机可以访问它。"
-    reply=$(cat "$UPDATE_DIR/register.json" 2>/dev/null || true)
-    case "$code" in
-        200) ;;
-        409) error "主控已有名为“${name}”的节点。请换一个名字重新注册：在注册命令上加 -n 新名字（例如 -n ${name}-2），或先在面板删除旧节点。" ;;
-        401) error "注册失败：面板的“临时注册”已关闭或密钥无效，请重新生成后再试。" ;;
-        429) error "注册失败：同一地址注册过于频繁，请 5 分钟后再试。" ;;
-        *) error "注册失败（HTTP ${code}）：$reply" ;;
-    esac
-    token=$(printf '%s' "$reply" | sed -n 's/.*"token"[[:space:]]*:[[:space:]]*"\([0-9a-fA-F]\{32\}\)".*/\1/p')
-    [ -n "$token" ] || error "主控没有返回节点 Token：$reply"
-    AGENT_REGISTERED_NAME="$name"
-    AGENT_REGISTERED_TOKEN="$token"
-}
-
 install_agent() {
-    local server="$1" token="$2" interval="${3:-1s}" register="${4:-}" requested_name="${5:-}"
-    validate_unit_args "$INSTALL_BIN" "$CONFIG_DIR" "$UNIT_DIR" "$server" "$token" "$interval" "$register" "$requested_name"
+    local server="$1" token="$2" interval="${3:-1s}"
+    validate_unit_args "$INSTALL_BIN" "$CONFIG_DIR" "$UNIT_DIR" "$server" "$token" "$interval"
     [[ "$server" == http://* || "$server" == https://* ]] || error "Server URL must start with http:// or https://."
-    if [ -n "$register" ]; then
-        [ -z "$token" ] || error "节点 Token 与临时注册密钥只需提供其中一个。"
-    else
-        [ -n "$token" ] || error "A node token is required."
-        [ -z "$requested_name" ] || error "节点名称只能与临时注册（-r）一起使用。"
-    fi
+    [ -n "$token" ] || error "A node token is required."
     local args
     args="$(unit_arg "$INSTALL_BIN") agent --interval $(unit_arg "$interval")"
     check_root; detect_arch; check_dependencies
     begin_update "$AGENT_SERVICE"
     download_binary
-    # Registered after the download: a failed download then leaves no node
-    # behind on the panel.
-    if [ -n "$register" ]; then
-        register_node "$server" "$register" "$requested_name"
-        token="$AGENT_REGISTERED_TOKEN"
-        info "已注册新节点：$AGENT_REGISTERED_NAME"
-    fi
     ensure_agent_user
     write_agent_env "$server" "$token"
     UNIT_TOUCHED=1
@@ -986,7 +935,7 @@ manage_services() {
 }
 
 menu() {
-    local choice port port_default password username domain current_domain email server token interval register pause
+    local choice port port_default password username domain current_domain email server token interval pause
     while true; do
         menu_header
         read_input "请选择 [0-11]: " choice
@@ -1022,13 +971,9 @@ menu() {
                    ( configure_existing_server_domain "$domain" "" "$email" )
                fi ;;
             4) read_input "主控地址（http:// 或 https://）: " server
-               read_secret "节点 Token（输入不显示；留空改用临时注册）: " token
-               register=''
-               if [ -z "$token" ]; then read_secret "临时注册密钥（面板“临时注册”生成）: " register; fi
-               node_name=''
-               if [ -n "$register" ]; then read_input "节点名称（留空使用主机名）: " node_name; fi
+               read_secret "节点 Token（必填，输入不显示）: " token
                read_input "上报间隔 [1s]: " interval
-               ( install_agent "$server" "$token" "${interval:-1s}" "$register" "$node_name" ) ;;
+               ( install_agent "$server" "$token" "${interval:-1s}" ) ;;
             5) uninstall_agent ;;
             6) show_status ;;
             7) manage_services restart ;;
@@ -1083,23 +1028,21 @@ case "$CMD" in
         [ -n "$domain" ] || error "Domain is required."
         configure_existing_server_domain "$domain" "$port" "$email" ;;
     agent)
-        server=""; token=""; interval=1s; register=""; node_name=""
+        server=""; token=""; interval=1s
         while [ $# -gt 0 ]; do
             case "$1" in
                 -s|--server) server="${2:?missing server}"; shift 2 ;;
                 -t|--token) token="${2:?missing token}"; shift 2 ;;
-                -r|--register) register="${2:?missing registration key}"; shift 2 ;;
-                -n|--name) node_name="${2:?missing node name}"; shift 2 ;;
                 -i|--interval) interval="${2:?missing interval}"; shift 2 ;;
                 *) error "Unknown agent option: $1" ;;
             esac
         done
-        install_agent "$server" "$token" "$interval" "$register" "$node_name" ;;
+        install_agent "$server" "$token" "$interval" ;;
     menu) menu ;;
     status) show_status ;;
     restart) systemctl restart "$SERVER_SERVICE" "$AGENT_SERVICE" ;;
     uninstall) uninstall_all ;;
     agent-uninstall|uninstall-agent) uninstall_agent ;;
-    help|--help|-h) echo "Usage: $0 [update [-p PORT] | server [-p PORT] -u USER -w PASSWORD [-d DOMAIN] [-e EMAIL] | domain -d DOMAIN [-p PORT] [-e EMAIL] | agent -s URL {-t TOKEN | -r REGISTER_KEY [-n NAME]} [-i INTERVAL] | agent-uninstall | status | restart | uninstall]" ;;
+    help|--help|-h) echo "Usage: $0 [update [-p PORT] | server [-p PORT] -u USER -w PASSWORD [-d DOMAIN] [-e EMAIL] | domain -d DOMAIN [-p PORT] [-e EMAIL] | agent -s URL -t TOKEN [-i INTERVAL] | agent-uninstall | status | restart | uninstall]" ;;
     *) error "Unknown command: $CMD" ;;
 esac

@@ -44,7 +44,7 @@
         <div class="admin-page-head">
           <div>
             <h1 class="admin-title">节点管理</h1>
-            <p class="admin-subtitle">新增、编辑、排序监控节点，并获取接入命令与临时注册窗口。</p>
+            <p class="admin-subtitle">新增、编辑、排序监控节点，并获取接入命令。</p>
           </div>
           <div class="admin-page-actions">
             <button type="button" class="btn btn-primary" id="newNodeBtn">新建节点</button>
@@ -264,28 +264,6 @@
           <p class="form-note" id="sortNodesStatus" role="status" aria-live="polite"></p>
           <div class="admin-inline-actions">
             <button type="button" class="btn btn-primary" id="saveSortNodesBtn">保存排序</button>
-          </div>
-        </section>
-
-        <section class="admin-card" id="registerCard" aria-labelledby="registerTitle">
-          <h2 class="admin-card-title" id="registerTitle">临时注册节点</h2>
-          <p class="admin-note">开放注册后，拿到下面命令的人都能在有效期内创建节点；到期自动关闭，也可以随时手动关闭。关闭后密钥立即失效。</p>
-          <div class="admin-form-grid">
-            <div class="form-group">
-              <label class="form-label" for="registerMinutes">有效时长（分钟，1–1440）</label>
-              <input type="number" class="form-input" id="registerMinutes" min="1" max="1440" step="1" value="60">
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="registerCommand">注册命令</label>
-              <textarea class="form-input form-textarea" id="registerCommand" rows="2" readonly placeholder="点击“开放注册”生成命令"></textarea>
-              <small>在目标机器上以 root 执行；命令会创建节点、下载并安装探针，节点名取机器的主机名。</small>
-            </div>
-          </div>
-          <p class="form-note" id="registerStatus" role="status" aria-live="polite"></p>
-          <div class="admin-inline-actions">
-            <button type="button" class="btn btn-primary" id="openRegisterWindowBtn">开放注册</button>
-            <button type="button" class="btn" id="closeRegisterWindowBtn" disabled>关闭注册</button>
-            <button type="button" class="btn" id="copyRegisterCommandBtn" disabled>复制命令</button>
           </div>
         </section>
       </div>

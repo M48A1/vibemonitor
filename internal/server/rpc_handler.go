@@ -1,13 +1,10 @@
 package server
 
 import (
-	"crypto/subtle"
 	"encoding/json"
-	"errors"
 	"io"
 	"log"
 	"net/http"
-	"net/netip"
 	"strings"
 	"time"
 
@@ -16,22 +13,19 @@ import (
 )
 
 type RPCHandler struct {
-	store          *store.Store
-	identityEpoch  string
-	limit          rpcLimiter
-	registerLimit  loginLimiter
-	trustedProxies []netip.Prefix
+	store         *store.Store
+	identityEpoch string
+	limit         rpcLimiter
 }
 
-func NewRPCHandler(s *store.Store, trustedProxies []netip.Prefix) *RPCHandler {
-	return &RPCHandler{store: s, identityEpoch: store.GenerateToken(16), trustedProxies: trustedProxies}
+func NewRPCHandler(s *store.Store) *RPCHandler {
+	return &RPCHandler{store: s, identityEpoch: store.GenerateToken(16)}
 }
 
 // pruneLimits forgets the pace of tokens that stopped reporting, so a long-lived
 // server does not accumulate an entry per node ever created.
 func (h *RPCHandler) pruneLimits() {
 	h.limit.pruneExpired()
-	h.registerLimit.pruneExpired()
 }
 
 func extractToken(r *http.Request) string {
@@ -133,91 +127,4 @@ func (h *RPCHandler) HandleV2RPC(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSON(w, http.StatusOK, protocol.SuccessResponse(req.ID, map[string]any{"status": "ignored"}))
 	}
-}
-
-// maxRegisterNameLen keeps a self-registered name from filling the panel; a
-// hostname is far shorter.
-const maxRegisterNameLen = 64
-
-// validRegisterName accepts the characters a hostname or a hand-typed node name
-// is likely to carry on a command line. Anything else falls back to a default
-// rather than refusing the install.
-func validRegisterName(name string) bool {
-	if name == "" || len(name) > maxRegisterNameLen {
-		return false
-	}
-	for _, r := range name {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
-		case r == '-' || r == '_' || r == '.':
-		default:
-			return false
-		}
-	}
-	return true
-}
-
-func (h *RPCHandler) HandleRegister(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	adKey := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	// One read of key and deadline: an expiring window must not hand a key to a
-	// request that arrived before it closed and a refusal to one that did not.
-	// The comparison is constant time because the key is a credential.
-	key, open := h.store.RegistrationOpen(time.Now())
-	if !open || subtle.ConstantTimeCompare([]byte(adKey), []byte(key)) != 1 {
-		writeJSON(w, http.StatusUnauthorized, map[string]any{
-			"status": "error",
-			"error":  "no registration window is open, or the key is invalid",
-		})
-		return
-	}
-
-	// A window is meant for one machine at a time: the same address registering
-	// in a loop would create nodes without bound.
-	if !h.registerLimit.allow(r, h.trustedProxies...) {
-		w.Header().Set("Retry-After", "300")
-		writeJSON(w, http.StatusTooManyRequests, map[string]any{
-			"status": "error",
-			"error":  "too many registrations from this address; retry in 5 minutes",
-		})
-		return
-	}
-
-	name := r.URL.Query().Get("name")
-	if !validRegisterName(name) {
-		name = "auto-node"
-	}
-
-	// A machine that installs twice would otherwise leave two nodes with the
-	// same name, and nothing in the panel could tell them apart. Refuse instead,
-	// and say which node holds the name so the operator can either delete it or
-	// register under a different name.
-	node, err := h.store.CreateNodeWithUniqueNameContext(r.Context(), name, "Auto", "DEFAULT")
-	if errors.Is(err, store.ErrNodeNameTaken) {
-		writeJSON(w, http.StatusConflict, map[string]any{
-			"status": "conflict",
-			"error":  "a node with this name already exists",
-			"data":   map[string]any{"name": name},
-		})
-		return
-	}
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{
-			"status": "error",
-			"error":  err.Error(),
-		})
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"status": "success",
-		"data": map[string]any{
-			"uuid":  node.UUID,
-			"token": node.Token,
-		},
-	})
 }

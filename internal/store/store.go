@@ -132,7 +132,6 @@ type Config struct {
 	SiteIcon                    string                `json:"site_icon,omitempty"`
 	SiteTheme                   string                `json:"site_theme"` // Active built-in or imported theme.
 	ColorMode                   string                `json:"color_mode"` // Legacy configuration field; fixed to light.
-	AutoDiscoveryKey            string                `json:"auto_discovery_key"`
 	PingTargets                 []protocol.PingTarget `json:"ping_targets"`
 	TelegramBotToken            string                `json:"telegram_bot_token,omitempty"`
 	TelegramChatID              string                `json:"telegram_chat_id,omitempty"`
@@ -143,10 +142,6 @@ type Config struct {
 	TelegramReminderTimezone    string                `json:"telegram_reminder_timezone,omitempty"`
 	TelegramAlertEpoch          string                `json:"telegram_alert_epoch,omitempty"`
 	TelegramTemplates           TelegramTemplates     `json:"telegram_templates"`
-	// RegisterUntil is the Unix second the registration window closes. Zero
-	// means no window is open: the key is not accepted, and the panel has to
-	// open one before a new machine can register itself.
-	RegisterUntil int64 `json:"register_until,omitempty"`
 }
 
 type Store struct {
@@ -428,7 +423,6 @@ func (s *Store) load(defaultPassword, username string) error {
 			SiteTitle:                   "VibeMonitor",
 			SiteTheme:                   DefaultTheme,
 			ColorMode:                   "light",
-			AutoDiscoveryKey:            GenerateToken(16),
 			PingTargets:                 []protocol.PingTarget{},
 			TelegramOfflineDelaySeconds: 60,
 			TelegramReminderDays:        7,
@@ -458,9 +452,6 @@ func (s *Store) load(defaultPassword, username string) error {
 	}
 	if s.config.SiteTitle == "" {
 		s.config.SiteTitle = "VibeMonitor"
-	}
-	if s.config.AutoDiscoveryKey == "" {
-		s.config.AutoDiscoveryKey = GenerateToken(16)
 	}
 	if s.config.PingTargets == nil {
 		s.config.PingTargets = []protocol.PingTarget{}
@@ -818,9 +809,6 @@ type NodeOptions struct {
 var (
 	ErrInvalidNodeOrder = errors.New("invalid node order")
 	ErrNodeNotFound     = errors.New("node not found")
-	// ErrNodeNameTaken means a node with that name already exists. Callers turn
-	// it into a conflict rather than a failure: the request was well formed.
-	ErrNodeNameTaken = errors.New("node name already exists")
 )
 
 func (s *Store) CreateNode(name, group, region string) (*Node, error) {
@@ -837,25 +825,6 @@ func (s *Store) CreateNodeContext(ctx context.Context, name, group, region strin
 
 // CreateNodeWithOptionsContext creates a node with the provided options.
 func (s *Store) CreateNodeWithOptionsContext(ctx context.Context, opts NodeOptions) (*Node, error) {
-	return s.createNodeContext(ctx, opts, false)
-}
-
-// CreateNodeWithUniqueNameContext creates a node only when no existing node
-// already carries the name, compared without case: hostnames are not case
-// sensitive, and two nodes differing only by case would be impossible to tell
-// apart in the panel. Self-registration uses it so that a machine which
-// installs twice does not leave a second, indistinguishable entry behind. The
-// check shares the critical section with the insert, so two registrations
-// racing on one hostname cannot both pass.
-func (s *Store) CreateNodeWithUniqueNameContext(ctx context.Context, name, group, region string) (*Node, error) {
-	return s.createNodeContext(ctx, NodeOptions{
-		Name:   name,
-		Group:  group,
-		Region: region,
-	}, true)
-}
-
-func (s *Store) createNodeContext(ctx context.Context, opts NodeOptions, uniqueName bool) (*Node, error) {
 	if err := validateTrafficOptions(opts, false); err != nil {
 		return nil, err
 	}
@@ -888,13 +857,6 @@ func (s *Store) createNodeContext(ctx context.Context, opts NodeOptions, uniqueN
 	}
 	if opts.Region == "" {
 		opts.Region = "DEFAULT"
-	}
-	if uniqueName {
-		for _, existing := range s.nodes {
-			if strings.EqualFold(existing.Name, opts.Name) {
-				return nil, ErrNodeNameTaken
-			}
-		}
 	}
 
 	trafficLimitBytes, _ := trafficGBToBytes(opts.TrafficLimitGB) // Validated above.

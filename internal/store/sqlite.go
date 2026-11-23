@@ -341,7 +341,7 @@ func (s *sqliteDB) hasResourceColumn(name string) (bool, error) {
 }
 
 func (s *sqliteDB) loadConfig() (*Config, error) {
-	fields := []string{"admin_username", "admin_password", "site_title", "site_icon", "auto_discovery_key", "ping_targets_json"}
+	fields := []string{"admin_username", "admin_password", "site_title", "site_icon", "ping_targets_json"}
 	for _, field := range []struct{ name, fallback string }{
 		{"telegram_bot_token", "''"}, {"telegram_chat_id", "''"}, {"telegram_enabled", "0"},
 		{"telegram_offline_delay_seconds", "60"}, {"telegram_reminder_days", "7"},
@@ -349,7 +349,6 @@ func (s *sqliteDB) loadConfig() (*Config, error) {
 		{"telegram_alert_epoch", "''"},
 		{"telegram_templates_json", "'{}'"},
 		{"site_theme", "'design'"},
-		{"register_until", "0"},
 	} {
 		exists, err := s.hasConfigColumn(field.name)
 		if err != nil {
@@ -365,10 +364,9 @@ func (s *sqliteDB) loadConfig() (*Config, error) {
 	var c Config
 	var targetsJSON string
 	var templatesJSON string
-	err := row.Scan(&c.AdminUsername, &c.AdminPassword, &c.SiteTitle, &c.SiteIcon, &c.AutoDiscoveryKey, &targetsJSON,
+	err := row.Scan(&c.AdminUsername, &c.AdminPassword, &c.SiteTitle, &c.SiteIcon, &targetsJSON,
 		&c.TelegramBotToken, &c.TelegramChatID, &c.TelegramEnabled, &c.TelegramOfflineDelaySeconds,
-		&c.TelegramReminderDays, &c.TelegramReminderHour, &c.TelegramReminderTimezone, &c.TelegramAlertEpoch, &templatesJSON, &c.SiteTheme,
-		&c.RegisterUntil)
+		&c.TelegramReminderDays, &c.TelegramReminderHour, &c.TelegramReminderTimezone, &c.TelegramAlertEpoch, &templatesJSON, &c.SiteTheme)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil // 未初始化
@@ -403,14 +401,13 @@ func (s *sqliteDB) saveConfigContext(ctx context.Context, c *Config) error {
 		return err
 	}
 	query := `
-	INSERT INTO config (id, admin_username, admin_password, site_title, site_icon, auto_discovery_key, ping_targets_json, site_theme, color_mode, telegram_bot_token, telegram_chat_id, telegram_enabled, telegram_offline_delay_seconds, telegram_reminder_days, telegram_reminder_hour, telegram_reminder_timezone, telegram_alert_epoch, telegram_templates_json, register_until)
-	VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	INSERT INTO config (id, admin_username, admin_password, site_title, site_icon, ping_targets_json, site_theme, color_mode, telegram_bot_token, telegram_chat_id, telegram_enabled, telegram_offline_delay_seconds, telegram_reminder_days, telegram_reminder_hour, telegram_reminder_timezone, telegram_alert_epoch, telegram_templates_json)
+	VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT(id) DO UPDATE SET
 		admin_username = excluded.admin_username,
 		admin_password = excluded.admin_password,
 		site_title = excluded.site_title,
 		site_icon = excluded.site_icon,
-		auto_discovery_key = excluded.auto_discovery_key,
 		ping_targets_json = excluded.ping_targets_json,
 		site_theme = excluded.site_theme,
 		color_mode = excluded.color_mode,
@@ -422,12 +419,11 @@ func (s *sqliteDB) saveConfigContext(ctx context.Context, c *Config) error {
 		telegram_reminder_hour = excluded.telegram_reminder_hour,
 		telegram_reminder_timezone = excluded.telegram_reminder_timezone,
 		telegram_alert_epoch = excluded.telegram_alert_epoch,
-		telegram_templates_json = excluded.telegram_templates_json,
-		register_until = excluded.register_until;
+		telegram_templates_json = excluded.telegram_templates_json;
 	`
-	_, err = s.execContext(ctx, query, c.AdminUsername, c.AdminPassword, c.SiteTitle, c.SiteIcon, c.AutoDiscoveryKey, string(targetsJSON), c.SiteTheme, c.ColorMode,
+	_, err = s.execContext(ctx, query, c.AdminUsername, c.AdminPassword, c.SiteTitle, c.SiteIcon, string(targetsJSON), c.SiteTheme, c.ColorMode,
 		c.TelegramBotToken, c.TelegramChatID, c.TelegramEnabled, c.TelegramOfflineDelaySeconds, c.TelegramReminderDays,
-		c.TelegramReminderHour, c.TelegramReminderTimezone, c.TelegramAlertEpoch, string(templatesJSON), c.RegisterUntil)
+		c.TelegramReminderHour, c.TelegramReminderTimezone, c.TelegramAlertEpoch, string(templatesJSON))
 	return err
 }
 

@@ -1,6 +1,4 @@
-// Node management page: node list, create/edit, ordering, install commands and
-// the temporary registration window. Every request uses the authenticated
-// management APIs the dashboard dialogs use, so both entry points stay in sync.
+// Node management page: node list, create/edit, ordering, and install commands.
 (() => {
   const { ready, request, status, copyText, escapeHtml, formatBytes } = window.VibeAdmin;
   const $ = id => document.getElementById(id);
@@ -652,82 +650,6 @@
     }
   }
 
-  // --- temporary registration window -------------------------------------
-  // The server hands out a node token for anyone holding the window's key, so
-  // the key is only shown while the window is open and the countdown comes from
-  // the server's clock.
-  let registerTimer = null;
-  let registerDeadline = 0;
-  let registerOpen = false;
-
-  function stopRegisterTimer() {
-    if (registerTimer) {
-      clearInterval(registerTimer);
-      registerTimer = null;
-    }
-  }
-
-  function formatRegisterLeft(seconds) {
-    const left = Math.max(0, Math.floor(seconds));
-    const minutes = Math.floor(left / 60);
-    return minutes > 0 ? `${minutes} 分 ${left % 60} 秒` : `${left} 秒`;
-  }
-
-  function tickRegister() {
-    const statusEl = $('registerStatus');
-    if (!registerOpen) {
-      statusEl.textContent = '当前没有开放的注册窗口。';
-      stopRegisterTimer();
-      return;
-    }
-    const left = Math.round((registerDeadline - Date.now()) / 1000);
-    if (left <= 0) {
-      // Re-read rather than guess: the key is gone from the server's answer too.
-      statusEl.textContent = '注册窗口已关闭。';
-      stopRegisterTimer();
-      void loadRegisterWindow();
-      return;
-    }
-    statusEl.textContent = '注册窗口开放中，剩余 ' + formatRegisterLeft(left) + '。';
-  }
-
-  function applyRegisterWindow(data) {
-    registerOpen = !!(data && data.open);
-    const minutes = $('registerMinutes');
-    if (data && data.max_minutes) minutes.max = String(data.max_minutes);
-    if (data && data.default_minutes) minutes.placeholder = String(data.default_minutes);
-    $('registerCommand').value = registerOpen
-      ? `curl -fsSL ${window.location.origin}/install.sh?register=${data.register_key} | bash`
-      : '';
-    $('copyRegisterCommandBtn').disabled = !registerOpen;
-    $('closeRegisterWindowBtn').disabled = !registerOpen;
-    // Re-opening rotates the key, so the button says what it will do.
-    $('openRegisterWindowBtn').textContent = registerOpen ? '重新生成' : '开放注册';
-    registerDeadline = Date.now() + Math.max(0, Number(data && data.seconds_left) || 0) * 1000;
-    stopRegisterTimer();
-    tickRegister();
-    if (registerOpen) registerTimer = setInterval(tickRegister, 1000);
-  }
-
-  async function loadRegisterWindow() {
-    try {
-      applyRegisterWindow(await request('/api/admin/register'));
-    } catch (error) {
-      $('registerStatus').textContent = '无法读取注册状态：' + error.message;
-    }
-  }
-
-  async function updateRegisterWindow(method, body) {
-    try {
-      applyRegisterWindow(await request('/api/admin/register', {
-        method,
-        headers: body ? { 'Content-Type': 'application/json' } : undefined,
-        body: body ? JSON.stringify(body) : undefined
-      }));
-    } catch (error) {
-      $('registerStatus').textContent = error.message;
-    }
-  }
   // --- wiring ------------------------------------------------------------
   function wire() {
     $('newNodeBtn').addEventListener('click', openNewNode);
@@ -744,19 +666,6 @@
     $('nodeFormCancelBtn').addEventListener('click', closeForm);
     $('closeGuideBtn').addEventListener('click', () => { $('guideCard').hidden = true; });
     $('saveSortNodesBtn').addEventListener('click', saveSort);
-
-    $('openRegisterWindowBtn').addEventListener('click', () => {
-      const input = $('registerMinutes');
-      const raw = Number(input.value || 0);
-      const max = Number(input.max) || 1440;
-      const minutes = Number.isFinite(raw) ? Math.min(max, Math.max(1, Math.round(raw))) : 60;
-      void updateRegisterWindow('POST', { minutes });
-    });
-    $('closeRegisterWindowBtn').addEventListener('click', () => void updateRegisterWindow('DELETE'));
-    $('copyRegisterCommandBtn').addEventListener('click', () => {
-      const command = $('registerCommand').value;
-      if (command) void copyText(command, '注册命令');
-    });
 
     $('nodeTableBody').addEventListener('click', (event) => {
       const btn = event.target.closest('[data-action]');
@@ -782,7 +691,7 @@
     setInterval(() => { if (!document.hidden) void loadNodes().catch(() => {}); }, 15000);
   }
 
-  // Menu shortcuts land here as ?new=1, ?sort=1, ?register=1 or ?node=<uuid>.
+  // Menu shortcuts land here as ?new=1, ?sort=1 or ?node=<uuid>.
   function applyDeepLink() {
     const params = new URLSearchParams(location.search);
     const clean = () => history.replaceState(null, '', '/admin/nodes');
@@ -791,9 +700,6 @@
       clean();
     } else if (params.has('sort')) {
       openSort();
-      clean();
-    } else if (params.has('register')) {
-      $('registerCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
       clean();
     } else if (params.get('node')) {
       void openEditNode(params.get('node'));
@@ -804,7 +710,6 @@
   ready(async () => {
     wire();
     await loadNodes();
-    void loadRegisterWindow();
     applyDeepLink();
   });
 

@@ -54,7 +54,7 @@ func New(opts Options) (*Server, error) {
 		addr:           opts.ListenAddr,
 		store:          st,
 		wsHub:          NewWSHub(st),
-		rpc:            NewRPCHandler(st, trustedProxies),
+		rpc:            NewRPCHandler(st),
 		trustedProxies: trustedProxies,
 	}
 	return s, nil
@@ -89,12 +89,13 @@ func (s *Server) Handler() http.Handler {
 	// 3. WebSocket Clients endpoint
 	mux.HandleFunc("GET /api/clients", s.wsHub.HandleWS)
 
-	// 4. Agent Ingestion & Registration
+	// 4. Agent Ingestion
 	mux.HandleFunc("POST /api/clients/v2/rpc", s.rpc.HandleV2RPC)
-	mux.HandleFunc("POST /api/clients/register", s.rpc.HandleRegister)
 
 	// 6. Dynamic Installer
 	mux.HandleFunc("GET /install.sh", HandleInstallScript(s.store, s.trustedProxies...))
+
+	mux.Handle("/api/", http.NotFoundHandler())
 
 	// 7. Embedded Web UI (Catch-all for SPA)
 	mux.Handle("/", web.Handler())

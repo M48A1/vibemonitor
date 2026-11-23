@@ -13,7 +13,7 @@ import (
 // Databases written by builds without a version marker report version 0 and are
 // brought up to date by the CREATE/ALTER statements in initSchema followed by
 // the steps below.
-const schemaVersion = 1
+const schemaVersion = 2
 
 type schemaMigration struct {
 	version int
@@ -27,6 +27,7 @@ type schemaMigration struct {
 // transaction.
 var schemaMigrations = []schemaMigration{
 	{version: 1, apply: migrateDropRedundantPingIndexes},
+	{version: 2, apply: migrateClearRegistrationWindow},
 }
 
 // migrateSchema upgrades the file in place before the read pool exists. Upgrades
@@ -85,4 +86,11 @@ func migrateDropRedundantPingIndexes(s *sqliteDB) error {
 		log.Printf("[Store] Index space reclaim skipped: %v", err)
 	}
 	return nil
+}
+
+// Keep the legacy columns for database compatibility with older binaries.
+func migrateClearRegistrationWindow(s *sqliteDB) error {
+	_, err := s.db.Exec(`UPDATE config SET auto_discovery_key = '', register_until = 0
+		WHERE auto_discovery_key <> '' OR register_until <> 0`)
+	return err
 }
