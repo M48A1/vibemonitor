@@ -66,37 +66,45 @@ func reportWindow(location *time.Location, now time.Time) (time.Time, time.Time)
 
 // Snapshot only the counters for each completed window while reports are
 // arriving. The historical sample queries run outside the state lock.
-func (s *Store) reportWindows(now time.Time) []nodeReportWindow {
+func (s *Store) reportWindows(now, date time.Time) ([]nodeReportWindow, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var windows []nodeReportWindow
 	for _, n := range s.nodes {
+		location := n.billingLocation()
+		var start, end time.Time
+		if date.IsZero() {
+			start, end = reportWindow(location, now)
+		} else {
+			start = localDayStart(date, location)
+			end = localDayStart(date.AddDate(0, 0, 1), location)
+		}
+		if !start.Before(end) || !n.CreatedAt.Before(end) {
+			continue
+		}
+		if now.Before(end.Add(reportSettleDelay)) {
+			return nil, false
+		}
+		r := NodeDailyReport{
+			UUID: n.UUID, Name: n.Name, Date: start.Format(reportDateLayout),
+			Timezone: location.String(), DaySeconds: int64(end.Sub(start) / time.Second),
+		}
+		if h := n.DailyReportHistory; h != nil && h.LocalZone == r.Timezone {
+			day := h.Days[reportDayKey(r.Timezone, r.Date)]
+			r.TrafficObserved, r.Upload, r.Download = day.TrafficObserved, day.Upload, day.Download
+			if day.QuotaObserved {
+				percent := 100 * float64(day.CycleUsed) / float64(day.CycleLimit)
+				r.CyclePercent = &percent
+			}
+		}
 		targets := s.targetsLocked(n)
 		probes := make([]reportProbeTarget, 0, len(targets))
 		for _, target := range targets {
 			probes = append(probes, reportProbeTarget{target.Name, target.Host, n.PingObserved[target.Name]})
 		}
-		for _, location := range n.reportLocations() {
-			start, end := reportWindow(location, now)
-			if !n.CreatedAt.Before(end) {
-				continue
-			}
-			r := NodeDailyReport{
-				UUID: n.UUID, Name: n.Name, Date: start.Format(reportDateLayout),
-				Timezone: location.String(), DaySeconds: int64(end.Sub(start) / time.Second),
-			}
-			if h := n.DailyReportHistory; h != nil && (location == trafficLocation || h.LocalZone == location.String()) {
-				day := h.Days[reportDayKey(r.Timezone, r.Date)]
-				r.TrafficObserved, r.Upload, r.Download = day.TrafficObserved, day.Upload, day.Download
-				if day.QuotaObserved {
-					percent := 100 * float64(day.CycleUsed) / float64(day.CycleLimit)
-					r.CyclePercent = &percent
-				}
-			}
-			windows = append(windows, nodeReportWindow{r, start, end, probes})
-		}
+		windows = append(windows, nodeReportWindow{r, start, end, probes})
 	}
-	return windows
+	return windows, true
 }
 
 func (s *Store) CollectDailyReportsContext(ctx context.Context, now time.Time) error {
@@ -105,37 +113,46 @@ func (s *Store) CollectDailyReportsContext(ctx context.Context, now time.Time) e
 	if err := s.SaveContext(ctx); err != nil {
 		return err
 	}
-	for _, w := range s.reportWindows(now) {
-		r := &w.summary
-		var present int
-		err := s.sdb.reader().QueryRowContext(ctx, `SELECT 1 FROM node_daily_reports WHERE timezone=? AND date=? AND node_uuid=?`, r.Timezone, r.Date, r.UUID).Scan(&present)
-		if err == nil {
-			continue
-		}
-		if !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
-		if err := s.sdb.fillReportOutages(ctx, &w, now); err != nil {
-			return err
-		}
-		r.Prime, r.Other, err = s.sdb.reportQuality(ctx, w)
-		if err != nil {
-			return err
-		}
-		r.Bandwidth, err = s.sdb.reportBandwidth(ctx, r.UUID, w.start, w.end)
-		if err != nil {
-			return err
-		}
-		data, err := json.Marshal(r)
-		if err != nil {
-			return err
-		}
-		if _, err := s.sdb.db.ExecContext(ctx, `INSERT INTO node_daily_reports(timezone,date,node_uuid,summary_json)
-			VALUES(?,?,?,?) ON CONFLICT DO NOTHING`, r.Timezone, r.Date, r.UUID, string(data)); err != nil {
+	windows, _ := s.reportWindows(now, time.Time{})
+	for _, w := range windows {
+		if _, err := s.loadOrCollectDailyReport(ctx, w, now); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (s *Store) loadOrCollectDailyReport(ctx context.Context, w nodeReportWindow, now time.Time) (NodeDailyReport, error) {
+	r := w.summary
+	var stored string
+	err := s.sdb.reader().QueryRowContext(ctx, `SELECT summary_json FROM node_daily_reports
+		WHERE timezone=? AND date=? AND node_uuid=?`, r.Timezone, r.Date, r.UUID).Scan(&stored)
+	if err == nil {
+		err = json.Unmarshal([]byte(stored), &r)
+		return r, err
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return NodeDailyReport{}, err
+	}
+	if err := s.sdb.fillReportOutages(ctx, &w, now); err != nil {
+		return NodeDailyReport{}, err
+	}
+	r = w.summary
+	r.Prime, r.Other, err = s.sdb.reportQuality(ctx, w)
+	if err != nil {
+		return NodeDailyReport{}, err
+	}
+	r.Bandwidth, err = s.sdb.reportBandwidth(ctx, r.UUID, w.start, w.end)
+	if err != nil {
+		return NodeDailyReport{}, err
+	}
+	data, err := json.Marshal(r)
+	if err != nil {
+		return NodeDailyReport{}, err
+	}
+	_, err = s.sdb.db.ExecContext(ctx, `INSERT INTO node_daily_reports(timezone,date,node_uuid,summary_json)
+		VALUES(?,?,?,?) ON CONFLICT DO NOTHING`, r.Timezone, r.Date, r.UUID, string(data))
+	return r, err
 }
 
 type reportQualityAccumulator struct {
@@ -212,18 +229,13 @@ type reportRateSample struct {
 }
 
 func (s *sqliteDB) reportBandwidth(ctx context.Context, uuid string, start, end time.Time) (ReportBandwidth, error) {
-	var rows *sql.Rows
-	var err error
-	if uuid != "" {
-		rows, err = s.reader().QueryContext(ctx, `SELECT timestamp/60,MAX(network_rate)
-			FROM resource_history WHERE node_uuid=? AND timestamp>=? AND timestamp<? AND network_rate IS NOT NULL
-			GROUP BY timestamp/60 ORDER BY timestamp/60`, uuid, start.Unix(), end.Unix())
-	} else {
-		rows, err = s.reader().QueryContext(ctx, `SELECT minute,TOTAL(rate) FROM (
-			SELECT timestamp/60 AS minute,MAX(network_rate) AS rate FROM resource_history
-			WHERE timestamp>=? AND timestamp<? AND network_rate IS NOT NULL GROUP BY minute,node_uuid
-			) GROUP BY minute ORDER BY minute`, start.Unix(), end.Unix())
-	}
+	rows, err := s.reader().QueryContext(ctx, `SELECT timestamp/60,MAX(network_rate)
+		FROM resource_history WHERE node_uuid=? AND timestamp>=? AND timestamp<? AND network_rate IS NOT NULL
+		GROUP BY timestamp/60 ORDER BY timestamp/60`, uuid, start.Unix(), end.Unix())
+	return readReportPeak(rows, err)
+}
+
+func readReportPeak(rows *sql.Rows, err error) (ReportBandwidth, error) {
 	if err != nil {
 		return ReportBandwidth{}, err
 	}
@@ -267,33 +279,45 @@ func reportPeak(samples []reportRateSample) ReportBandwidth {
 	return report
 }
 
-func (s *Store) BeijingDailyReportContext(ctx context.Context, now time.Time) (string, []NodeDailyReport, ReportBandwidth, error) {
-	start, end := reportWindow(trafficLocation, now)
-	date := start.Format(reportDateLayout)
-	rows, err := s.sdb.reader().QueryContext(ctx, `SELECT summary_json FROM node_daily_reports WHERE timezone=? AND date=?`, defaultBillingTimezone, date)
-	if err != nil {
-		return date, nil, ReportBandwidth{}, err
+// DailyReportForDateContext uses the same civil date in each node's timezone.
+func (s *Store) DailyReportForDateContext(ctx context.Context, date, now time.Time) ([]NodeDailyReport, ReportBandwidth, bool, error) {
+	windows, ready := s.reportWindows(now, civilDate(date))
+	if !ready {
+		return nil, ReportBandwidth{}, false, nil
 	}
-	defer rows.Close()
-	var reports []NodeDailyReport
-	for rows.Next() {
-		var data string
-		if err := rows.Scan(&data); err != nil {
-			return date, nil, ReportBandwidth{}, err
-		}
-		var report NodeDailyReport
-		if err := json.Unmarshal([]byte(data), &report); err != nil {
-			return date, nil, ReportBandwidth{}, err
+	type bandwidthWindow struct {
+		UUID string `json:"uuid"`
+		From int64  `json:"from"`
+		To   int64  `json:"to"`
+	}
+	rates := make([]bandwidthWindow, 0, len(windows))
+	reports := make([]NodeDailyReport, 0, len(windows))
+	for _, w := range windows {
+		report, err := s.loadOrCollectDailyReport(ctx, w, now)
+		if err != nil {
+			return nil, ReportBandwidth{}, false, err
 		}
 		reports = append(reports, report)
+		rates = append(rates, bandwidthWindow{w.summary.UUID, w.start.Unix(), w.end.Unix()})
 	}
-	if err := rows.Err(); err != nil {
-		return date, nil, ReportBandwidth{}, err
+	sort.Slice(reports, func(i, j int) bool {
+		if reports[i].Name == reports[j].Name {
+			return reports[i].UUID < reports[j].UUID
+		}
+		return reports[i].Name < reports[j].Name
+	})
+	raw, err := json.Marshal(rates)
+	if err != nil {
+		return nil, ReportBandwidth{}, false, err
 	}
-	rows.Close()
-	sort.SliceStable(reports, func(i, j int) bool { return reports[i].Name < reports[j].Name })
-	bandwidth, err := s.sdb.reportBandwidth(ctx, "", start, end)
-	return date, reports, bandwidth, err
+	rows, err := s.sdb.reader().QueryContext(ctx, `SELECT minute,TOTAL(rate) FROM (
+		SELECT h.timestamp/60 AS minute,MAX(h.network_rate) AS rate FROM json_each(?) AS w
+		JOIN resource_history AS h ON h.node_uuid=json_extract(w.value,'$.uuid')
+			AND h.timestamp>=json_extract(w.value,'$.from') AND h.timestamp<json_extract(w.value,'$.to')
+		WHERE h.network_rate IS NOT NULL GROUP BY minute,h.node_uuid
+		) GROUP BY minute ORDER BY minute`, string(raw))
+	bandwidth, err := readReportPeak(rows, err)
+	return reports, bandwidth, true, err
 }
 
 func (s *Store) LoadDailyTelegramContext(ctx context.Context, date string) ([]string, int, error) {

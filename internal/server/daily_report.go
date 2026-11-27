@@ -41,17 +41,21 @@ func (s *Server) checkDailyReports(ctx context.Context, now time.Time, send tele
 		(local.Hour() == 0 && local.Minute() < 5) {
 		return nil
 	}
-	date := local.AddDate(0, 0, -1).Format(time.DateOnly)
+	reportDate := local.AddDate(0, 0, -1)
+	date := reportDate.Format(time.DateOnly)
 	parts, sent, err := s.store.LoadDailyTelegramContext(ctx, date)
 	if err != nil {
 		return err
 	}
 	if len(parts) == 0 {
-		dataDate, reports, bandwidth, err := s.store.BeijingDailyReportContext(ctx, now)
+		reports, bandwidth, ready, err := s.store.DailyReportForDateContext(ctx, reportDate, now)
 		if err != nil {
 			return err
 		}
-		parts = dailyReportMessages(local.Format(time.DateOnly), dataDate, reports, s.store.GetAlertNodes(), bandwidth)
+		if !ready {
+			return nil
+		}
+		parts = dailyReportMessages(local.Format(time.DateOnly), date, reports, s.store.GetAlertNodes(), bandwidth)
 		if err := s.store.QueueDailyTelegramContext(ctx, date, parts); err != nil {
 			return err
 		}
@@ -83,7 +87,7 @@ func (s *Server) checkDailyReports(ctx context.Context, now time.Time, send tele
 func dailyReportMessages(date, dataDate string, reports []store.NodeDailyReport, nodes []*store.Node, bandwidth store.ReportBandwidth) []string {
 	title := fmt.Sprintf("每日运行指数报告 (%s)", date)
 	lines := []string{
-		fmt.Sprintf("统计日期：%s（UTC+8）", dataDate),
+		fmt.Sprintf("统计日期：%s（各节点当地时间）", dataDate),
 		"", "1. 节点概览",
 	}
 	online, offlineSeconds, drops, unknown := 0, 0.0, 0, 0
@@ -151,7 +155,7 @@ func dailyReportMessages(date, dataDate string, reports []store.NodeDailyReport,
 			bandwidth.BytesPerSecond*8/1e6, bandwidth.Minutes))
 	}
 
-	lines = append(lines, "", "3. 线路表现（UTC+8）")
+	lines = append(lines, "", "3. 线路表现（时段按 UTC+8）")
 	for _, segment := range []struct {
 		title string
 		prime bool
