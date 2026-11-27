@@ -268,7 +268,14 @@ func (s *Store) periodicFlusher() {
 		case <-pruneTicker.C:
 			s.persistMu.Lock()
 			s.mu.Lock()
-			s.pruneExpiredPingPreviewsLocked(time.Now().Unix() - 86400)
+			now := time.Now()
+			s.pruneExpiredPingPreviewsLocked(now.Unix() - 86400)
+			for _, node := range s.nodes {
+				if node.pruneTrafficHistory(now) {
+					node.dirty = true
+					s.dirty = true
+				}
+			}
 			s.mu.Unlock()
 			if s.sdb != nil {
 				if _, err := s.sdb.pruneOldPingHistoryContext(ctx, time.Now().Unix()-pingHistoryRetentionSec); err != nil {
@@ -493,6 +500,7 @@ func (s *Store) load(defaultPassword, username string) error {
 			}
 		}
 		n.BillingTimezone = billingTimezoneName(n.BillingTimezone)
+		n.pruneTrafficHistory(time.Now())
 		if n.Profile == nil {
 			targets := append([]protocol.PingTarget{}, s.config.PingTargets...)
 			for i := range targets {

@@ -6,7 +6,8 @@ import (
 	"time"
 )
 
-const trafficDailyRetentionDays = 180
+const trafficDailyRetentionDays = 90
+const dailyOnlineRetentionDays = 180
 
 var trafficLocation = time.FixedZone("UTC+8", 8*3600)
 
@@ -61,6 +62,31 @@ func splitByLocalDay(current, start time.Time, location *time.Location, add func
 	}
 }
 
+func dailyTrafficCutoff(now time.Time, location *time.Location) time.Time {
+	date := civilDate(now.In(location)).AddDate(0, 0, -trafficDailyRetentionDays)
+	return localDayStart(date, location)
+}
+
+func pruneDailyTraffic(daily map[string]int64, cutoff string) bool {
+	changed := false
+	for day := range daily {
+		if day < cutoff {
+			delete(daily, day)
+			changed = true
+		}
+	}
+	return changed
+}
+
+func (n *Node) pruneTrafficHistory(now time.Time) bool {
+	cutoff := dailyTrafficCutoff(now, n.billingLocation()).Format(time.DateOnly)
+	changed := pruneDailyTraffic(n.RankingDailyTraffic, dailyTrafficCutoff(now, trafficLocation).Format(time.DateOnly))
+	for _, daily := range []map[string]int64{n.DailyTraffic, n.DailyUpload, n.DailyDownload} {
+		changed = pruneDailyTraffic(daily, cutoff) || changed
+	}
+	return changed
+}
+
 // Reports persist these totals with the associated counter baseline.
 func recordDailyTraffic(daily *map[string]int64, delta int64, previous, current time.Time, location *time.Location) {
 	if delta < 0 || previous.IsZero() || !current.After(previous) {
@@ -69,14 +95,8 @@ func recordDailyTraffic(daily *map[string]int64, delta int64, previous, current 
 	if *daily == nil {
 		*daily = make(map[string]int64)
 	}
-	date := civilDate(current.In(location)).AddDate(0, 0, -trafficDailyRetentionDays)
-	cutoff := localDayStart(date, location)
-	cutoffKey := cutoff.Format("2006-01-02")
-	for day := range *daily {
-		if day < cutoffKey {
-			delete(*daily, day)
-		}
-	}
+	cutoff := dailyTrafficCutoff(current, location)
+	pruneDailyTraffic(*daily, cutoff.Format(time.DateOnly))
 	start := previous
 	if start.Before(cutoff) {
 		start = cutoff
@@ -129,9 +149,13 @@ func (s *Store) trafficHistoryAt(uuid, name string, now time.Time) (*TrafficHist
 	if n == nil {
 		return nil, ErrNodeNotFound
 	}
-	start, end, err := trafficHistoryRange(n.ResetDay, name, now, n.billingLocation())
+	location := n.billingLocation()
+	start, end, err := trafficHistoryRange(n.ResetDay, name, now, location)
 	if err != nil {
 		return nil, err
+	}
+	if cutoff := dailyTrafficCutoff(now, location); start.Before(cutoff) {
+		start = cutoff
 	}
 	response := &TrafficHistoryResponse{UUID: uuid, Range: name, StartDate: start.Format("2006-01-02"), EndDate: end.Add(-time.Nanosecond).Format("2006-01-02"), Timezone: billingTimezoneName(n.BillingTimezone), ResetDay: n.ResetDay, Days: []DailyTrafficPoint{}}
 	for day := start; day.Before(end); day = nextLocalDay(day) {
@@ -174,7 +198,7 @@ func (n *Node) recordDailyOnline(now time.Time) {
 		start = boundary
 	}
 	n.DailyOnlineUntil = end
-	cutoff := civilDate(now.In(location)).AddDate(0, 0, -trafficDailyRetentionDays).Format("2006-01-02")
+	cutoff := civilDate(now.In(location)).AddDate(0, 0, -dailyOnlineRetentionDays).Format(time.DateOnly)
 	for date := range n.DailyOnline {
 		if date < cutoff {
 			delete(n.DailyOnline, date)
