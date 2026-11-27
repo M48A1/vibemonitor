@@ -16,7 +16,7 @@ type ReportSchedule struct {
 var ErrInvalidReportSchedule = errors.New("自动生成时间或时区无效")
 
 func (s *Store) ReportScheduleContext(ctx context.Context) (ReportSchedule, error) {
-	schedule := ReportSchedule{Enabled: true, Time: "00:05", Timezone: "Asia/Shanghai"}
+	schedule := ReportSchedule{Enabled: true, Time: "00:05", Timezone: "UTC"}
 	err := s.sdb.reader().QueryRowContext(ctx, `SELECT enabled,local_time,timezone FROM report_schedule WHERE id=1`).
 		Scan(&schedule.Enabled, &schedule.Time, &schedule.Timezone)
 	if errors.Is(err, sql.ErrNoRows) {
