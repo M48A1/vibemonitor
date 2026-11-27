@@ -105,12 +105,12 @@ func dailyReportMessages(date, dataDate string, reports []store.NodeDailyReport,
 	}
 	lines = append(lines, fmt.Sprintf("• 在线状态：%d / %d 在线（发送前快照）", online, len(nodes)))
 	if len(reports) == 0 || unknown == len(reports) && drops == 0 && offlineSeconds == 0 {
-		lines = append(lines, "• 昨日掉线：数据不足")
+		lines = append(lines, "• 当日掉线：数据不足")
 	} else {
-		lines = append(lines, fmt.Sprintf("• 昨日掉线：%d 次，累计 %s", drops, reportDuration(offlineSeconds)))
+		lines = append(lines, fmt.Sprintf("• 当日掉线：%d 次，累计 %s", drops, reportDuration(offlineSeconds)))
 	}
 	if unknown > 0 {
-		lines = append(lines, fmt.Sprintf("• %d 个节点的昨日掉线履历覆盖不足", unknown))
+		lines = append(lines, fmt.Sprintf("• %d 个节点的当日掉线履历覆盖不足", unknown))
 	}
 	for _, n := range reports {
 		if n.OfflineSeconds > 0 {
@@ -135,9 +135,9 @@ func dailyReportMessages(date, dataDate string, reports []store.NodeDailyReport,
 		}
 	}
 	if top == nil {
-		lines = append(lines, "• 昨日总计：暂无流量采样")
+		lines = append(lines, "• 当日总计：暂无流量采样")
 	} else {
-		lines = append(lines, fmt.Sprintf("• 昨日总计：↑ %s / ↓ %s", reportGB(up), reportGB(down)))
+		lines = append(lines, fmt.Sprintf("• 当日总计：↑ %s / ↓ %s", reportGB(up), reportGB(down)))
 		if trafficNodes < len(reports) {
 			lines = append(lines, fmt.Sprintf("• %d 个节点暂无流量采样", len(reports)-trafficNodes))
 		}
