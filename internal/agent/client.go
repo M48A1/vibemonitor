@@ -48,6 +48,7 @@ type Client struct {
 }
 
 const maxPingConcurrency = 8
+const pingProbeInterval = 5 * time.Second
 
 func New(opts Options) *Client {
 	if opts.Interval <= 0 {
@@ -286,26 +287,26 @@ func (c *Client) handleRPCResult(result any) {
 }
 
 func (c *Client) runPingWorker(ctx context.Context) {
-	ticker := time.NewTicker(25 * time.Second)
-	defer ticker.Stop()
-
-	// Initial probe after 2s
-	select {
-	case <-ctx.Done():
-		return
-	case <-time.After(2 * time.Second):
-		c.measurePings(ctx)
-	}
+	timer := time.NewTimer(2 * time.Second)
+	defer timer.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-c.pingTrigger:
-			c.measurePings(ctx)
-		case <-ticker.C:
-			c.measurePings(ctx)
+		case <-timer.C:
 		}
+		started := time.Now()
+		c.measurePings(ctx)
+
+		// Fast rounds start five seconds apart. A slow round skips missed
+		// probes and waits before starting another round.
+		delay := pingProbeInterval - time.Since(started)
+		if delay <= 0 {
+			delay = pingProbeInterval
+		}
+		timer.Reset(delay)
 	}
 }
 

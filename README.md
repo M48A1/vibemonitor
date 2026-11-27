@@ -81,7 +81,7 @@
 | 存储 | 纯 Go SQLite（WAL、`synchronous=NORMAL`、`busy_timeout=5s`），单写连接加最多两个只读连接；历史批量事务写入，写失败保留重试（上限 65,536 条），历史清理任务每小时运行 |
 | 保留策略 | Ping 与资源采样 90 天，日流量 90 天 |
 | 页面 | 未变化的卡片复用已有 DOM；标签页进入后台时停止渲染与兜底轮询，回到前台刷新 |
-| 探针 | 默认 1 秒上报，基本信息每 15 分钟刷新；只发起出站连接，不监听端口；systemd 沙箱（`NoNewPrivileges`、`ProtectSystem=strict`、`ProtectHome`、`PrivateTmp`、`PrivateDevices`、`RestrictAddressFamilies`，仅保留 `CAP_NET_RAW` 供 ping 使用）；自身不写状态文件，凭据由 root 级 `EnvironmentFile` 提供 |
+| 探针 | 默认 1 秒上报，Ping 每 5 秒探测（历史约每分钟保存一次），基本信息每 15 分钟刷新；只发起出站连接，不监听端口；systemd 沙箱（`NoNewPrivileges`、`ProtectSystem=strict`、`ProtectHome`、`PrivateTmp`、`PrivateDevices`、`RestrictAddressFamilies`，仅保留 `CAP_NET_RAW` 供 ping 使用）；自身不写状态文件，凭据由 root 级 `EnvironmentFile` 提供 |
 
 内存与帧大小为本地等量建模实测（200 节点 × 每节点 4 个测试目标 × 30 轮上报，真实 SQLite 文件与真实 HTTP 服务，无浏览器与反向代理连接）；实际部署随节点数、在线访客数与反代配置变化，增长趋势一致。
 
