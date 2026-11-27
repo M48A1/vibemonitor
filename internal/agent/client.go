@@ -48,7 +48,7 @@ type Client struct {
 }
 
 const maxPingConcurrency = 8
-const pingProbeInterval = 5 * time.Second
+const pingProbeInterval = 25 * time.Second
 
 func New(opts Options) *Client {
 	if opts.Interval <= 0 {
@@ -300,7 +300,7 @@ func (c *Client) runPingWorker(ctx context.Context) {
 		started := time.Now()
 		c.measurePings(ctx)
 
-		// Fast rounds start five seconds apart. A slow round skips missed
+		// Fast rounds start one probe interval apart. A slow round skips missed
 		// probes and waits before starting another round.
 		delay := pingProbeInterval - time.Since(started)
 		if delay <= 0 {
