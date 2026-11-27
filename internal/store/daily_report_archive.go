@@ -58,8 +58,8 @@ func (s *Store) ArchivedDailyReportsContext(ctx context.Context, first, last tim
 
 // LatestArchivedDailyReportContext returns the newest complete saved report,
 // even if no archive was written on any of the last few days.
-func (s *Store) LatestArchivedDailyReportContext(ctx context.Context, now time.Time) (ArchivedDailyReport, error) {
-	before := civilDate(now.In(trafficLocation)).AddDate(0, 0, 1).Format(reportDateLayout)
+func (s *Store) LatestArchivedDailyReportContext(ctx context.Context, through, now time.Time) (ArchivedDailyReport, error) {
+	before := civilDate(through).AddDate(0, 0, 1).Format(reportDateLayout)
 	for {
 		var key sql.NullString
 		err := s.sdb.reader().QueryRowContext(ctx, `SELECT MAX(date) FROM node_daily_reports WHERE date<?`, before).Scan(&key)
@@ -116,29 +116,16 @@ func (s *sqliteDB) loadDailyReportBandwidth(ctx context.Context, date time.Time)
 	return peak, err == nil, err
 }
 
-func (s *sqliteDB) loadOrArchiveDailyReportBandwidth(ctx context.Context, date, now time.Time, windows []bandwidthWindow) (ReportBandwidth, error) {
-	peak, found, err := s.loadDailyReportBandwidth(ctx, date)
-	if found || err != nil || len(windows) == 0 {
-		return peak, err
-	}
-	for _, window := range windows {
-		if window.From < now.Unix()-resourceHistoryRetentionSec {
-			// An old database may predate the fleet archive. A partly retained
-			// sampling window cannot reconstruct that day's aggregate peak.
-			return ReportBandwidth{}, nil
-		}
-	}
-	peak, err = s.dailyReportBandwidth(ctx, windows)
+func (s *sqliteDB) archiveDailyReportBandwidth(ctx context.Context, date time.Time, windows []bandwidthWindow) (bool, error) {
+	peak, err := s.dailyReportBandwidth(ctx, windows)
 	if err != nil {
-		return ReportBandwidth{}, err
+		return false, err
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO daily_report_bandwidth(date,peak_bytes_per_second,peak_minutes,sampled_minutes)
+	result, err := s.db.ExecContext(ctx, `INSERT INTO daily_report_bandwidth(date,peak_bytes_per_second,peak_minutes,sampled_minutes)
 		VALUES(?,?,?,?) ON CONFLICT DO NOTHING`, date.Format(reportDateLayout), peak.BytesPerSecond, peak.Minutes, peak.Samples)
 	if err != nil {
-		return ReportBandwidth{}, err
+		return false, err
 	}
-	// Concurrent collectors can both find an unarchived date.
-	// Read back the first committed result so both use the same snapshot.
-	peak, _, err = s.loadDailyReportBandwidth(ctx, date)
-	return peak, err
+	inserted, err := result.RowsAffected()
+	return inserted > 0, err
 }

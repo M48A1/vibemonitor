@@ -20,7 +20,11 @@ func (s *Server) runDailyReports(ctx context.Context) {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 	for {
-		if err := s.checkDailyReports(ctx, time.Now(), send); err != nil && ctx.Err() == nil {
+		now := time.Now()
+		if err := s.runScheduledReportGeneration(ctx, now); err != nil && ctx.Err() == nil {
+			log.Printf("[Daily report] Automatic generation failed: %v", err)
+		}
+		if err := s.checkDailyReports(ctx, now, send); err != nil && ctx.Err() == nil {
 			log.Printf("[Daily report] %v (will retry)", err)
 		}
 		select {
@@ -32,30 +36,23 @@ func (s *Server) runDailyReports(ctx context.Context) {
 }
 
 func (s *Server) checkDailyReports(ctx context.Context, now time.Time, send telegramSender) error {
-	if err := s.store.CollectDailyReportsContext(ctx, now); err != nil {
-		return fmt.Errorf("collect daily summaries: %w", err)
-	}
 	cfg := s.store.GetConfig()
 	local := now.In(dailyReportBeijing)
 	if !cfg.TelegramDailyReportEnabled || local.Hour() < cfg.TelegramDailyReportHour ||
 		(local.Hour() == 0 && local.Minute() < 5) {
 		return nil
 	}
-	reportDate := local.AddDate(0, 0, -1)
-	date := reportDate.Format(time.DateOnly)
+	report, err := s.store.LatestArchivedDailyReportContext(ctx, local.AddDate(0, 0, -1), now)
+	if err != nil || report.Date == "" {
+		return err
+	}
+	date := report.Date
 	parts, sent, err := s.store.LoadDailyTelegramContext(ctx, date)
 	if err != nil {
 		return err
 	}
 	if len(parts) == 0 {
-		reports, bandwidth, ready, err := s.store.DailyReportForDateContext(ctx, reportDate, now)
-		if err != nil {
-			return err
-		}
-		if !ready {
-			return nil
-		}
-		parts = dailyReportMessages(local.Format(time.DateOnly), date, reports, s.store.GetAlertNodes(), bandwidth)
+		parts = dailyReportMessages(local.Format(time.DateOnly), date, report.Nodes, s.store.GetAlertNodes(), report.Bandwidth)
 		if err := s.store.QueueDailyTelegramContext(ctx, date, parts); err != nil {
 			return err
 		}

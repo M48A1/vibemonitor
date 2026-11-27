@@ -33,6 +33,7 @@ var adminDocuments = []string{
 	"admin-settings.html",
 	"admin-theme.html",
 	"admin-telegram.html",
+	"admin-reports.html",
 }
 
 var (

@@ -159,7 +159,7 @@ func (s *Server) replyTelegramReport(ctx context.Context, cfg store.Config, now 
 }
 
 func (s *Server) replyDailyReportCommand(ctx context.Context, now time.Time, send func(string) error) error {
-	report, err := s.store.LatestArchivedDailyReportContext(ctx, now)
+	report, err := s.store.LatestArchivedDailyReportContext(ctx, now.In(dailyReportBeijing), now)
 	if err != nil {
 		_ = send("暂时无法读取日报，请稍后重试。")
 		return err

@@ -81,6 +81,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerPublicRoutes(mux)
 	s.registerHistoryRoutes(mux)
 	s.registerTelegramRoutes(mux)
+	s.registerReportRoutes(mux)
 	s.registerAuthRoutes(mux)
 	s.registerNodeRoutes(mux)
 	s.registerSettingsRoutes(mux)

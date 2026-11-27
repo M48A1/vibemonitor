@@ -32,6 +32,7 @@
       <a class="admin-nav-link" href="/admin/rankings" data-admin-nav="rankings">排行榜</a>
       <a class="admin-nav-link" href="/admin/settings" data-admin-nav="settings">基本设置</a>
       <a class="admin-nav-link" href="/admin/theme" data-admin-nav="theme">主题管理</a>
+      <a class="admin-nav-link" href="/admin/reports" data-admin-nav="reports">日报管理</a>
       <a class="admin-nav-link" href="/admin/telegram" data-admin-nav="telegram">外部通信设置</a>
       <a class="admin-nav-link admin-nav-public" href="/">返回监控面板</a>
       <span class="admin-nav-foot">VibeMonitor 管理后台</span>
@@ -94,7 +95,7 @@
               <div class="form-group">
                 <label class="form-label" for="telegramDailyReportHour">发送时间（北京时间，0–23 时）</label>
                 <input type="number" class="form-input" id="telegramDailyReportHour" min="0" max="23" step="1" value="9" required>
-                <small>汇总按各节点时区切日，最早在所有节点结束统计日后 5 分钟发送。选择 0 时将在 00:05 后发送。</small>
+                <small>推送已存档的日报。生成时间和时区在「日报管理」设置。选择 0 时将在 00:05 后发送。</small>
               </div>
             </section>
             <section class="telegram-template-section" aria-labelledby="telegramTemplatesTitle">

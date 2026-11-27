@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
-	"sort"
 	"strings"
 	"time"
 )
@@ -54,16 +53,6 @@ type nodeReportWindow struct {
 	targets []reportProbeTarget
 }
 
-func reportWindow(location *time.Location, now time.Time) (time.Time, time.Time) {
-	end := localDayStart(civilDate(now.Add(-reportSettleDelay).In(location)), location)
-	date := civilDate(end).AddDate(0, 0, -1)
-	start := localDayStart(date, location)
-	if !start.Before(end) { // A timezone transition can skip an entire civil date.
-		start = localDayStart(date.AddDate(0, 0, -1), location)
-	}
-	return start, end
-}
-
 // Snapshot only the counters for each completed window while reports are
 // arriving. The historical sample queries run outside the state lock.
 func (s *Store) reportWindows(now, date time.Time) ([]nodeReportWindow, bool) {
@@ -72,13 +61,8 @@ func (s *Store) reportWindows(now, date time.Time) ([]nodeReportWindow, bool) {
 	var windows []nodeReportWindow
 	for _, n := range s.nodes {
 		location := n.billingLocation()
-		var start, end time.Time
-		if date.IsZero() {
-			start, end = reportWindow(location, now)
-		} else {
-			start = localDayStart(date, location)
-			end = localDayStart(date.AddDate(0, 0, 1), location)
-		}
+		start := localDayStart(date, location)
+		end := localDayStart(date.AddDate(0, 0, 1), location)
 		if !start.Before(end) || !n.CreatedAt.Before(end) {
 			continue
 		}
@@ -107,71 +91,75 @@ func (s *Store) reportWindows(now, date time.Time) ([]nodeReportWindow, bool) {
 	return windows, true
 }
 
-func (s *Store) CollectDailyReportsContext(ctx context.Context, now time.Time) error {
-	// Flush accepted samples before reading yesterday's data. Periodic state
-	// writes also persist directional counters.
+var (
+	ErrReportDayOpen = errors.New("还有节点未结束该统计日，或数据仍在入库")
+	ErrReportNoNodes = errors.New("该统计日没有可生成日报的节点")
+	ErrReportExpired = errors.New("该统计日已超出原始采样保留期限")
+)
+
+// GenerateDailyReportContext adds the missing summaries for a complete civil
+// date, reusing any that already exist. It reports whether the date was saved.
+func (s *Store) GenerateDailyReportContext(ctx context.Context, date, now time.Time) (bool, error) {
+	date = civilDate(date)
+	_, found, err := s.sdb.loadDailyReportBandwidth(ctx, date)
+	if found || err != nil {
+		return false, err
+	}
+	windows, ready := s.reportWindows(now, date)
+	if !ready {
+		return false, ErrReportDayOpen
+	}
+	if len(windows) == 0 {
+		return false, ErrReportNoNodes
+	}
+	for _, window := range windows {
+		if window.start.Unix() < now.Unix()-resourceHistoryRetentionSec {
+			return false, ErrReportExpired
+		}
+	}
 	if err := s.SaveContext(ctx); err != nil {
-		return err
+		return false, err
 	}
-	windows, _ := s.reportWindows(now, time.Time{})
+	rates := make([]bandwidthWindow, 0, len(windows))
 	for _, w := range windows {
-		if _, err := s.loadOrCollectDailyReport(ctx, w, now); err != nil {
-			return err
+		if err := s.collectDailyNodeReport(ctx, w, now); err != nil {
+			return false, err
 		}
+		rates = append(rates, bandwidthWindow{w.summary.UUID, w.start.Unix(), w.end.Unix()})
 	}
-	// Archive the most recent date completed by the whole fleet, even when
-	// Telegram push is disabled or nobody has requested the report.
-	today := civilDate(now.In(trafficLocation))
-	for daysBack := 0; daysBack <= 2; daysBack++ {
-		date := today.AddDate(0, 0, -daysBack)
-		windows, ready := s.reportWindows(now, date)
-		if !ready {
-			continue
-		}
-		if len(windows) == 0 {
-			return nil
-		}
-		_, found, err := s.sdb.loadDailyReportBandwidth(ctx, date)
-		if err != nil || found {
-			return err
-		}
-		_, _, err = s.completeDailyReportContext(ctx, date, now, windows)
-		return err
-	}
-	return nil
+	return s.sdb.archiveDailyReportBandwidth(ctx, date, rates)
 }
 
-func (s *Store) loadOrCollectDailyReport(ctx context.Context, w nodeReportWindow, now time.Time) (NodeDailyReport, error) {
+func (s *Store) collectDailyNodeReport(ctx context.Context, w nodeReportWindow, now time.Time) error {
 	r := w.summary
-	var stored string
-	err := s.sdb.reader().QueryRowContext(ctx, `SELECT summary_json FROM node_daily_reports
-		WHERE timezone=? AND date=? AND node_uuid=?`, r.Timezone, r.Date, r.UUID).Scan(&stored)
+	var present int
+	err := s.sdb.reader().QueryRowContext(ctx, `SELECT 1 FROM node_daily_reports
+		WHERE timezone=? AND date=? AND node_uuid=?`, r.Timezone, r.Date, r.UUID).Scan(&present)
 	if err == nil {
-		err = json.Unmarshal([]byte(stored), &r)
-		return r, err
+		return nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
-		return NodeDailyReport{}, err
+		return err
 	}
 	if err := s.sdb.fillReportOutages(ctx, &w, now); err != nil {
-		return NodeDailyReport{}, err
+		return err
 	}
 	r = w.summary
 	r.Prime, r.Other, err = s.sdb.reportQuality(ctx, w)
 	if err != nil {
-		return NodeDailyReport{}, err
+		return err
 	}
 	r.Bandwidth, err = s.sdb.reportBandwidth(ctx, r.UUID, w.start, w.end)
 	if err != nil {
-		return NodeDailyReport{}, err
+		return err
 	}
 	data, err := json.Marshal(r)
 	if err != nil {
-		return NodeDailyReport{}, err
+		return err
 	}
 	_, err = s.sdb.db.ExecContext(ctx, `INSERT INTO node_daily_reports(timezone,date,node_uuid,summary_json)
 		VALUES(?,?,?,?) ON CONFLICT DO NOTHING`, r.Timezone, r.Date, r.UUID, string(data))
-	return r, err
+	return err
 }
 
 type reportQualityAccumulator struct {
@@ -296,37 +284,6 @@ func reportPeak(samples []reportRateSample) ReportBandwidth {
 		}
 	}
 	return report
-}
-
-// DailyReportForDateContext uses the same civil date in each node's timezone.
-func (s *Store) DailyReportForDateContext(ctx context.Context, date, now time.Time) ([]NodeDailyReport, ReportBandwidth, bool, error) {
-	windows, ready := s.reportWindows(now, civilDate(date))
-	if !ready {
-		return nil, ReportBandwidth{}, false, nil
-	}
-	reports, bandwidth, err := s.completeDailyReportContext(ctx, date, now, windows)
-	return reports, bandwidth, true, err
-}
-
-func (s *Store) completeDailyReportContext(ctx context.Context, date, now time.Time, windows []nodeReportWindow) ([]NodeDailyReport, ReportBandwidth, error) {
-	rates := make([]bandwidthWindow, 0, len(windows))
-	reports := make([]NodeDailyReport, 0, len(windows))
-	for _, w := range windows {
-		report, err := s.loadOrCollectDailyReport(ctx, w, now)
-		if err != nil {
-			return nil, ReportBandwidth{}, err
-		}
-		reports = append(reports, report)
-		rates = append(rates, bandwidthWindow{w.summary.UUID, w.start.Unix(), w.end.Unix()})
-	}
-	sort.Slice(reports, func(i, j int) bool {
-		if reports[i].Name == reports[j].Name {
-			return reports[i].UUID < reports[j].UUID
-		}
-		return reports[i].Name < reports[j].Name
-	})
-	bandwidth, err := s.sdb.loadOrArchiveDailyReportBandwidth(ctx, date, now, rates)
-	return reports, bandwidth, err
 }
 
 type bandwidthWindow struct {

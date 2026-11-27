@@ -29,6 +29,7 @@ func (s *Server) registerAdminPageRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /admin/settings", s.adminPage("admin-settings.html"))
 	mux.Handle("GET /admin/theme", s.adminPage("admin-theme.html"))
 	mux.Handle("GET /admin/telegram", s.adminPage("admin-telegram.html"))
+	mux.Handle("GET /admin/reports", s.adminPage("admin-reports.html"))
 	// An unknown management URL must not fall through to the dashboard shell,
 	// which would look like a broken admin page.
 	mux.HandleFunc("GET /admin/", http.NotFound)

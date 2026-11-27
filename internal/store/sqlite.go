@@ -168,6 +168,12 @@ func (s *sqliteDB) initSchema() error {
 		PRIMARY KEY (timezone, date, node_uuid)
 	);
 	CREATE INDEX IF NOT EXISTS idx_node_daily_reports_date ON node_daily_reports(date);
+	CREATE TABLE IF NOT EXISTS report_schedule (
+		id INTEGER PRIMARY KEY CHECK (id=1),
+		enabled INTEGER NOT NULL,
+		local_time TEXT NOT NULL,
+		timezone TEXT NOT NULL
+	);
 	CREATE TABLE IF NOT EXISTS daily_report_bandwidth (
 		date TEXT PRIMARY KEY,
 		peak_bytes_per_second REAL NOT NULL,
