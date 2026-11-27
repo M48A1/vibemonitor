@@ -67,7 +67,7 @@ func dailyTrafficCutoff(now time.Time, location *time.Location) time.Time {
 	return localDayStart(date, location)
 }
 
-func pruneDailyTraffic(daily map[string]int64, cutoff string) bool {
+func pruneDailySeries(daily map[string]int64, cutoff string) bool {
 	changed := false
 	for day := range daily {
 		if day < cutoff {
@@ -78,13 +78,15 @@ func pruneDailyTraffic(daily map[string]int64, cutoff string) bool {
 	return changed
 }
 
-func (n *Node) pruneTrafficHistory(now time.Time) bool {
-	cutoff := dailyTrafficCutoff(now, n.billingLocation()).Format(time.DateOnly)
-	changed := pruneDailyTraffic(n.RankingDailyTraffic, dailyTrafficCutoff(now, trafficLocation).Format(time.DateOnly))
+func (n *Node) pruneDailyHistory(now time.Time) bool {
+	location := n.billingLocation()
+	cutoff := dailyTrafficCutoff(now, location).Format(time.DateOnly)
+	changed := pruneDailySeries(n.RankingDailyTraffic, dailyTrafficCutoff(now, trafficLocation).Format(time.DateOnly))
 	for _, daily := range []map[string]int64{n.DailyTraffic, n.DailyUpload, n.DailyDownload} {
-		changed = pruneDailyTraffic(daily, cutoff) || changed
+		changed = pruneDailySeries(daily, cutoff) || changed
 	}
-	return changed
+	onlineCutoff := civilDate(now.In(location)).AddDate(0, 0, -dailyOnlineRetentionDays).Format(time.DateOnly)
+	return pruneDailySeries(n.DailyOnline, onlineCutoff) || changed
 }
 
 // Reports persist these totals with the associated counter baseline.
@@ -95,8 +97,9 @@ func recordDailyTraffic(daily *map[string]int64, delta int64, previous, current 
 	if *daily == nil {
 		*daily = make(map[string]int64)
 	}
+	// The maintenance loop prunes existing totals. Clip the interval here
+	// so a probe reconnecting after a long gap cannot recreate expired dates.
 	cutoff := dailyTrafficCutoff(current, location)
-	pruneDailyTraffic(*daily, cutoff.Format(time.DateOnly))
 	start := previous
 	if start.Before(cutoff) {
 		start = cutoff
@@ -198,12 +201,6 @@ func (n *Node) recordDailyOnline(now time.Time) {
 		start = boundary
 	}
 	n.DailyOnlineUntil = end
-	cutoff := civilDate(now.In(location)).AddDate(0, 0, -dailyOnlineRetentionDays).Format(time.DateOnly)
-	for date := range n.DailyOnline {
-		if date < cutoff {
-			delete(n.DailyOnline, date)
-		}
-	}
 }
 
 func (n *Node) dailyOnlineStatus(day, now time.Time) (string, int64) {

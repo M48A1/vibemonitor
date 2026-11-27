@@ -21,7 +21,7 @@ type wsClient struct {
 }
 
 func (c *wsClient) allowSnapshotRequest(now time.Time) bool {
-	if !c.lastSnapshotRequest.IsZero() && now.Sub(c.lastSnapshotRequest) < minWSUpdateInterval {
+	if !c.lastSnapshotRequest.IsZero() && now.Sub(c.lastSnapshotRequest) < wsSnapshotInterval {
 		return false
 	}
 	c.lastSnapshotRequest = now
@@ -49,7 +49,8 @@ type WSHub struct {
 }
 
 const maxWSClients = 1000
-const minWSUpdateInterval = time.Second
+const minWSUpdateInterval = 3 * time.Second
+const wsSnapshotInterval = time.Second
 
 func NewWSHub(s *store.Store) *WSHub {
 	hub := &WSHub{
@@ -71,11 +72,10 @@ func NewWSHub(s *store.Store) *WSHub {
 
 func (h *WSHub) run() {
 	// Periodic check every 3s to detect offline state transitions and keep alive
-	ticker := time.NewTicker(3 * time.Second)
+	ticker := time.NewTicker(minWSUpdateInterval)
 	defer ticker.Stop()
 	defer close(h.done)
 
-	minInterval := minWSUpdateInterval
 	lastBroadcast := time.Now()
 	// Send coalesced updates as soon as the rate limit expires, independently
 	// of the periodic offline-state check.
@@ -95,23 +95,26 @@ func (h *WSHub) run() {
 		h.broadcastNodes()
 	}
 
+	schedule := func() {
+		delay := minWSUpdateInterval - time.Since(lastBroadcast)
+		if delay <= 0 {
+			flush()
+		} else if pending == nil {
+			timer.Reset(delay)
+			pending = timer.C
+		}
+	}
+
 	for {
 		select {
 		case <-h.stop:
 			return
 		case <-h.trigger:
-			if time.Since(lastBroadcast) >= minInterval {
-				flush()
-			} else if pending == nil {
-				timer.Reset(minInterval - time.Since(lastBroadcast))
-				pending = timer.C
-			}
+			schedule()
 		case <-pending:
 			flush()
 		case <-ticker.C:
-			if time.Since(lastBroadcast) >= minInterval {
-				flush()
-			}
+			schedule()
 		}
 	}
 }
@@ -256,7 +259,7 @@ func (h *WSHub) snapshotPayload(compact, refresh bool) ([]byte, error) {
 		index = 1
 	}
 	cache := &h.payloadCache[index]
-	if !refresh && cache.payload != nil && time.Since(cache.createdAt) < minWSUpdateInterval {
+	if !refresh && cache.payload != nil && time.Since(cache.createdAt) < wsSnapshotInterval {
 		return cache.payload, nil
 	}
 	payload, err := h.nodesPayload(compact)

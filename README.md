@@ -77,8 +77,8 @@
 | 探针内存 | systemd 限制 `GOMEMLIMIT=25MiB`、`MemoryHigh=64M`、`MemoryMax=128M` |
 | 前端 | 360 KB 静态文件全部内嵌，无 Node 构建步骤；首页首屏 12 个文件 160 KB，gzip 后 41 KB，地球底盘与地区数据另 83 KB（gzip 后 33 KB，仅首次加载） |
 | HTTP | 全站 gzip（图片、字体等已压缩类型跳过），静态资源带 ETag 与 304 |
-| 实时推送 | WebSocket 每 3 秒一帧，内容未变化则不发送；仪表盘视图不带 `history` 数组。200 节点单帧 408 KiB（完整视图 1034 KiB），同帧 gzip 参考值 18 KiB / 26 KiB；当前帧未协商 permessage-deflate，实际以未压缩大小发送 |
-| 存储 | 纯 Go SQLite（WAL、`synchronous=NORMAL`、`busy_timeout=5s`），单写连接加最多两个只读连接；历史批量事务写入，写失败保留重试（上限 65,536 条），清理任务每 15 分钟 |
+| 实时推送 | WebSocket 常规推送最快每 3 秒一帧，内容未变化则不发送；仪表盘视图不带 `history` 数组。200 节点单帧 408 KiB（完整视图 1034 KiB），同帧 gzip 参考值 18 KiB / 26 KiB；当前帧未协商 permessage-deflate，实际以未压缩大小发送 |
+| 存储 | 纯 Go SQLite（WAL、`synchronous=NORMAL`、`busy_timeout=5s`），单写连接加最多两个只读连接；历史批量事务写入，写失败保留重试（上限 65,536 条），历史清理任务每小时运行 |
 | 保留策略 | Ping 与资源采样 90 天，日流量 90 天 |
 | 页面 | 未变化的卡片复用已有 DOM；标签页进入后台时停止渲染与兜底轮询，回到前台刷新 |
 | 探针 | 默认 1 秒上报，基本信息每 15 分钟刷新；只发起出站连接，不监听端口；systemd 沙箱（`NoNewPrivileges`、`ProtectSystem=strict`、`ProtectHome`、`PrivateTmp`、`PrivateDevices`、`RestrictAddressFamilies`，仅保留 `CAP_NET_RAW` 供 ping 使用）；自身不写状态文件，凭据由 root 级 `EnvironmentFile` 提供 |
