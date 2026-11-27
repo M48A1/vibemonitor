@@ -25,6 +25,8 @@ func (s *Server) registerTelegramRoutes(mux *http.ServeMux) {
 			"reminder_days":         cfg.TelegramReminderDays,
 			"reminder_hour":         cfg.TelegramReminderHour,
 			"reminder_timezone":     cfg.TelegramReminderTimezone,
+			"daily_report_enabled":  cfg.TelegramDailyReportEnabled,
+			"daily_report_hour":     cfg.TelegramDailyReportHour,
 			"templates":             cfg.TelegramTemplates.Effective(),
 			"default_templates":     store.DefaultTelegramTemplates(),
 		})
@@ -44,6 +46,8 @@ func (s *Server) registerTelegramRoutes(mux *http.ServeMux) {
 			ReminderDays        *int                     `json:"reminder_days"`
 			ReminderHour        *int                     `json:"reminder_hour"`
 			ReminderTimezone    *string                  `json:"reminder_timezone"`
+			DailyReportEnabled  *bool                    `json:"daily_report_enabled"`
+			DailyReportHour     *int                     `json:"daily_report_hour"`
 			Templates           *store.TelegramTemplates `json:"templates"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -54,6 +58,7 @@ func (s *Server) registerTelegramRoutes(mux *http.ServeMux) {
 			BotToken: req.BotToken, ChatID: req.ChatID, Enabled: req.Enabled, Clear: req.Clear,
 			OfflineDelaySeconds: req.OfflineDelaySeconds, ReminderDays: req.ReminderDays,
 			ReminderHour: req.ReminderHour, ReminderTimezone: req.ReminderTimezone,
+			DailyReportEnabled: req.DailyReportEnabled, DailyReportHour: req.DailyReportHour,
 			Templates: req.Templates,
 		}); err != nil {
 			if errors.Is(err, store.ErrInvalidSettings) {

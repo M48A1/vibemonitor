@@ -147,6 +147,8 @@ func (s *sqliteDB) initSchema() error {
 		telegram_offline_delay_seconds INTEGER NOT NULL DEFAULT 60,
 		telegram_reminder_days INTEGER NOT NULL DEFAULT 7,
 		telegram_reminder_hour INTEGER NOT NULL DEFAULT 9,
+		telegram_daily_report_enabled INTEGER NOT NULL DEFAULT 0,
+		telegram_daily_report_hour INTEGER NOT NULL DEFAULT 9,
 		telegram_reminder_timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
 		telegram_alert_epoch TEXT NOT NULL DEFAULT '',
 		telegram_templates_json TEXT NOT NULL DEFAULT '{}',
@@ -156,6 +158,19 @@ func (s *sqliteDB) initSchema() error {
 		node_uuid TEXT PRIMARY KEY,
 		config_epoch TEXT NOT NULL,
 		state_json TEXT NOT NULL
+	);
+
+	CREATE TABLE IF NOT EXISTS node_daily_reports (
+		node_uuid TEXT NOT NULL,
+		timezone TEXT NOT NULL,
+		date TEXT NOT NULL,
+		summary_json TEXT NOT NULL,
+		PRIMARY KEY (timezone, date, node_uuid)
+	);
+	CREATE TABLE IF NOT EXISTS telegram_daily_reports (
+		date TEXT PRIMARY KEY,
+		messages_json TEXT NOT NULL,
+		sent_parts INTEGER NOT NULL DEFAULT 0
 	);
 
 	CREATE TABLE IF NOT EXISTS nodes (
@@ -262,6 +277,8 @@ func (s *sqliteDB) initSchema() error {
 		{"telegram_offline_delay_seconds", "INTEGER NOT NULL DEFAULT 60"},
 		{"telegram_reminder_days", "INTEGER NOT NULL DEFAULT 7"},
 		{"telegram_reminder_hour", "INTEGER NOT NULL DEFAULT 9"},
+		{"telegram_daily_report_enabled", "INTEGER NOT NULL DEFAULT 0"},
+		{"telegram_daily_report_hour", "INTEGER NOT NULL DEFAULT 9"},
 		{"telegram_reminder_timezone", "TEXT NOT NULL DEFAULT 'Asia/Shanghai'"},
 		{"telegram_alert_epoch", "TEXT NOT NULL DEFAULT ''"},
 		{"telegram_templates_json", "TEXT NOT NULL DEFAULT '{}'"},
@@ -346,6 +363,7 @@ func (s *sqliteDB) loadConfig() (*Config, error) {
 		{"telegram_bot_token", "''"}, {"telegram_chat_id", "''"}, {"telegram_enabled", "0"},
 		{"telegram_offline_delay_seconds", "60"}, {"telegram_reminder_days", "7"},
 		{"telegram_reminder_hour", "9"}, {"telegram_reminder_timezone", "'Asia/Shanghai'"},
+		{"telegram_daily_report_hour", "9"}, {"telegram_daily_report_enabled", "0"},
 		{"telegram_alert_epoch", "''"},
 		{"telegram_templates_json", "'{}'"},
 		{"site_theme", "'design'"},
@@ -366,7 +384,8 @@ func (s *sqliteDB) loadConfig() (*Config, error) {
 	var templatesJSON string
 	err := row.Scan(&c.AdminUsername, &c.AdminPassword, &c.SiteTitle, &c.SiteIcon, &targetsJSON,
 		&c.TelegramBotToken, &c.TelegramChatID, &c.TelegramEnabled, &c.TelegramOfflineDelaySeconds,
-		&c.TelegramReminderDays, &c.TelegramReminderHour, &c.TelegramReminderTimezone, &c.TelegramAlertEpoch, &templatesJSON, &c.SiteTheme)
+		&c.TelegramReminderDays, &c.TelegramReminderHour, &c.TelegramReminderTimezone,
+		&c.TelegramDailyReportHour, &c.TelegramDailyReportEnabled, &c.TelegramAlertEpoch, &templatesJSON, &c.SiteTheme)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil // 未初始化
@@ -401,8 +420,8 @@ func (s *sqliteDB) saveConfigContext(ctx context.Context, c *Config) error {
 		return err
 	}
 	query := `
-	INSERT INTO config (id, admin_username, admin_password, site_title, site_icon, ping_targets_json, site_theme, color_mode, telegram_bot_token, telegram_chat_id, telegram_enabled, telegram_offline_delay_seconds, telegram_reminder_days, telegram_reminder_hour, telegram_reminder_timezone, telegram_alert_epoch, telegram_templates_json)
-	VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	INSERT INTO config (id, admin_username, admin_password, site_title, site_icon, ping_targets_json, site_theme, color_mode, telegram_bot_token, telegram_chat_id, telegram_enabled, telegram_offline_delay_seconds, telegram_reminder_days, telegram_reminder_hour, telegram_reminder_timezone, telegram_alert_epoch, telegram_templates_json, telegram_daily_report_enabled, telegram_daily_report_hour)
+	VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT(id) DO UPDATE SET
 		admin_username = excluded.admin_username,
 		admin_password = excluded.admin_password,
@@ -419,11 +438,13 @@ func (s *sqliteDB) saveConfigContext(ctx context.Context, c *Config) error {
 		telegram_reminder_hour = excluded.telegram_reminder_hour,
 		telegram_reminder_timezone = excluded.telegram_reminder_timezone,
 		telegram_alert_epoch = excluded.telegram_alert_epoch,
-		telegram_templates_json = excluded.telegram_templates_json;
+		telegram_templates_json = excluded.telegram_templates_json,
+		telegram_daily_report_enabled = excluded.telegram_daily_report_enabled,
+		telegram_daily_report_hour = excluded.telegram_daily_report_hour;
 	`
 	_, err = s.execContext(ctx, query, c.AdminUsername, c.AdminPassword, c.SiteTitle, c.SiteIcon, string(targetsJSON), c.SiteTheme, c.ColorMode,
 		c.TelegramBotToken, c.TelegramChatID, c.TelegramEnabled, c.TelegramOfflineDelaySeconds, c.TelegramReminderDays,
-		c.TelegramReminderHour, c.TelegramReminderTimezone, c.TelegramAlertEpoch, string(templatesJSON))
+		c.TelegramReminderHour, c.TelegramReminderTimezone, c.TelegramAlertEpoch, string(templatesJSON), c.TelegramDailyReportEnabled, c.TelegramDailyReportHour)
 	return err
 }
 

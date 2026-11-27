@@ -39,18 +39,24 @@ func nextLocalDay(day time.Time) time.Time {
 // Split cumulative counters by elapsed time. Differences of cumulative
 // allocations preserve every byte even across midnight and short months.
 func distributeDaily(daily map[string]int64, value int64, previous, current, start time.Time, location *time.Location) {
-	total := uint64(current.Sub(previous))
-	portion := func(at time.Time) int64 {
-		hi, lo := bits.Mul64(uint64(value), uint64(at.Sub(previous)))
-		q, _ := bits.Div64(hi, lo, total)
-		return int64(q)
-	}
+	splitByLocalDay(current, start, location, func(day string, from, to time.Time) {
+		daily[day] += trafficPortion(value, previous, current, to) - trafficPortion(value, previous, current, from)
+	})
+}
+
+func trafficPortion(value int64, previous, current, at time.Time) int64 {
+	hi, lo := bits.Mul64(uint64(value), uint64(at.Sub(previous)))
+	q, _ := bits.Div64(hi, lo, uint64(current.Sub(previous)))
+	return int64(q)
+}
+
+func splitByLocalDay(current, start time.Time, location *time.Location, add func(string, time.Time, time.Time)) {
 	for start = start.In(location); start.Before(current); {
 		end := nextLocalDay(start)
 		if end.After(current) {
 			end = current.In(location)
 		}
-		daily[start.Format("2006-01-02")] += portion(end) - portion(start)
+		add(start.Format("2006-01-02"), start, end)
 		start = end
 	}
 }

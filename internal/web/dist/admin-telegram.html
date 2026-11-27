@@ -86,6 +86,17 @@
                 <input class="form-input" id="telegramReminderTimezone" value="Asia/Shanghai" placeholder="例如 Asia/Shanghai">
               </div>
             </div>
+            <section class="telegram-template-section" aria-labelledby="telegramDailyReportTitle">
+              <h3 class="admin-card-title" id="telegramDailyReportTitle">每日运行指数报告</h3>
+              <div class="form-group">
+                <label><input type="checkbox" id="telegramDailyReportEnabled"> 通过 Telegram 推送每日运行指数报告</label>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="telegramDailyReportHour">发送时间（北京时间，0–23 时）</label>
+                <input type="number" class="form-input" id="telegramDailyReportHour" min="0" max="23" step="1" value="9" required>
+                <small>推送前一日的节点、流量和线路表现。选择 0 时将在 00:05 后发送。</small>
+              </div>
+            </section>
             <section class="telegram-template-section" aria-labelledby="telegramTemplatesTitle">
               <h3 class="admin-card-title" id="telegramTemplatesTitle">报警消息模板</h3>
               <p class="admin-note">可编辑每类告警正文。变量会在发送时替换；清空单项并保存会使用默认文案。每项最多 2048 字节。</p>

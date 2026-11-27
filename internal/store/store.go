@@ -117,6 +117,8 @@ type Node struct {
 	CyclePercent   float64 `json:"cycle_percent"`    // Percentage used (0-100+)
 	DaysUntilReset int     `json:"days_until_reset"` // Days remaining until reset day
 
+	DailyReportHistory *dailyReportHistory `json:"daily_report_history,omitempty"`
+
 	lastResourceSampleAt int64
 
 	// dirty marks the node for the next incremental persistence flush. It is
@@ -140,6 +142,8 @@ type Config struct {
 	TelegramReminderDays        int                   `json:"telegram_reminder_days,omitempty"`
 	TelegramReminderHour        int                   `json:"telegram_reminder_hour,omitempty"`
 	TelegramReminderTimezone    string                `json:"telegram_reminder_timezone,omitempty"`
+	TelegramDailyReportEnabled  bool                  `json:"telegram_daily_report_enabled,omitempty"`
+	TelegramDailyReportHour     int                   `json:"telegram_daily_report_hour"`
 	TelegramAlertEpoch          string                `json:"telegram_alert_epoch,omitempty"`
 	TelegramTemplates           TelegramTemplates     `json:"telegram_templates"`
 }
@@ -427,6 +431,7 @@ func (s *Store) load(defaultPassword, username string) error {
 			TelegramOfflineDelaySeconds: 60,
 			TelegramReminderDays:        7,
 			TelegramReminderHour:        9,
+			TelegramDailyReportHour:     9,
 			TelegramReminderTimezone:    "Asia/Shanghai",
 		}
 		// Startup write: there is no request to cancel.
@@ -706,6 +711,7 @@ func (s *Store) getNodes(compact bool) []*Node {
 		nodeCopy.DailyTraffic = nil
 		nodeCopy.RankingDailyTraffic = nil
 		nodeCopy.DailyOnline = nil
+		nodeCopy.DailyReportHistory = nil
 		nodeCopy.Token = "" // Credentials are only available through authenticated management.
 		if n.Profile != nil {
 			profile := *n.Profile
@@ -778,6 +784,7 @@ func (s *Store) GetNode(uuid string) *Node {
 		return nil
 	}
 	nodeCopy := *n
+	nodeCopy.DailyReportHistory = nil
 	nodeCopy.calculateDynamicFields(time.Now())
 	return &nodeCopy
 }
@@ -1169,6 +1176,7 @@ func (s *Store) ingestReportAt(token string, report protocol.Report, now time.Ti
 	s.dirty = true
 	node.dirty = true
 	node.LastSeen = receivedAt
+	node.recordReportLiveness(receivedAt)
 	node.recordDailyOnline(receivedAt)
 	node.Online = true
 
@@ -1196,6 +1204,7 @@ func (s *Store) ingestReportAt(token string, report protocol.Report, now time.Ti
 		}
 		delta := upload + download
 		if node.TrafficBaselineSet {
+			node.recordReportTraffic(upload, download, previousAt, currentAt)
 			location := node.billingLocation()
 			recordDailyTraffic(&node.DailyUpload, upload, previousAt, currentAt, location)
 			recordDailyTraffic(&node.DailyDownload, download, previousAt, currentAt, location)
@@ -1219,6 +1228,8 @@ func (s *Store) ingestReportAt(token string, report protocol.Report, now time.Ti
 		node.LastTotalUp = curUp
 		node.LastTotalDown = curDown
 	}
+
+	node.recordReportQuota(currentAt)
 
 	// Append history point
 	var ramUsagePct float64
