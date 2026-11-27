@@ -52,6 +52,7 @@ type PingHistoryResponse struct {
 	Stats            PingStats         `json:"stats"`
 	Samples          []PingSample      `json:"samples"`
 	OfflineIntervals []OfflineInterval `json:"offline_intervals,omitempty"`
+	firstObservedAt  int64
 }
 
 type OfflineInterval struct {
@@ -1176,7 +1177,7 @@ func (s *Store) ingestReportAt(token string, report protocol.Report, now time.Ti
 	s.dirty = true
 	node.dirty = true
 	node.LastSeen = receivedAt
-	node.recordReportLiveness(receivedAt)
+	node.prepareReportTraffic(receivedAt)
 	node.recordDailyOnline(receivedAt)
 	node.Online = true
 

@@ -12,7 +12,6 @@ const reportCounterRetentionDays = 7
 // daily report table keeps completed summaries beyond the live counter window.
 type dailyReportHistory struct {
 	Since          time.Time
-	OnlineUntil    time.Time
 	LocalSince     time.Time
 	LocalZone      string
 	Days           map[string]reportDayCounters
@@ -22,8 +21,6 @@ type dailyReportHistory struct {
 type reportDayCounters struct {
 	Upload, Download int64
 	TrafficObserved  bool
-	Drops            int
-	Offline          time.Duration
 	CycleUsed        int64
 	CycleLimit       int64
 	QuotaObserved    bool
@@ -41,7 +38,7 @@ func (n *Node) reportLocations() []*time.Location {
 	return []*time.Location{trafficLocation, local}
 }
 
-func (n *Node) recordReportLiveness(now time.Time) {
+func (n *Node) prepareReportTraffic(now time.Time) {
 	h := n.DailyReportHistory
 	if h == nil {
 		h = &dailyReportHistory{Since: now, Days: make(map[string]reportDayCounters)}
@@ -51,14 +48,6 @@ func (n *Node) recordReportLiveness(now time.Time) {
 	if h.LocalZone != localZone {
 		h.LocalZone, h.LocalSince = localZone, now
 	}
-	if !h.OnlineUntil.IsZero() && h.OnlineUntil.Before(now) {
-		for _, location := range n.reportLocations() {
-			start := maxReportTime(h.OnlineUntil, h.coverageStart(location))
-			h.addOutage(location, start, now, start.Equal(h.OnlineUntil))
-		}
-	}
-	h.OnlineUntil = maxReportTime(h.OnlineUntil, now.Add(n.offlineThreshold()))
-
 	// Use a UTC date only for the retention cutoff, with a one-day buffer
 	// for all the configured offsets.
 	today := now.UTC().Format(reportDateLayout)
@@ -80,19 +69,6 @@ func (h *dailyReportHistory) coverageStart(location *time.Location) time.Time {
 		return h.Since
 	}
 	return h.LocalSince
-}
-
-func (h *dailyReportHistory) addOutage(location *time.Location, start, end time.Time, countStart bool) {
-	cutoff := localDayStart(civilDate(end.In(location)).AddDate(0, 0, -reportCounterRetentionDays), location)
-	splitByLocalDay(end, maxReportTime(start, cutoff), location, func(date string, from, to time.Time) {
-		key := reportDayKey(location.String(), date)
-		day := h.Days[key]
-		if countStart && from.Equal(start) {
-			day.Drops++
-		}
-		day.Offline += to.Sub(from)
-		h.Days[key] = day
-	})
 }
 
 func (n *Node) recordReportTraffic(up, down int64, previous, current time.Time) {

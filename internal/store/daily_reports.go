@@ -51,7 +51,7 @@ type nodeReportWindow struct {
 	summary NodeDailyReport
 	start   time.Time
 	end     time.Time
-	targets []string
+	targets []reportProbeTarget
 }
 
 func reportWindow(location *time.Location, now time.Time) (time.Time, time.Time) {
@@ -72,9 +72,9 @@ func (s *Store) reportWindows(now time.Time) []nodeReportWindow {
 	var windows []nodeReportWindow
 	for _, n := range s.nodes {
 		targets := s.targetsLocked(n)
-		names := make([]string, 0, len(targets))
+		probes := make([]reportProbeTarget, 0, len(targets))
 		for _, target := range targets {
-			names = append(names, target.Name)
+			probes = append(probes, reportProbeTarget{target.Name, target.Host, n.PingObserved[target.Name]})
 		}
 		for _, location := range n.reportLocations() {
 			start, end := reportWindow(location, now)
@@ -86,26 +86,14 @@ func (s *Store) reportWindows(now time.Time) []nodeReportWindow {
 				Timezone: location.String(), DaySeconds: int64(end.Sub(start) / time.Second),
 			}
 			if h := n.DailyReportHistory; h != nil && (location == trafficLocation || h.LocalZone == location.String()) {
-				since := maxReportTime(start, h.coverageStart(location))
-				if since.Before(end) {
-					day := h.Days[reportDayKey(r.Timezone, r.Date)]
-					r.CoverageSeconds = end.Sub(since).Seconds()
-					r.Drops, r.OfflineSeconds = day.Drops, day.Offline.Seconds()
-					if h.OnlineUntil.Before(end) {
-						r.OfflineSeconds += end.Sub(maxReportTime(since, h.OnlineUntil)).Seconds()
-						if !h.OnlineUntil.Before(since) {
-							r.Drops++
-						}
-					}
-					r.OnlineSeconds = max(0, r.CoverageSeconds-r.OfflineSeconds)
-					r.TrafficObserved, r.Upload, r.Download = day.TrafficObserved, day.Upload, day.Download
-					if day.QuotaObserved {
-						percent := 100 * float64(day.CycleUsed) / float64(day.CycleLimit)
-						r.CyclePercent = &percent
-					}
+				day := h.Days[reportDayKey(r.Timezone, r.Date)]
+				r.TrafficObserved, r.Upload, r.Download = day.TrafficObserved, day.Upload, day.Download
+				if day.QuotaObserved {
+					percent := 100 * float64(day.CycleUsed) / float64(day.CycleLimit)
+					r.CyclePercent = &percent
 				}
 			}
-			windows = append(windows, nodeReportWindow{r, start, end, names})
+			windows = append(windows, nodeReportWindow{r, start, end, probes})
 		}
 	}
 	return windows
@@ -113,7 +101,7 @@ func (s *Store) reportWindows(now time.Time) []nodeReportWindow {
 
 func (s *Store) CollectDailyReportsContext(ctx context.Context, now time.Time) error {
 	// Flush accepted samples before reading yesterday's data. Periodic state
-	// writes also persist directional counters and the liveness deadline.
+	// writes also persist directional counters.
 	if err := s.SaveContext(ctx); err != nil {
 		return err
 	}
@@ -125,6 +113,9 @@ func (s *Store) CollectDailyReportsContext(ctx context.Context, now time.Time) e
 			continue
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if err := s.sdb.fillReportOutages(ctx, &w, now); err != nil {
 			return err
 		}
 		r.Prime, r.Other, err = s.sdb.reportQuality(ctx, w)
@@ -172,7 +163,7 @@ func (s *sqliteDB) reportQuality(ctx context.Context, window nodeReportWindow) (
 	// Use the existing (node, target, time) index to bound each series to this day.
 	args := []any{window.summary.UUID, window.start.Unix(), window.end.Unix()}
 	for _, target := range window.targets {
-		args = append(args, target)
+		args = append(args, target.name)
 	}
 	placeholders := strings.Repeat(",?", len(window.targets)-1)
 	rows, err := s.reader().QueryContext(ctx, `SELECT target_name,host,method,timestamp,latency

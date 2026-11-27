@@ -106,7 +106,7 @@ func dailyReportMessages(date, dataDate string, reports []store.NodeDailyReport,
 		lines = append(lines, fmt.Sprintf("• 昨日掉线：%d 次，累计 %s", drops, reportDuration(offlineSeconds)))
 	}
 	if unknown > 0 {
-		lines = append(lines, fmt.Sprintf("• %d 个节点的昨日在线记录覆盖不足", unknown))
+		lines = append(lines, fmt.Sprintf("• %d 个节点的昨日掉线履历覆盖不足", unknown))
 	}
 	for _, n := range reports {
 		if n.OfflineSeconds > 0 {
