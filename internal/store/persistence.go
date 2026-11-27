@@ -30,10 +30,6 @@ func (s *Store) enqueueHistoryLocked(sample historySample) bool {
 	return true
 }
 
-func writeHistorySamples(tx *sql.Tx, samples []historySample) error {
-	return writeHistorySamplesContext(context.Background(), tx, samples)
-}
-
 func writeHistorySamplesContext(ctx context.Context, tx *sql.Tx, samples []historySample) error {
 	if len(samples) == 0 {
 		return nil

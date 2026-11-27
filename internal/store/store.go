@@ -618,13 +618,6 @@ func (s *Store) GetConfig() Config {
 	return s.config
 }
 
-// GetBillingCycleRange returns the start and end time of the billing cycle.
-// For example, if resetDay is 15 and now is Sep 4, cycle is Aug 15 00:00 to Sep 15 00:00.
-// If resetDay is 15 and now is Sep 20, cycle is Sep 15 00:00 to Oct 15 00:00.
-func GetBillingCycleRange(resetDay int, now time.Time) (start, end time.Time) {
-	return billingCycleRange(resetDay, now, trafficLocation)
-}
-
 func (n *Node) billingCycleRange(now time.Time) (time.Time, time.Time) {
 	return billingCycleRange(n.ResetDay, now, n.billingLocation())
 }
@@ -818,18 +811,6 @@ var (
 	ErrInvalidNodeOrder = errors.New("invalid node order")
 	ErrNodeNotFound     = errors.New("node not found")
 )
-
-func (s *Store) CreateNode(name, group, region string) (*Node, error) {
-	return s.CreateNodeContext(context.Background(), name, group, region)
-}
-
-func (s *Store) CreateNodeContext(ctx context.Context, name, group, region string) (*Node, error) {
-	return s.CreateNodeWithOptionsContext(ctx, NodeOptions{
-		Name:   name,
-		Group:  group,
-		Region: region,
-	})
-}
 
 // CreateNodeWithOptionsContext creates a node with the provided options.
 func (s *Store) CreateNodeWithOptionsContext(ctx context.Context, opts NodeOptions) (*Node, error) {

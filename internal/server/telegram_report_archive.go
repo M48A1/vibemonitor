@@ -16,7 +16,7 @@ func parseReportDate(value string) (time.Time, error) {
 	return time.Parse("2006.01.02", value)
 }
 
-func (s *Server) replyArchivedReportCommand(ctx context.Context, args []string, send func(string) error) error {
+func (s *Server) replyArchivedReportCommand(ctx context.Context, now time.Time, args []string, send func(string) error) error {
 	if len(args) < 1 || len(args) > 2 {
 		return send(reportCommandUsage)
 	}
@@ -43,12 +43,17 @@ func (s *Server) replyArchivedReportCommand(ctx context.Context, args []string, 
 		return send("所选日期没有已存档的日报。")
 	}
 	nodes := s.store.GetAlertNodes()
+	sent, incomplete := 0, 0
 	for _, report := range reports {
 		date, err := time.Parse(time.DateOnly, report.Date)
 		if err != nil {
 			return err
 		}
-		bandwidth, err := s.store.ArchivedDailyBandwidthContext(ctx, date, report.Nodes)
+		if !s.store.ArchivedDailyReportComplete(date, now, report.Nodes) {
+			incomplete++
+			continue
+		}
+		bandwidth, err := s.store.ArchivedDailyBandwidthContext(ctx, date, now, report.Nodes)
 		if err != nil {
 			_ = send("暂时无法读取日报，请稍后重试。")
 			return err
@@ -58,10 +63,17 @@ func (s *Server) replyArchivedReportCommand(ctx context.Context, args []string, 
 				return err
 			}
 		}
+		sent++
 	}
 	requested := int((last.Unix()-first.Unix())/86400) + 1
-	if len(reports) < requested {
-		return send(fmt.Sprintf("该范围内已发送 %d 天的日报，另有 %d 天没有存档。", len(reports), requested-len(reports)))
+	if incomplete > 0 {
+		if requested == 1 {
+			return send("所选日期的节点日报尚未汇总完整。")
+		}
+		return send(fmt.Sprintf("已发送 %d 天的日报，另有 %d 天尚未汇总完整、%d 天没有存档。", sent, incomplete, requested-len(reports)))
+	}
+	if sent < requested {
+		return send(fmt.Sprintf("该范围内已发送 %d 天的日报，另有 %d 天没有存档。", sent, requested-sent))
 	}
 	return nil
 }

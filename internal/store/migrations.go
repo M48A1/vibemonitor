@@ -5,16 +5,6 @@ import (
 	"log"
 )
 
-// schemaVersion is the newest schema generation this build understands. It must
-// match the last entry in schemaMigrations; tests compare the recorded version
-// against it, so an unrecorded bump fails loudly instead of silently skipping a
-// step.
-//
-// Databases written by builds without a version marker report version 0 and are
-// brought up to date by the CREATE/ALTER statements in initSchema followed by
-// the steps below.
-const schemaVersion = 2
-
 type schemaMigration struct {
 	version int
 	apply   func(*sqliteDB) error

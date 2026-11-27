@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"time"
 )
 
@@ -48,7 +50,26 @@ func (s *Store) ArchivedDailyReportsContext(ctx context.Context, first, last tim
 	return result, rows.Err()
 }
 
-func (s *Store) ArchivedDailyBandwidthContext(ctx context.Context, date time.Time, reports []NodeDailyReport) (ReportBandwidth, error) {
+// ArchivedDailyReportComplete prevents a partly collected date from being
+// presented as a fleet report while nodes in later timezones are still active.
+func (s *Store) ArchivedDailyReportComplete(date, now time.Time, reports []NodeDailyReport) bool {
+	windows, ready := s.reportWindows(now, date)
+	if !ready {
+		return false
+	}
+	stored := make(map[string]bool, len(reports))
+	for _, report := range reports {
+		stored[report.UUID] = true
+	}
+	for _, window := range windows {
+		if !stored[window.summary.UUID] {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Store) ArchivedDailyBandwidthContext(ctx context.Context, date, now time.Time, reports []NodeDailyReport) (ReportBandwidth, error) {
 	rates := make([]bandwidthWindow, 0, len(reports))
 	for _, node := range reports {
 		location, err := loadBillingLocation(node.Timezone)
@@ -59,5 +80,43 @@ func (s *Store) ArchivedDailyBandwidthContext(ctx context.Context, date time.Tim
 		end := localDayStart(date.AddDate(0, 0, 1), location)
 		rates = append(rates, bandwidthWindow{node.UUID, start.Unix(), end.Unix()})
 	}
-	return s.sdb.dailyReportBandwidth(ctx, rates)
+	return s.sdb.loadOrArchiveDailyReportBandwidth(ctx, date, now, rates)
+}
+
+func (s *sqliteDB) loadDailyReportBandwidth(ctx context.Context, date time.Time) (ReportBandwidth, bool, error) {
+	var peak ReportBandwidth
+	err := s.reader().QueryRowContext(ctx, `SELECT peak_bytes_per_second,peak_minutes,sampled_minutes
+		FROM daily_report_bandwidth WHERE date=?`, date.Format(reportDateLayout)).Scan(
+		&peak.BytesPerSecond, &peak.Minutes, &peak.Samples)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ReportBandwidth{}, false, nil
+	}
+	return peak, err == nil, err
+}
+
+func (s *sqliteDB) loadOrArchiveDailyReportBandwidth(ctx context.Context, date, now time.Time, windows []bandwidthWindow) (ReportBandwidth, error) {
+	peak, found, err := s.loadDailyReportBandwidth(ctx, date)
+	if found || err != nil || len(windows) == 0 {
+		return peak, err
+	}
+	for _, window := range windows {
+		if window.From < now.Unix()-resourceHistoryRetentionSec {
+			// An old database may predate the fleet archive. A partly retained
+			// sampling window cannot reconstruct that day's aggregate peak.
+			return ReportBandwidth{}, nil
+		}
+	}
+	peak, err = s.dailyReportBandwidth(ctx, windows)
+	if err != nil {
+		return ReportBandwidth{}, err
+	}
+	_, err = s.db.ExecContext(ctx, `INSERT INTO daily_report_bandwidth(date,peak_bytes_per_second,peak_minutes,sampled_minutes)
+		VALUES(?,?,?,?) ON CONFLICT DO NOTHING`, date.Format(reportDateLayout), peak.BytesPerSecond, peak.Minutes, peak.Samples)
+	if err != nil {
+		return ReportBandwidth{}, err
+	}
+	// Scheduled and on-demand reports can both find an unarchived date.
+	// Read back the first committed result so both use the same snapshot.
+	peak, _, err = s.loadDailyReportBandwidth(ctx, date)
+	return peak, err
 }

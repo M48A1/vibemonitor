@@ -119,6 +119,25 @@ func (s *Store) CollectDailyReportsContext(ctx context.Context, now time.Time) e
 			return err
 		}
 	}
+	// Archive the most recent date completed by the whole fleet, even when
+	// Telegram push is disabled or nobody has requested the report.
+	today := civilDate(now.In(trafficLocation))
+	for daysBack := 0; daysBack <= 2; daysBack++ {
+		date := today.AddDate(0, 0, -daysBack)
+		windows, ready := s.reportWindows(now, date)
+		if !ready {
+			continue
+		}
+		if len(windows) == 0 {
+			return nil
+		}
+		_, found, err := s.sdb.loadDailyReportBandwidth(ctx, date)
+		if err != nil || found {
+			return err
+		}
+		_, _, err = s.completeDailyReportContext(ctx, date, now, windows)
+		return err
+	}
 	return nil
 }
 
@@ -285,12 +304,17 @@ func (s *Store) DailyReportForDateContext(ctx context.Context, date, now time.Ti
 	if !ready {
 		return nil, ReportBandwidth{}, false, nil
 	}
+	reports, bandwidth, err := s.completeDailyReportContext(ctx, date, now, windows)
+	return reports, bandwidth, true, err
+}
+
+func (s *Store) completeDailyReportContext(ctx context.Context, date, now time.Time, windows []nodeReportWindow) ([]NodeDailyReport, ReportBandwidth, error) {
 	rates := make([]bandwidthWindow, 0, len(windows))
 	reports := make([]NodeDailyReport, 0, len(windows))
 	for _, w := range windows {
 		report, err := s.loadOrCollectDailyReport(ctx, w, now)
 		if err != nil {
-			return nil, ReportBandwidth{}, false, err
+			return nil, ReportBandwidth{}, err
 		}
 		reports = append(reports, report)
 		rates = append(rates, bandwidthWindow{w.summary.UUID, w.start.Unix(), w.end.Unix()})
@@ -301,8 +325,8 @@ func (s *Store) DailyReportForDateContext(ctx context.Context, date, now time.Ti
 		}
 		return reports[i].Name < reports[j].Name
 	})
-	bandwidth, err := s.sdb.dailyReportBandwidth(ctx, rates)
-	return reports, bandwidth, true, err
+	bandwidth, err := s.sdb.loadOrArchiveDailyReportBandwidth(ctx, date, now, rates)
+	return reports, bandwidth, err
 }
 
 type bandwidthWindow struct {

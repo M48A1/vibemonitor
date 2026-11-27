@@ -149,10 +149,10 @@ func (s *Server) replyTelegramReport(ctx context.Context, cfg store.Config, now 
 			return s.replyDailyReportCommand(ctx, now, sendCurrent)
 		}
 	case "/report":
-		return s.replyArchivedReportCommand(ctx, command[1:], sendCurrent)
+		return s.replyArchivedReportCommand(ctx, now, command[1:], sendCurrent)
 	default:
 		if _, err := parseReportDate(command[0]); err == nil {
-			return s.replyArchivedReportCommand(ctx, command, sendCurrent)
+			return s.replyArchivedReportCommand(ctx, now, command, sendCurrent)
 		}
 	}
 	return nil

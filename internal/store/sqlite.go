@@ -167,6 +167,12 @@ func (s *sqliteDB) initSchema() error {
 		summary_json TEXT NOT NULL,
 		PRIMARY KEY (timezone, date, node_uuid)
 	);
+	CREATE TABLE IF NOT EXISTS daily_report_bandwidth (
+		date TEXT PRIMARY KEY,
+		peak_bytes_per_second REAL NOT NULL,
+		peak_minutes INTEGER NOT NULL,
+		sampled_minutes INTEGER NOT NULL
+	);
 	CREATE TABLE IF NOT EXISTS telegram_daily_reports (
 		date TEXT PRIMARY KEY,
 		messages_json TEXT NOT NULL,
@@ -597,16 +603,6 @@ func (s *sqliteDB) saveNodeRowsContext(ctx context.Context, nodes map[string]*No
 		}
 	}
 	return nextNodes, nil
-}
-
-func (s *sqliteDB) recordPingSampleContext(ctx context.Context, nodeUUID, targetName, host, method string, timestamp int64, latency int) error {
-	query := `INSERT INTO ping_history (node_uuid, target_name, host, method, timestamp, latency) VALUES (?, ?, ?, ?, ?, ?)
-		ON CONFLICT(node_uuid, target_name, timestamp) DO UPDATE SET
-			latency = excluded.latency,
-			host = excluded.host,
-			method = excluded.method`
-	_, err := s.db.ExecContext(ctx, query, nodeUUID, targetName, host, method, timestamp, latency)
-	return err
 }
 
 func (s *sqliteDB) getPingHistory(nodeUUID, targetName, host, method string, cutoff int64) ([]PingSample, error) {
