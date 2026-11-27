@@ -158,30 +158,14 @@ func (s *Server) replyTelegramReport(ctx context.Context, cfg store.Config, now 
 	return nil
 }
 
-func (s *Server) replyDailyReportCommand(ctx context.Context, now time.Time, sendCurrent func(string) error) error {
-	if err := s.store.CollectDailyReportsContext(ctx, now); err != nil {
-		_ = sendCurrent("暂时无法读取日报，请稍后重试。")
+func (s *Server) replyDailyReportCommand(ctx context.Context, now time.Time, send func(string) error) error {
+	report, err := s.store.LatestArchivedDailyReportContext(ctx, now)
+	if err != nil {
+		_ = send("暂时无法读取日报，请稍后重试。")
 		return err
 	}
-	today := now.In(dailyReportBeijing)
-	// A node may still be on the previous date in UTC-12 when Beijing
-	// crosses midnight, so the latest completed date can be two days back.
-	for daysBack := 0; daysBack <= 2; daysBack++ {
-		date := today.AddDate(0, 0, -daysBack)
-		reports, bandwidth, ready, err := s.store.DailyReportForDateContext(ctx, date, now)
-		if err != nil {
-			_ = sendCurrent("暂时无法读取日报，请稍后重试。")
-			return err
-		}
-		if !ready || len(reports) == 0 {
-			continue
-		}
-		for _, part := range dailyReportMessages(today.Format(time.DateOnly), date.Format(time.DateOnly), reports, s.store.GetAlertNodes(), bandwidth) {
-			if err := sendCurrent(part); err != nil {
-				return err
-			}
-		}
-		return nil
+	if report.Date == "" {
+		return send("暂无已存档的完整日报。")
 	}
-	return sendCurrent("暂无已经汇总完成的日报。")
+	return sendArchivedDailyReport(report, send)
 }

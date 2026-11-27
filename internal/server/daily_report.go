@@ -90,12 +90,18 @@ func dailyReportMessages(date, dataDate string, reports []store.NodeDailyReport,
 		fmt.Sprintf("统计日期：%s（各节点当地时间）", dataDate),
 		"", "1. 节点概览",
 	}
-	online, offlineSeconds, drops, unknown := 0, 0.0, 0, 0
-	for _, n := range nodes {
-		if n.Online {
-			online++
+	if nodes == nil {
+		lines = append(lines, fmt.Sprintf("• 已归档节点：%d 个", len(reports)))
+	} else {
+		online := 0
+		for _, n := range nodes {
+			if n.Online {
+				online++
+			}
 		}
+		lines = append(lines, fmt.Sprintf("• 在线状态：%d / %d 在线（发送前快照）", online, len(nodes)))
 	}
+	offlineSeconds, drops, unknown := 0.0, 0, 0
 	for _, n := range reports {
 		drops += n.Drops
 		offlineSeconds += n.OfflineSeconds
@@ -103,7 +109,6 @@ func dailyReportMessages(date, dataDate string, reports []store.NodeDailyReport,
 			unknown++
 		}
 	}
-	lines = append(lines, fmt.Sprintf("• 在线状态：%d / %d 在线（发送前快照）", online, len(nodes)))
 	if len(reports) == 0 || unknown == len(reports) && drops == 0 && offlineSeconds == 0 {
 		lines = append(lines, "• 当日掉线：数据不足")
 	} else {
@@ -149,7 +154,11 @@ func dailyReportMessages(date, dataDate string, reports []store.NodeDailyReport,
 			reportNodeName(top.Name), reportGB(float64(top.Upload)), reportGB(float64(top.Download)), quota))
 	}
 	if bandwidth.Samples == 0 {
-		lines = append(lines, "• 峰值带宽：暂无采样")
+		if nodes == nil {
+			lines = append(lines, "• 峰值带宽：暂无存档数据")
+		} else {
+			lines = append(lines, "• 峰值带宽：暂无采样")
+		}
 	} else {
 		lines = append(lines, fmt.Sprintf("• 峰值带宽：%.1f Mbps · 近峰值持续约 %d 分钟（≥95%%，分钟采样）",
 			bandwidth.BytesPerSecond*8/1e6, bandwidth.Minutes))

@@ -9,8 +9,10 @@ import (
 )
 
 type ArchivedDailyReport struct {
-	Date  string
-	Nodes []NodeDailyReport
+	Date      string
+	Nodes     []NodeDailyReport
+	Bandwidth ReportBandwidth
+	finalized bool
 }
 
 // ArchivedDailyReportsContext lists existing summaries in date order. Early
@@ -24,8 +26,10 @@ func (s *Store) ArchivedDailyReportsContext(ctx context.Context, first, last tim
 		) AS row_number
 		FROM node_daily_reports AS r LEFT JOIN nodes AS n ON n.uuid=r.node_uuid
 		WHERE r.date BETWEEN ? AND ?
-	) SELECT date,node_uuid,timezone,summary_json FROM ranked WHERE row_number=1
-	ORDER BY date,json_extract(summary_json,'$.name'),node_uuid`, first.Format(time.DateOnly), last.Format(time.DateOnly))
+	) SELECT r.date,r.node_uuid,r.timezone,r.summary_json,b.date IS NOT NULL,
+		COALESCE(b.peak_bytes_per_second,0),COALESCE(b.peak_minutes,0),COALESCE(b.sampled_minutes,0)
+	FROM ranked AS r LEFT JOIN daily_report_bandwidth AS b ON b.date=r.date WHERE r.row_number=1
+	ORDER BY r.date,json_extract(r.summary_json,'$.name'),r.node_uuid`, first.Format(time.DateOnly), last.Format(time.DateOnly))
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +38,9 @@ func (s *Store) ArchivedDailyReportsContext(ctx context.Context, first, last tim
 	for rows.Next() {
 		var n NodeDailyReport
 		var uuid, date, zone, data string
-		if err := rows.Scan(&date, &uuid, &zone, &data); err != nil {
+		var peak ReportBandwidth
+		var finalized bool
+		if err := rows.Scan(&date, &uuid, &zone, &data, &finalized, &peak.BytesPerSecond, &peak.Minutes, &peak.Samples); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(data), &n); err != nil {
@@ -42,7 +48,7 @@ func (s *Store) ArchivedDailyReportsContext(ctx context.Context, first, last tim
 		}
 		n.Date, n.UUID, n.Timezone = date, uuid, zone
 		if len(result) == 0 || result[len(result)-1].Date != date {
-			result = append(result, ArchivedDailyReport{Date: date})
+			result = append(result, ArchivedDailyReport{Date: date, Bandwidth: peak, finalized: finalized})
 		}
 		group := &result[len(result)-1]
 		group.Nodes = append(group.Nodes, n)
@@ -50,16 +56,46 @@ func (s *Store) ArchivedDailyReportsContext(ctx context.Context, first, last tim
 	return result, rows.Err()
 }
 
+// LatestArchivedDailyReportContext returns the newest complete saved report,
+// even if no archive was written on any of the last few days.
+func (s *Store) LatestArchivedDailyReportContext(ctx context.Context, now time.Time) (ArchivedDailyReport, error) {
+	before := civilDate(now.In(trafficLocation)).AddDate(0, 0, 1).Format(reportDateLayout)
+	for {
+		var key sql.NullString
+		err := s.sdb.reader().QueryRowContext(ctx, `SELECT MAX(date) FROM node_daily_reports WHERE date<?`, before).Scan(&key)
+		if err != nil || !key.Valid {
+			return ArchivedDailyReport{}, err
+		}
+		date, err := time.Parse(reportDateLayout, key.String)
+		if err != nil {
+			return ArchivedDailyReport{}, err
+		}
+		reports, err := s.ArchivedDailyReportsContext(ctx, date, date)
+		if err != nil {
+			return ArchivedDailyReport{}, err
+		}
+		if len(reports) > 0 && s.ArchivedDailyReportComplete(date, now, reports[0]) {
+			return reports[0], nil
+		}
+		before = key.String
+	}
+}
+
 // ArchivedDailyReportComplete prevents a partly collected date from being
 // presented as a fleet report while nodes in later timezones are still active.
-func (s *Store) ArchivedDailyReportComplete(date, now time.Time, reports []NodeDailyReport) bool {
+func (s *Store) ArchivedDailyReportComplete(date, now time.Time, report ArchivedDailyReport) bool {
+	// The fleet archive is written only once every node has settled. Older
+	// dates without this marker still use the original completeness check.
+	if report.finalized {
+		return true
+	}
 	windows, ready := s.reportWindows(now, date)
 	if !ready {
 		return false
 	}
-	stored := make(map[string]bool, len(reports))
-	for _, report := range reports {
-		stored[report.UUID] = true
+	stored := make(map[string]bool, len(report.Nodes))
+	for _, node := range report.Nodes {
+		stored[node.UUID] = true
 	}
 	for _, window := range windows {
 		if !stored[window.summary.UUID] {
@@ -67,20 +103,6 @@ func (s *Store) ArchivedDailyReportComplete(date, now time.Time, reports []NodeD
 		}
 	}
 	return true
-}
-
-func (s *Store) ArchivedDailyBandwidthContext(ctx context.Context, date, now time.Time, reports []NodeDailyReport) (ReportBandwidth, error) {
-	rates := make([]bandwidthWindow, 0, len(reports))
-	for _, node := range reports {
-		location, err := loadBillingLocation(node.Timezone)
-		if err != nil {
-			return ReportBandwidth{}, err
-		}
-		start := localDayStart(date, location)
-		end := localDayStart(date.AddDate(0, 0, 1), location)
-		rates = append(rates, bandwidthWindow{node.UUID, start.Unix(), end.Unix()})
-	}
-	return s.sdb.loadOrArchiveDailyReportBandwidth(ctx, date, now, rates)
 }
 
 func (s *sqliteDB) loadDailyReportBandwidth(ctx context.Context, date time.Time) (ReportBandwidth, bool, error) {
@@ -115,7 +137,7 @@ func (s *sqliteDB) loadOrArchiveDailyReportBandwidth(ctx context.Context, date, 
 	if err != nil {
 		return ReportBandwidth{}, err
 	}
-	// Scheduled and on-demand reports can both find an unarchived date.
+	// Concurrent collectors can both find an unarchived date.
 	// Read back the first committed result so both use the same snapshot.
 	peak, _, err = s.loadDailyReportBandwidth(ctx, date)
 	return peak, err

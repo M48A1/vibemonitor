@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"vibemonitor/internal/store"
 )
 
 const reportCommandUsage = "回复 2026.11.10 查询一天，或回复 2026.11.10 2026.11.15 查询日期范围（包含首尾）。也可以在日期前加 /report，日期支持 YYYY-MM-DD。"
@@ -42,26 +44,18 @@ func (s *Server) replyArchivedReportCommand(ctx context.Context, now time.Time, 
 	if len(reports) == 0 {
 		return send("所选日期没有已存档的日报。")
 	}
-	nodes := s.store.GetAlertNodes()
 	sent, incomplete := 0, 0
 	for _, report := range reports {
 		date, err := time.Parse(time.DateOnly, report.Date)
 		if err != nil {
 			return err
 		}
-		if !s.store.ArchivedDailyReportComplete(date, now, report.Nodes) {
+		if !s.store.ArchivedDailyReportComplete(date, now, report) {
 			incomplete++
 			continue
 		}
-		bandwidth, err := s.store.ArchivedDailyBandwidthContext(ctx, date, now, report.Nodes)
-		if err != nil {
-			_ = send("暂时无法读取日报，请稍后重试。")
+		if err := sendArchivedDailyReport(report, send); err != nil {
 			return err
-		}
-		for _, part := range dailyReportMessages(report.Date, report.Date, report.Nodes, nodes, bandwidth) {
-			if err := send(part); err != nil {
-				return err
-			}
 		}
 		sent++
 	}
@@ -74,6 +68,15 @@ func (s *Server) replyArchivedReportCommand(ctx context.Context, now time.Time, 
 	}
 	if sent < requested {
 		return send(fmt.Sprintf("该范围内已发送 %d 天的日报，另有 %d 天没有存档。", sent, requested-sent))
+	}
+	return nil
+}
+
+func sendArchivedDailyReport(report store.ArchivedDailyReport, send func(string) error) error {
+	for _, part := range dailyReportMessages(report.Date, report.Date, report.Nodes, nil, report.Bandwidth) {
+		if err := send(part); err != nil {
+			return err
+		}
 	}
 	return nil
 }
