@@ -22,6 +22,8 @@
     $('telegramOfflineDelay').value = telegram.offline_delay_seconds ?? 60;
     $('telegramReminderDays').value = telegram.reminder_days ?? 7;
     $('telegramReminderHour').value = telegram.reminder_hour ?? 9;
+    $('telegramDailyReportEnabled').checked = !!telegram.daily_report_enabled;
+    $('telegramDailyReportHour').value = telegram.daily_report_hour ?? 9;
     $('telegramReminderTimezone').value = telegram.reminder_timezone || 'Asia/Shanghai';
     defaultTemplates = telegram.default_templates || {};
     for (const [kind, id] of Object.entries(TEMPLATE_FIELDS)) {
@@ -62,6 +64,8 @@
           offline_delay_seconds: offlineDelay,
           reminder_days: reminderDays,
           reminder_hour: reminderHour,
+          daily_report_enabled: $('telegramDailyReportEnabled').checked,
+          daily_report_hour: Number($('telegramDailyReportHour').value),
           reminder_timezone: $('telegramReminderTimezone').value.trim(),
           // An untouched template falls back to the server-side default.
           templates: Object.fromEntries(Object.entries(TEMPLATE_FIELDS).map(([kind, id]) => {
@@ -105,7 +109,7 @@
     });
 
     $('clearTelegramBtn').addEventListener('click', async () => {
-      if (!confirm('清除 Telegram Bot Token、Chat ID 并关闭告警？')) return;
+      if (!confirm('清除 Telegram Bot Token、Chat ID 并关闭告警和日报推送？')) return;
       try {
         await request('/api/admin/telegram', {
           method: 'POST',

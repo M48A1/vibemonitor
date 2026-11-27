@@ -313,6 +313,10 @@ func (s *sqliteDB) queryPingHistory(ctx context.Context, r *PingHistoryResponse,
 		return err
 	}
 	builder.finish(observation)
+	r.firstObservedAt = builder.first
+	if previous.Valid {
+		r.firstObservedAt = previous.Int64
+	}
 	return ctx.Err()
 }
 

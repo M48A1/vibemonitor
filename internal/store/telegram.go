@@ -121,6 +121,8 @@ type TelegramOptions struct {
 	ReminderDays        *int
 	ReminderHour        *int
 	ReminderTimezone    *string
+	DailyReportEnabled  *bool
+	DailyReportHour     *int
 	Templates           *TelegramTemplates
 }
 
@@ -135,6 +137,7 @@ func (s *Store) UpdateTelegramOptionsContext(ctx context.Context, opts TelegramO
 		next.TelegramBotToken = ""
 		next.TelegramChatID = ""
 		next.TelegramEnabled = false
+		next.TelegramDailyReportEnabled = false
 	} else {
 		if opts.BotToken != "" {
 			next.TelegramBotToken = strings.TrimSpace(opts.BotToken)
@@ -152,6 +155,12 @@ func (s *Store) UpdateTelegramOptionsContext(ctx context.Context, opts TelegramO
 		}
 		if opts.ReminderTimezone != nil {
 			next.TelegramReminderTimezone = strings.TrimSpace(*opts.ReminderTimezone)
+		}
+		if opts.DailyReportEnabled != nil {
+			next.TelegramDailyReportEnabled = *opts.DailyReportEnabled
+		}
+		if opts.DailyReportHour != nil {
+			next.TelegramDailyReportHour = *opts.DailyReportHour
 		}
 		if opts.Templates != nil {
 			next.TelegramTemplates = *opts.Templates
@@ -180,11 +189,14 @@ func validateTelegramConfig(c Config) error {
 			}
 		}
 	}
-	if c.TelegramEnabled && (c.TelegramBotToken == "" || c.TelegramChatID == "") {
-		return errors.New("Telegram bot token and chat ID are required when alerts are enabled")
+	if (c.TelegramEnabled || c.TelegramDailyReportEnabled) && (c.TelegramBotToken == "" || c.TelegramChatID == "") {
+		return errors.New("Telegram bot token and chat ID are required to send alerts or daily reports")
 	}
 	if c.TelegramOfflineDelaySeconds < 0 || c.TelegramOfflineDelaySeconds > 3600 {
 		return errors.New("Telegram offline delay must be between 0 and 3600 seconds")
+	}
+	if c.TelegramDailyReportHour < 0 || c.TelegramDailyReportHour > 23 {
+		return errors.New("Telegram daily report hour must be between 0 and 23")
 	}
 	if c.TelegramReminderDays < 0 || c.TelegramReminderDays > 7 {
 		return errors.New("Telegram reminder days must be between 0 and 7")

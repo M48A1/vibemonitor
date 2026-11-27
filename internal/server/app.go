@@ -139,6 +139,11 @@ func (s *Server) Run(ctx context.Context) error {
 		defer close(alertsDone)
 		s.runTelegramAlerts(runCtx)
 	}()
+	reportsDone := make(chan struct{})
+	go func() {
+		defer close(reportsDone)
+		s.runDailyReports(runCtx)
+	}()
 	cleanupTicker := time.NewTicker(15 * time.Minute)
 	defer cleanupTicker.Stop()
 	go func() {
@@ -167,6 +172,7 @@ func (s *Server) Run(ctx context.Context) error {
 	case <-runCtx.Done():
 		log.Printf("[Server] Shutting down gracefully...")
 		<-alertsDone
+		<-reportsDone
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = httpServer.Shutdown(shutdownCtx)
@@ -179,6 +185,7 @@ func (s *Server) Run(ctx context.Context) error {
 	case err := <-errCh:
 		stop()
 		<-alertsDone
+		<-reportsDone
 		if err := s.Close(); err != nil {
 			log.Printf("[Store] Final save failed: %v", err)
 			return err
