@@ -285,11 +285,6 @@ func (s *Store) DailyReportForDateContext(ctx context.Context, date, now time.Ti
 	if !ready {
 		return nil, ReportBandwidth{}, false, nil
 	}
-	type bandwidthWindow struct {
-		UUID string `json:"uuid"`
-		From int64  `json:"from"`
-		To   int64  `json:"to"`
-	}
 	rates := make([]bandwidthWindow, 0, len(windows))
 	reports := make([]NodeDailyReport, 0, len(windows))
 	for _, w := range windows {
@@ -306,18 +301,31 @@ func (s *Store) DailyReportForDateContext(ctx context.Context, date, now time.Ti
 		}
 		return reports[i].Name < reports[j].Name
 	})
+	bandwidth, err := s.sdb.dailyReportBandwidth(ctx, rates)
+	return reports, bandwidth, true, err
+}
+
+type bandwidthWindow struct {
+	UUID string `json:"uuid"`
+	From int64  `json:"from"`
+	To   int64  `json:"to"`
+}
+
+func (s *sqliteDB) dailyReportBandwidth(ctx context.Context, rates []bandwidthWindow) (ReportBandwidth, error) {
+	if len(rates) == 0 {
+		return ReportBandwidth{}, nil
+	}
 	raw, err := json.Marshal(rates)
 	if err != nil {
-		return nil, ReportBandwidth{}, false, err
+		return ReportBandwidth{}, err
 	}
-	rows, err := s.sdb.reader().QueryContext(ctx, `SELECT minute,TOTAL(rate) FROM (
+	rows, err := s.reader().QueryContext(ctx, `SELECT minute,TOTAL(rate) FROM (
 		SELECT h.timestamp/60 AS minute,MAX(h.network_rate) AS rate FROM json_each(?) AS w
 		JOIN resource_history AS h ON h.node_uuid=json_extract(w.value,'$.uuid')
 			AND h.timestamp>=json_extract(w.value,'$.from') AND h.timestamp<json_extract(w.value,'$.to')
 		WHERE h.network_rate IS NOT NULL GROUP BY minute,h.node_uuid
 		) GROUP BY minute ORDER BY minute`, string(raw))
-	bandwidth, err := readReportPeak(rows, err)
-	return reports, bandwidth, true, err
+	return readReportPeak(rows, err)
 }
 
 func (s *Store) LoadDailyTelegramContext(ctx context.Context, date string) ([]string, int, error) {

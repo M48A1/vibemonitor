@@ -31,10 +31,13 @@ type telegramUpdate struct {
 	} `json:"message"`
 }
 
-func acceptsDailyReportCommand(update telegramUpdate, chatID int64) bool {
+func privateTelegramCommand(update telegramUpdate, chatID int64) []string {
 	m := update.Message
-	return chatID > 0 && m != nil && m.Chat.Type == "private" && m.Chat.ID == chatID &&
-		m.From.ID == chatID && !m.From.IsBot && strings.TrimSpace(m.Text) == "/dailyreport"
+	if chatID <= 0 || m == nil || m.Chat.Type != "private" || m.Chat.ID != chatID ||
+		m.From.ID != chatID || m.From.IsBot {
+		return nil
+	}
+	return strings.Fields(m.Text)
 }
 
 func getTelegramUpdates(ctx context.Context, client *http.Client, token string, offset int64) ([]telegramUpdate, error) {
@@ -98,9 +101,9 @@ func (s *Server) runTelegramCommands(ctx context.Context) {
 					if ctx.Err() != nil {
 						return
 					}
-					if acceptsDailyReportCommand(update, chatID) {
-						if err := s.replyDailyReportCommand(ctx, cfg, time.Now(), send); err != nil && ctx.Err() == nil {
-							log.Printf("[Telegram commands] Daily report reply failed: %v", err)
+					if command := privateTelegramCommand(update, chatID); len(command) > 0 {
+						if err := s.replyTelegramReport(ctx, cfg, time.Now(), command, send); err != nil && ctx.Err() == nil {
+							log.Printf("[Telegram commands] Report reply failed: %v", err)
 						}
 					}
 					offset = max(offset, update.ID+1)
@@ -121,14 +124,41 @@ func (s *Server) runTelegramCommands(ctx context.Context) {
 	}
 }
 
-func (s *Server) replyDailyReportCommand(ctx context.Context, cfg store.Config, now time.Time, send telegramSender) error {
+func (s *Server) replyTelegramReport(ctx context.Context, cfg store.Config, now time.Time, command []string, send telegramSender) error {
+	var lastSend time.Time
 	sendCurrent := func(text string) error {
+		if delay := time.Until(lastSend.Add(time.Second)); delay > 0 {
+			timer := time.NewTimer(delay)
+			defer timer.Stop()
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-timer.C:
+			}
+		}
 		current := s.store.GetConfig()
 		if current.TelegramBotToken != cfg.TelegramBotToken || current.TelegramChatID != cfg.TelegramChatID {
 			return errors.New("Telegram command configuration changed")
 		}
+		lastSend = time.Now()
 		return send(ctx, cfg, text)
 	}
+	switch command[0] {
+	case "/dailyreport":
+		if len(command) == 1 {
+			return s.replyDailyReportCommand(ctx, now, sendCurrent)
+		}
+	case "/report":
+		return s.replyArchivedReportCommand(ctx, command[1:], sendCurrent)
+	default:
+		if _, err := parseReportDate(command[0]); err == nil {
+			return s.replyArchivedReportCommand(ctx, command, sendCurrent)
+		}
+	}
+	return nil
+}
+
+func (s *Server) replyDailyReportCommand(ctx context.Context, now time.Time, sendCurrent func(string) error) error {
 	if err := s.store.CollectDailyReportsContext(ctx, now); err != nil {
 		_ = sendCurrent("暂时无法读取日报，请稍后重试。")
 		return err
